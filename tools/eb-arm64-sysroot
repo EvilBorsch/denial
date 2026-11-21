@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Makes a minimal Ubuntu arm64 root for cross-building deniald: the -dev
+# packages it builds against, extracted with their dependencies and without
+# running any maintainer script, so no emulator is needed. Run as root.
+set -euo pipefail
+
+MIRROR="${EB_UBUNTU_PORTS:-http://ports.ubuntu.com/ubuntu-ports}"
+
+usage() {
+    printf 'Usage: %s ROOT [SUITE]\n' "$0" >&2
+    printf 'Makes ROOT from %s; SUITE defaults to resolute (Ubuntu 26.04).\n' "$MIRROR" >&2
+    exit 2
+}
+
+[[ $# -ge 1 && $# -le 2 ]] || usage
+ROOT="$1"
+SUITE="${2:-resolute}"
+
+# What deniald links (libgbm, libseat, libudev, libinput, libxkbcommon) and
+# what its crates probe for, with the libraries it loads at run time, so the
+# root also runs it under qemu-aarch64 -L.
+PACKAGES=(
+    libc6-dev libgcc-s1
+    libdrm-dev libgbm-dev libegl-dev libgles-dev
+    libinput-dev libudev-dev libxkbcommon-dev libseat-dev libwayland-dev
+    libpam0g-dev libpulse-dev libsystemd-dev libfontconfig-dev
+)
+
+[[ "$(id -u)" == 0 ]] || { printf '%s must run as root\n' "$0" >&2; exit 1; }
+command -v mmdebstrap >/dev/null || { printf 'mmdebstrap is required\n' >&2; exit 1; }
+[[ ! -e "$ROOT" ]] || { printf '%s exists; remove it first\n' "$ROOT" >&2; exit 1; }
+
+include="$(IFS=,; printf '%s' "${PACKAGES[*]}")"
+# The hook records the exact packages while they are still in the download
+# cache.
+mmdebstrap --variant=extract --arch=arm64 --include="$include" \
+    --extract-hook='find "$1/var/cache/apt/archives" -maxdepth 1 -name "*.deb" -printf "%f\n" | sort > "$1/EB-SYSROOT-PACKAGES.txt"' \
+    "$SUITE" "$ROOT" \
+    "deb $MIRROR $SUITE main universe" \
+    "deb $MIRROR $SUITE-updates main universe" \
+    "deb $MIRROR $SUITE-security main universe"
+
+# Ubuntu's merged /usr: libc's linker script and the ELF interpreter name /lib.
+for directory in bin lib sbin; do
+    [[ -e "$ROOT/$directory" ]] || ln -s "usr/$directory" "$ROOT/$directory"
+done
+
+# Owned like the directory it is in, so the builder can use it unprivileged.
+chown -R --no-dereference --reference="$(dirname -- "$ROOT")" "$ROOT"
+printf 'made %s with %s packages\n' "$ROOT" "$(wc -l < "$ROOT/EB-SYSROOT-PACKAGES.txt")"

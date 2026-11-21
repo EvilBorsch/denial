@@ -104,14 +104,30 @@ denial_flutter_host_engine_target() {
   fi
 }
 
+# The library directory of the target root in $1: an Arch Linux ARM root keeps
+# its libraries and pkg-config files in /usr/lib, a Debian or Ubuntu root in
+# the multiarch directory /usr/lib/aarch64-linux-gnu.
+denial_cross_sysroot_libdir() {
+  local sysroot="$1"
+
+  if [[ -d "$sysroot/usr/lib/aarch64-linux-gnu/pkgconfig" ]]; then
+    printf '%s\n' "$sysroot/usr/lib/aarch64-linux-gnu"
+  elif [[ -d "$sysroot/usr/lib/pkgconfig" ]]; then
+    printf '%s\n' "$sysroot/usr/lib"
+  else
+    return 1
+  fi
+}
+
 # Points Cargo, cc and pkg-config at the cross compiler and the target root
 # in DENIAL_ARM64_SYSROOT. A native build changes nothing.
 denial_cross_configure_rust() {
   ((DENIAL_CROSS)) || return 0
   local sysroot="${DENIAL_ARM64_SYSROOT:-}"
+  local libdir
 
-  [[ -n "$sysroot" && -d "$sysroot/usr/lib/pkgconfig" ]] || {
-    printf 'DENIAL_ARM64_SYSROOT must name an Arch Linux ARM root: %s\n' \
+  [[ -n "$sysroot" ]] && libdir="$(denial_cross_sysroot_libdir "$sysroot")" || {
+    printf 'DENIAL_ARM64_SYSROOT must name an Arch Linux ARM or a Debian/Ubuntu arm64 root: %s\n' \
       "${sysroot:-<unset>}" >&2
     return 1
   }
@@ -121,7 +137,11 @@ denial_cross_configure_rust() {
   }
   export PKG_CONFIG_ALLOW_CROSS=1
   export PKG_CONFIG_SYSROOT_DIR="$sysroot"
-  export PKG_CONFIG_LIBDIR="$sysroot/usr/lib/pkgconfig:$sysroot/usr/share/pkgconfig"
+  if [[ "$libdir" == "$sysroot/usr/lib" ]]; then
+    export PKG_CONFIG_LIBDIR="$sysroot/usr/lib/pkgconfig:$sysroot/usr/share/pkgconfig"
+  else
+    export PKG_CONFIG_LIBDIR="$libdir/pkgconfig:$sysroot/usr/lib/pkgconfig:$sysroot/usr/share/pkgconfig"
+  fi
   export CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc
   export CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++
   export AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar
@@ -130,7 +150,7 @@ denial_cross_configure_rust() {
   export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc
   # The root's own library directory goes first: the cross compiler's built-in
   # one holds linker scripts that name the build machine's /lib.
-  export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=--sysroot=$sysroot -C link-arg=-L$sysroot/usr/lib -C link-arg=-Wl,-rpath-link,$sysroot/usr/lib"
+  export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=--sysroot=$sysroot -C link-arg=-L$libdir -C link-arg=-Wl,-rpath-link,$libdir"
 }
 
 # Prints the canonical architecture of an ELF file, from its e_machine field.
