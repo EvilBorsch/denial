@@ -40,7 +40,7 @@ An x86-64 Linux host (here WSL Ubuntu 26.04) with network access and:
 sudo apt install git curl dpkg qemu-user libc6-arm64-cross python3 rsync unzip
 ```
 
-Caches go to `$EB_WORK` (default `~/work-denial-shell`, about 3 GB): the
+Caches go to `$EB_WORK` (default `~/work-denial-shell`, about 2 GB): the
 Flutter fork checkout with its downloaded artifacts and Dart 3.13.4, and the
 extracted build kit. Downloads are pinned by SHA-256 or Git revision.
 
