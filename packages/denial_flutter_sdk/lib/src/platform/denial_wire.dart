@@ -721,6 +721,7 @@ class DenialWireCodec {
       naturalScrollEnabled: touchpad.naturalScrollEnabled,
       scrollSpeedFactor: scrollSpeedFactor,
       scrollingLayoutSwipeSpeedFactor: scrollingLayoutSwipeSpeedFactor,
+      hasKeyboard: inputDevices.hasKeyboard,
     );
   }
 

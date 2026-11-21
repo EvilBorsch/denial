@@ -9521,6 +9521,7 @@ impl<'a> InputDeviceCapabilities<'a> {
   pub const VT_TOUCHPAD: flatbuffers::VOffsetT = 6;
   pub const VT_HAS_MOUSE: flatbuffers::VOffsetT = 8;
   pub const VT_MOUSE: flatbuffers::VOffsetT = 10;
+  pub const VT_HAS_KEYBOARD: flatbuffers::VOffsetT = 12;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -9534,6 +9535,7 @@ impl<'a> InputDeviceCapabilities<'a> {
     let mut builder = InputDeviceCapabilitiesBuilder::new(_fbb);
     if let Some(x) = args.mouse { builder.add_mouse(x); }
     if let Some(x) = args.touchpad { builder.add_touchpad(x); }
+    builder.add_has_keyboard(args.has_keyboard);
     builder.add_has_mouse(args.has_mouse);
     builder.add_has_touchpad(args.has_touchpad);
     builder.finish()
@@ -9568,6 +9570,13 @@ impl<'a> InputDeviceCapabilities<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<MouseConfiguration>>(InputDeviceCapabilities::VT_MOUSE, None)}
   }
+  #[inline]
+  pub fn has_keyboard(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(InputDeviceCapabilities::VT_HAS_KEYBOARD, Some(false)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for InputDeviceCapabilities<'_> {
@@ -9581,6 +9590,7 @@ impl flatbuffers::Verifiable for InputDeviceCapabilities<'_> {
      .visit_field::<flatbuffers::ForwardsUOffset<TouchpadConfiguration>>("touchpad", Self::VT_TOUCHPAD, false)?
      .visit_field::<bool>("has_mouse", Self::VT_HAS_MOUSE, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<MouseConfiguration>>("mouse", Self::VT_MOUSE, false)?
+     .visit_field::<bool>("has_keyboard", Self::VT_HAS_KEYBOARD, false)?
      .finish();
     Ok(())
   }
@@ -9590,6 +9600,7 @@ pub struct InputDeviceCapabilitiesArgs<'a> {
     pub touchpad: Option<flatbuffers::WIPOffset<TouchpadConfiguration<'a>>>,
     pub has_mouse: bool,
     pub mouse: Option<flatbuffers::WIPOffset<MouseConfiguration<'a>>>,
+    pub has_keyboard: bool,
 }
 impl<'a> Default for InputDeviceCapabilitiesArgs<'a> {
   #[inline]
@@ -9599,6 +9610,7 @@ impl<'a> Default for InputDeviceCapabilitiesArgs<'a> {
       touchpad: None,
       has_mouse: false,
       mouse: None,
+      has_keyboard: false,
     }
   }
 }
@@ -9625,6 +9637,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> InputDeviceCapabilitiesBuilder<
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<MouseConfiguration>>(InputDeviceCapabilities::VT_MOUSE, mouse);
   }
   #[inline]
+  pub fn add_has_keyboard(&mut self, has_keyboard: bool) {
+    self.fbb_.push_slot::<bool>(InputDeviceCapabilities::VT_HAS_KEYBOARD, has_keyboard, false);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> InputDeviceCapabilitiesBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     InputDeviceCapabilitiesBuilder {
@@ -9646,6 +9662,7 @@ impl core::fmt::Debug for InputDeviceCapabilities<'_> {
       ds.field("touchpad", &self.touchpad());
       ds.field("has_mouse", &self.has_mouse());
       ds.field("mouse", &self.mouse());
+      ds.field("has_keyboard", &self.has_keyboard());
       ds.finish()
   }
 }

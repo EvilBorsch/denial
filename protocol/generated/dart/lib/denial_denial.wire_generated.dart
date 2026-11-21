@@ -5303,10 +5303,11 @@ class InputDeviceCapabilities {
   TouchpadConfiguration? get touchpad => TouchpadConfiguration.reader.vTableGetNullable(_bc, _bcOffset, 6);
   bool get hasMouse => const fb.BoolReader().vTableGet(_bc, _bcOffset, 8, false);
   MouseConfiguration? get mouse => MouseConfiguration.reader.vTableGetNullable(_bc, _bcOffset, 10);
+  bool get hasKeyboard => const fb.BoolReader().vTableGet(_bc, _bcOffset, 12, false);
 
   @override
   String toString() {
-    return 'InputDeviceCapabilities{hasTouchpad: ${hasTouchpad}, touchpad: ${touchpad}, hasMouse: ${hasMouse}, mouse: ${mouse}}';
+    return 'InputDeviceCapabilities{hasTouchpad: ${hasTouchpad}, touchpad: ${touchpad}, hasMouse: ${hasMouse}, mouse: ${mouse}, hasKeyboard: ${hasKeyboard}}';
   }
 }
 
@@ -5324,7 +5325,7 @@ class InputDeviceCapabilitiesBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(4);
+    fbBuilder.startTable(5);
   }
 
   int addHasTouchpad(bool? hasTouchpad) {
@@ -5343,6 +5344,10 @@ class InputDeviceCapabilitiesBuilder {
     fbBuilder.addOffset(3, offset);
     return fbBuilder.offset;
   }
+  int addHasKeyboard(bool? hasKeyboard) {
+    fbBuilder.addBool(4, hasKeyboard);
+    return fbBuilder.offset;
+  }
 
   int finish() {
     return fbBuilder.endTable();
@@ -5354,28 +5359,32 @@ class InputDeviceCapabilitiesObjectBuilder extends fb.ObjectBuilder {
   final TouchpadConfigurationObjectBuilder? _touchpad;
   final bool? _hasMouse;
   final MouseConfigurationObjectBuilder? _mouse;
+  final bool? _hasKeyboard;
 
   InputDeviceCapabilitiesObjectBuilder({
     bool? hasTouchpad,
     TouchpadConfigurationObjectBuilder? touchpad,
     bool? hasMouse,
     MouseConfigurationObjectBuilder? mouse,
+    bool? hasKeyboard,
   })
       : _hasTouchpad = hasTouchpad,
         _touchpad = touchpad,
         _hasMouse = hasMouse,
-        _mouse = mouse;
+        _mouse = mouse,
+        _hasKeyboard = hasKeyboard;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
     final int? touchpadOffset = _touchpad?.getOrCreateOffset(fbBuilder);
     final int? mouseOffset = _mouse?.getOrCreateOffset(fbBuilder);
-    fbBuilder.startTable(4);
+    fbBuilder.startTable(5);
     fbBuilder.addBool(0, _hasTouchpad);
     fbBuilder.addOffset(1, touchpadOffset);
     fbBuilder.addBool(2, _hasMouse);
     fbBuilder.addOffset(3, mouseOffset);
+    fbBuilder.addBool(4, _hasKeyboard);
     return fbBuilder.endTable();
   }
 

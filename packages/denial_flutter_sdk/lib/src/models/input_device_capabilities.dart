@@ -20,6 +20,7 @@ class DenialInputDeviceCapabilities {
     required this.naturalScrollEnabled,
     required this.scrollSpeedFactor,
     required this.scrollingLayoutSwipeSpeedFactor,
+    this.hasKeyboard = false,
   });
 
   const DenialInputDeviceCapabilities.none()
@@ -33,7 +34,8 @@ class DenialInputDeviceCapabilities {
       naturalScrollEnabled = false,
       scrollSpeedFactor = touchpadScrollSpeedFactorDefault,
       scrollingLayoutSwipeSpeedFactor =
-          touchpadScrollingLayoutSwipeSpeedFactorDefault;
+          touchpadScrollingLayoutSwipeSpeedFactorDefault,
+      hasKeyboard = false;
 
   final int revision;
   final bool hasMouse;
@@ -48,6 +50,10 @@ class DenialInputDeviceCapabilities {
   final bool naturalScrollEnabled;
   final double scrollSpeedFactor;
   final double scrollingLayoutSwipeSpeedFactor;
+
+  /// A keyboard to type on is attached, such as a keyboard cover. deniald
+  /// leaves out devices that only have power, volume or media keys.
+  final bool hasKeyboard;
 
   factory DenialInputDeviceCapabilities.fromJson(Map<String, Object?> json) {
     return DenialInputDeviceCapabilities(
@@ -68,6 +74,7 @@ class DenialInputDeviceCapabilities {
       scrollingLayoutSwipeSpeedFactor:
           (json['scrolling_layout_swipe_speed_factor'] as num?)?.toDouble() ??
           touchpadScrollingLayoutSwipeSpeedFactorDefault,
+      hasKeyboard: json['has_keyboard'] as bool? ?? false,
     );
   }
 
@@ -95,6 +102,7 @@ class DenialInputDeviceCapabilities {
     bool? naturalScrollEnabled,
     double? scrollSpeedFactor,
     double? scrollingLayoutSwipeSpeedFactor,
+    bool? hasKeyboard,
   }) {
     return DenialInputDeviceCapabilities(
       revision: revision ?? this.revision,
@@ -111,6 +119,7 @@ class DenialInputDeviceCapabilities {
       scrollingLayoutSwipeSpeedFactor:
           scrollingLayoutSwipeSpeedFactor ??
           this.scrollingLayoutSwipeSpeedFactor,
+      hasKeyboard: hasKeyboard ?? this.hasKeyboard,
     );
   }
 
@@ -128,7 +137,8 @@ class DenialInputDeviceCapabilities {
             naturalScrollEnabled == other.naturalScrollEnabled &&
             scrollSpeedFactor == other.scrollSpeedFactor &&
             scrollingLayoutSwipeSpeedFactor ==
-                other.scrollingLayoutSwipeSpeedFactor;
+                other.scrollingLayoutSwipeSpeedFactor &&
+            hasKeyboard == other.hasKeyboard;
   }
 
   @override
@@ -143,5 +153,6 @@ class DenialInputDeviceCapabilities {
     naturalScrollEnabled,
     scrollSpeedFactor,
     scrollingLayoutSwipeSpeedFactor,
+    hasKeyboard,
   );
 }

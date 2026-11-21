@@ -236,6 +236,8 @@ pub struct InputDeviceSettings<'a> {
     pub touchpad: &'a TouchpadSettings,
     pub has_mouse: bool,
     pub mouse: &'a MouseSettings,
+    /// A keyboard to type on, not merely a device with keys.
+    pub has_keyboard: bool,
 }
 
 /// The word the software keyboard is typing, for suggestions.

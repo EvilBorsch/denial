@@ -496,6 +496,7 @@ impl WireBridge {
             touchpad,
             has_mouse,
             mouse,
+            has_keyboard,
         } = devices;
         if revision == 0 || error.is_some_and(|error| error.len() > MAX_STRING_BYTES) {
             return Err(WireError::Identity);
@@ -526,6 +527,7 @@ impl WireBridge {
                 touchpad: Some(touchpad),
                 has_mouse,
                 mouse: Some(mouse),
+                has_keyboard,
             },
         );
         let error = error.map(|error| self.outbound_builder.create_string(error));

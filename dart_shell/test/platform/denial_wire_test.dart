@@ -209,6 +209,7 @@ void main() {
               scrollSpeedFactor: 2.25,
               scrollingLayoutSwipeSpeedFactor: 1.75,
             ),
+            hasKeyboard: true,
           ),
         ),
       ).toBytes('DENW');
@@ -233,8 +234,58 @@ void main() {
         capabilities.scrollingLayoutSwipeSpeedFactor,
         closeTo(1.75, 0.0001),
       );
+      expect(capabilities.hasKeyboard, isTrue);
     },
   );
+
+  test('input capability response from a deniald without keyboards has '
+      'none', () {
+    final bytes = EnvelopeObjectBuilder(
+      protocolVersion: 1,
+      sequence: 1,
+      requestId: 24,
+      payloadType: PayloadTypeId.SettingsResponse,
+      payload: SettingsResponseObjectBuilder(
+        kind: SettingsResponseKind.InputDevices,
+        success: true,
+        revision: 9,
+        inputDevices: InputDeviceCapabilitiesObjectBuilder(
+          hasMouse: false,
+          mouse: MouseConfigurationObjectBuilder(speed: 0),
+          hasTouchpad: true,
+          touchpad: TouchpadConfigurationObjectBuilder(
+            scrollSpeedFactor: 1,
+            scrollingLayoutSwipeSpeedFactor: 1,
+          ),
+        ),
+      ),
+    ).toBytes('DENW');
+    final codec = DenialWireCodec();
+    final envelope = codec.decodeStructured(ByteData.sublistView(bytes));
+    final capabilities = codec.decodeInputDeviceCapabilities(
+      envelope!.payload as SettingsResponse,
+    );
+    expect(capabilities!.hasTouchpad, isTrue);
+    expect(capabilities.hasKeyboard, isFalse);
+  });
+
+  test('input capabilities read the keyboard from the control snapshot', () {
+    final capabilities = DenialInputDeviceCapabilities.fromJson(
+      const <String, Object?>{
+        'revision': 3,
+        'has_touchpad': true,
+        'has_keyboard': true,
+      },
+    );
+    expect(capabilities.hasKeyboard, isTrue);
+    expect(
+      DenialInputDeviceCapabilities.fromJson(const <String, Object?>{
+        'revision': 3,
+      }).hasKeyboard,
+      isFalse,
+    );
+    expect(capabilities, isNot(capabilities.copyWith(hasKeyboard: false)));
+  });
 
   test('theme accent is encoded as opaque packed sRGB', () {
     final bytes = DenialWireCodec().encodeThemeAccent(0x7f123456);

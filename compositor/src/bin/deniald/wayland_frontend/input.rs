@@ -1389,6 +1389,38 @@ fn is_touchpad_device(device: &LibinputDevice) -> bool {
     udev_marks_touchpad.unwrap_or_else(|| device.config_tap_finger_count() > 0)
 }
 
+/// Whether a keyboard device is one to type on. To libinput, power buttons,
+/// volume rockers and media key pads are keyboards too. udev marks a keyboard
+/// (ID_INPUT_KEYBOARD) when it has the first 31 keys, Esc to D; it must also
+/// have every letter, the space bar and Enter.
+#[cfg(feature = "flutter")]
+fn is_typing_keyboard(device: &LibinputDevice) -> bool {
+    // SAFETY: this device came from the same udev-backed libinput context used
+    // to construct the event source, as required by input::Device::udev_device.
+    let udev_marks_keyboard = unsafe { device.udev_device() }.map(|device| {
+        device
+            .property_value("ID_INPUT_KEYBOARD")
+            .is_some_and(|value| value == OsStr::new("1"))
+    });
+    udev_marks_keyboard.unwrap_or(true)
+        && has_typing_keys(|key| device.keyboard_has_key(key).unwrap_or(false))
+}
+
+/// linux/input-event-codes.h: the letters, the space bar and Enter.
+#[cfg(feature = "flutter")]
+const TYPING_KEYS: [u32; 28] = [
+    16, 17, 18, 19, 20, 21, 22, 23, 24, 25, // Q W E R T Y U I O P
+    30, 31, 32, 33, 34, 35, 36, 37, 38, // A S D F G H J K L
+    44, 45, 46, 47, 48, 49, 50, // Z X C V B N M
+    57, // Space
+    28, // Enter
+];
+
+#[cfg(feature = "flutter")]
+fn has_typing_keys(has_key: impl Fn(u32) -> bool) -> bool {
+    TYPING_KEYS.into_iter().all(has_key)
+}
+
 fn is_mouse_device(device: &LibinputDevice) -> bool {
     // Do not infer this from pointer capability alone: touchpads expose the
     // same capability and have an independently configurable input model.
@@ -1708,7 +1740,7 @@ fn process_input_event(
 ) -> bool {
     let mut tablet_clients_changed = false;
     #[cfg(feature = "flutter")]
-    let pointer_kinds = state.input_devices.pointer_kinds();
+    let device_kinds = state.input_devices.kinds();
     if let InputEvent::DeviceAdded { device } = &mut event {
         tablet_clients_changed = tablet::register_device(state, device);
         #[cfg(feature = "flutter")]
@@ -1731,6 +1763,14 @@ fn process_input_event(
                 .input_devices
                 .keyboards
                 .insert(device.sysname().to_owned(), device.clone());
+            #[cfg(feature = "flutter")]
+            if is_typing_keyboard(device) {
+                info!(device = %device.name(), "a keyboard to type on is attached");
+                state
+                    .input_devices
+                    .typing_keyboards
+                    .insert(device.sysname().to_owned());
+            }
         }
         let touchpad = is_touchpad_device(device);
         if touchpad {
@@ -1770,8 +1810,7 @@ fn process_input_event(
         }
         #[cfg(feature = "flutter")]
         {
-            state.input_device_capabilities_changed |=
-                state.input_devices.pointer_kinds() != pointer_kinds;
+            state.input_device_capabilities_changed |= state.input_devices.kinds() != device_kinds;
         }
     }
 
@@ -1779,12 +1818,19 @@ fn process_input_event(
         #[cfg(feature = "flutter")]
         state.power_button.remove_device(device.sysname());
         tablet_clients_changed = tablet::unregister_device(state, device);
+        #[cfg(feature = "flutter")]
+        if state
+            .input_devices
+            .typing_keyboards
+            .contains(device.sysname())
+        {
+            info!(device = %device.name(), "a keyboard to type on is detached");
+        }
         state.input_devices.remove(device.sysname());
         #[cfg(feature = "flutter")]
         {
             state.screen_off_touch.remove_device(device.sysname());
-            state.input_device_capabilities_changed |=
-                state.input_devices.pointer_kinds() != pointer_kinds;
+            state.input_device_capabilities_changed |= state.input_devices.kinds() != device_kinds;
         }
         let reset = InputDeviceReset {
             keyboard: Device::has_capability(device, DeviceCapability::Keyboard),
@@ -3173,4 +3219,54 @@ fn process_flutter_keyboard_transition(
     );
     synchronize_active_keyboard_layout(state, &keyboard);
     true
+}
+
+#[cfg(all(test, feature = "flutter"))]
+mod typing_keyboard_tests {
+    use super::*;
+
+    const KEY_ESC: u32 = 1;
+    const KEY_ENTER: u32 = 28;
+    const KEY_Q: u32 = 16;
+    const KEY_M: u32 = 50;
+    const KEY_SPACE: u32 = 57;
+    const KEY_VOLUMEDOWN: u32 = 114;
+    const KEY_VOLUMEUP: u32 = 115;
+    const KEY_POWER: u32 = 116;
+    const KEY_WAKEUP: u32 = 143;
+    const KEY_PLAYPAUSE: u32 = 164;
+
+    fn keys(codes: &[u32]) -> impl Fn(u32) -> bool + '_ {
+        move |key| codes.contains(&key)
+    }
+
+    #[test]
+    fn power_volume_and_media_keys_are_no_keyboard_to_type_on() {
+        // pmic_pwrkey, gpio-keys and a media remote.
+        assert!(!has_typing_keys(keys(&[KEY_POWER])));
+        assert!(!has_typing_keys(keys(&[KEY_VOLUMEUP, KEY_VOLUMEDOWN])));
+        assert!(!has_typing_keys(keys(&[KEY_POWER, KEY_WAKEUP])));
+        assert!(!has_typing_keys(keys(&[
+            KEY_PLAYPAUSE,
+            KEY_VOLUMEUP,
+            KEY_VOLUMEDOWN,
+            KEY_ENTER,
+        ])));
+    }
+
+    #[test]
+    fn a_keyboard_needs_every_letter_the_space_bar_and_enter() {
+        let full = (KEY_ESC..=KEY_SPACE).collect::<Vec<_>>();
+        assert!(has_typing_keys(keys(&full)));
+        for missing in [KEY_Q, KEY_M, KEY_SPACE, KEY_ENTER] {
+            let partial = full
+                .iter()
+                .copied()
+                .filter(|key| *key != missing)
+                .collect::<Vec<_>>();
+            assert!(!has_typing_keys(keys(&partial)), "without key {missing}");
+        }
+        // udev's own test, Esc to D, is not enough without the other letters.
+        assert!(!has_typing_keys(keys(&(KEY_ESC..=32).collect::<Vec<_>>())));
+    }
 }

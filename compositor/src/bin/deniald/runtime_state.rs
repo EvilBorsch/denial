@@ -38,19 +38,38 @@ pub(super) struct WindowEventState {
 pub(super) struct InputDevices {
     #[cfg(feature = "flutter")]
     pub(super) touchscreens: BTreeMap<String, smithay::reexports::input::Device>,
+    /// Every device with keys, for the keyboard LEDs. Power buttons and
+    /// volume keys are among them.
     pub(super) keyboards: BTreeMap<String, smithay::reexports::input::Device>,
+    /// The keyboards to type on, by sysname.
+    #[cfg(feature = "flutter")]
+    pub(super) typing_keyboards: BTreeSet<String>,
     #[cfg(feature = "flutter")]
     pub(super) mice: BTreeMap<String, smithay::reexports::input::Device>,
     #[cfg(feature = "flutter")]
     pub(super) touchpads: BTreeMap<String, smithay::reexports::input::Device>,
 }
 
+/// The kinds of input device the shell is told about.
+#[cfg(feature = "flutter")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct InputDeviceKinds {
+    pub(super) touchpad: bool,
+    pub(super) mouse: bool,
+    /// A keyboard to type on: the software keyboard stays down for it.
+    pub(super) keyboard: bool,
+}
+
 impl InputDevices {
-    /// Whether a touchpad and a mouse are present; the shell's pointer
-    /// settings depend on both.
+    /// Which kinds are present: the shell's pointer settings depend on the
+    /// touchpad and the mouse, its software keyboard on the keyboard.
     #[cfg(feature = "flutter")]
-    pub(super) fn pointer_kinds(&self) -> (bool, bool) {
-        (!self.touchpads.is_empty(), !self.mice.is_empty())
+    pub(super) fn kinds(&self) -> InputDeviceKinds {
+        InputDeviceKinds {
+            touchpad: !self.touchpads.is_empty(),
+            mouse: !self.mice.is_empty(),
+            keyboard: !self.typing_keyboards.is_empty(),
+        }
     }
 
     pub(super) fn remove(&mut self, sysname: &str) {
@@ -58,6 +77,7 @@ impl InputDevices {
         #[cfg(feature = "flutter")]
         {
             self.touchscreens.remove(sysname);
+            self.typing_keyboards.remove(sysname);
             self.mice.remove(sysname);
             self.touchpads.remove(sysname);
         }

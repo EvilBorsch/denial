@@ -761,6 +761,9 @@ table InputDeviceCapabilities {
   touchpad:TouchpadConfiguration;
   has_mouse:bool;
   mouse:MouseConfiguration;
+  // A keyboard to type on is attached. Power buttons, volume keys and other
+  // key-only devices do not count.
+  has_keyboard:bool;
 }
 
 table TouchpadConfiguration {
