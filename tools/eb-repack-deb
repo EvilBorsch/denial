@@ -2,8 +2,8 @@
 # Repack Denial's signed denial_0.6.8-1_arm64.deb with a shell bundle from
 # tools/eb-build-shell: only /usr/lib/denial/flutter/lib/libapp.so and
 # /usr/lib/denial/flutter/data/flutter_assets change. deniald, denialctl,
-# the portal, the polkit agent, Settings, the conffiles and the maintainer
-# scripts stay the release's, and the package still depends on the release's
+# the portal, the polkit agent, Settings and the conffiles stay the release's,
+# the postinst also gives deniald CAP_SYS_NICE (see below), and the package still depends on the release's
 # denial-flutter-engine (= 0.6.8-1). See docs/EB-BUILD.md.
 #
 # Usage: tools/eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY
@@ -44,6 +44,25 @@ rm -rf -- "$flutter/data/flutter_assets"
 cp -a -- "$BUNDLE/data/flutter_assets" "$flutter/data/flutter_assets"
 chmod -R u=rwX,go=rX -- "$flutter/data/flutter_assets"
 
+# Under a display manager deniald runs as the user and cannot raise its
+# render threads' priority or ask for a CPU floor, which Denial Linux grants
+# through its service (AmbientCapabilities=CAP_SYS_NICE): without it frames
+# stutter. Give the binary the file capability, as KWin does.
+postinst="$stage/denial/DEBIAN/postinst"
+python3 -I - "$postinst" <<'PY2'
+import sys
+path = sys.argv[1]
+s = open(path).read()
+block = """    if command -v setcap >/dev/null 2>&1; then
+      setcap cap_sys_nice+ep /usr/bin/deniald || true
+    fi
+"""
+anchor = "  configure|abort-upgrade|abort-deconfigure|abort-remove)\n"
+assert s.count(anchor) == 1, 'postinst layout changed'
+s = s.replace(anchor, anchor + block)
+open(path, 'w').write(s)
+PY2
+
 control="$stage/denial/DEBIAN/control"
 python3 -I - "$control" "$VERSION" "$MAINTAINER" "$(git -C "$ROOT" rev-parse HEAD)" <<'PY'
 import sys
@@ -57,6 +76,8 @@ for line in lines:
         line = 'Maintainer: ' + maintainer
     elif line.startswith('Installed-Size: '):
         continue
+    elif line.startswith('Depends: '):
+        line = line + ', libcap2-bin'
     out.append(line)
 out.append(' .')
 out.append(' This build replaces only the Flutter shell (libapp.so, flutter_assets)')
