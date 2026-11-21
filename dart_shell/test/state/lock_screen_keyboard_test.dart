@@ -30,20 +30,40 @@ void main() {
     await tester.pump();
     expect(container.read(hardwareKeyboardAttachedProvider), isFalse);
 
-    bridge.devices(touchpad: true);
+    // The OnePlus Pad 3 cover attaches as a keyboard and a touchpad.
+    bridge.devices(keyboard: true, touchpad: true);
     expect(container.read(hardwareKeyboardAttachedProvider), isTrue);
 
     // A cover that drops off its connector and comes straight back.
-    bridge.devices(touchpad: false);
+    bridge.devices(keyboard: false);
     await tester.pump(const Duration(milliseconds: 500));
     expect(container.read(hardwareKeyboardAttachedProvider), isTrue);
-    bridge.devices(touchpad: true);
+    bridge.devices(keyboard: true, touchpad: true);
     await tester.pump(HardwareKeyboardAttached.detachGrace * 2);
     expect(container.read(hardwareKeyboardAttachedProvider), isTrue);
 
-    bridge.devices(touchpad: false);
+    bridge.devices(keyboard: false);
     await tester.pump(HardwareKeyboardAttached.detachGrace);
     expect(container.read(hardwareKeyboardAttachedProvider), isFalse);
+  });
+
+  testWidgets('a touchpad or a mouse alone is no keyboard cover', (
+    tester,
+  ) async {
+    final bridge = _FakeBridge();
+    final container = ProviderContainer.test(
+      overrides: [denialBridgeProvider.overrideWithValue(bridge)],
+    );
+    container.listen(hardwareKeyboardAttachedProvider, (_, _) {});
+    await tester.pump();
+
+    bridge.devices(keyboard: false, touchpad: true, mouse: true);
+    await tester.pump(HardwareKeyboardAttached.detachGrace * 2);
+    expect(container.read(hardwareKeyboardAttachedProvider), isFalse);
+
+    // A Bluetooth keyboard without a touchpad.
+    bridge.devices(keyboard: true);
+    expect(container.read(hardwareKeyboardAttachedProvider), isTrue);
   });
 
   testWidgets('the lock screen keeps the keyboard it shows while the '
@@ -220,8 +240,16 @@ class _FakeBridge extends DenialBridge {
   @override
   Stream<DenialTextInputState> get textInputStates => _editors.stream;
 
-  void devices({required bool touchpad}) => _devices.add(
-    const DenialInputDeviceCapabilities.none().copyWith(hasTouchpad: touchpad),
+  void devices({
+    required bool keyboard,
+    bool touchpad = false,
+    bool mouse = false,
+  }) => _devices.add(
+    const DenialInputDeviceCapabilities.none().copyWith(
+      hasKeyboard: keyboard,
+      hasTouchpad: touchpad,
+      hasMouse: mouse,
+    ),
   );
 
   void editor({required bool active, required bool panel}) => _editors.add(

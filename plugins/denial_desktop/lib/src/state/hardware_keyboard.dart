@@ -7,11 +7,9 @@ import 'package:denial_flutter_sdk/state.dart' show inputDeviceCapabilitiesProvi
 /// Whether a keyboard to type on is attached, for the software keyboard's
 /// automatic appearance on a phone or tablet.
 ///
-/// deniald tells the shell which touchpads and mice are connected, not which
-/// keyboards: to libinput the power and volume buttons are keyboards too, so
-/// a keyboard device alone says nothing. A touchpad stands in for a keyboard
-/// cover instead; the OnePlus Pad 3 keyboard, for one, attaches as a keyboard
-/// and a touchpad together.
+/// deniald reports keyboards with letters, not every device with keys: to
+/// libinput the power and volume buttons are keyboards too. A touchpad
+/// alone, or a mouse, is no keyboard.
 ///
 /// A detach counts only after [detachGrace]: a cover that drops off its
 /// connector and comes straight back must not flash the software keyboard.
@@ -33,14 +31,14 @@ class HardwareKeyboardAttached extends Notifier<bool> {
     });
     ref.listen<bool>(
       inputDeviceCapabilitiesProvider.select(
-        (devices) => devices.capabilities.hasTouchpad,
+        (devices) => devices.capabilities.hasKeyboard,
       ),
-      _touchpadChanged,
+      _keyboardChanged,
     );
-    return ref.read(inputDeviceCapabilitiesProvider).capabilities.hasTouchpad;
+    return ref.read(inputDeviceCapabilitiesProvider).capabilities.hasKeyboard;
   }
 
-  void _touchpadChanged(bool? previous, bool present) {
+  void _keyboardChanged(bool? previous, bool present) {
     _detach?.cancel();
     _detach = null;
     if (present) {
