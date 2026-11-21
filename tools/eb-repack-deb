@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Repack Denial's signed denial_0.6.8-1_arm64.deb with a shell bundle from
+# tools/eb-build-shell: only /usr/lib/denial/flutter/lib/libapp.so and
+# /usr/lib/denial/flutter/data/flutter_assets change. deniald, denialctl,
+# the portal, the polkit agent, Settings, the conffiles and the maintainer
+# scripts stay the release's, and the package still depends on the release's
+# denial-flutter-engine (= 0.6.8-1). See docs/EB-BUILD.md.
+#
+# Usage: tools/eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY
+#   e.g. tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb1 ~/debs
+set -euo pipefail
+
+BUNDLE="${1:?usage: eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY}"
+VERSION="${2:?usage: eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY}"
+OUTPUT="${3:?usage: eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY}"
+WORK="${EB_WORK:-$HOME/work-denial-shell}"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+DEB=denial_0.6.8-1_arm64.deb
+URL="https://github.com/denialwm/denial/releases/download/v0.6.8/$DEB"
+# From the v0.6.8 SHA256SUMS signed by the Denial release key.
+SHA256=60ef61ec0d1e80def0420c0490bf9ff45ab53966317a96120dda8b3e1279d4ae
+MAINTAINER='EvilBorsch <44337169+EvilBorsch@users.noreply.github.com>'
+
+die() { printf 'eb-repack-deb: %s\n' "$*" >&2; exit 1; }
+[[ "$VERSION" == 0.6.8-1+* ]] || die 'VERSION must be 0.6.8-1+SUFFIX, newer than the release'
+[[ -f "$BUNDLE/lib/libapp.so" && -d "$BUNDLE/data/flutter_assets" ]] \
+    || die "not a shell bundle: $BUNDLE"
+
+mkdir -p -- "$WORK/dl" "$OUTPUT"
+if [[ ! -s "$WORK/dl/$DEB" ]]; then
+    curl -fL --retry 3 -o "$WORK/dl/$DEB.part" "$URL"
+    mv -- "$WORK/dl/$DEB.part" "$WORK/dl/$DEB"
+fi
+[[ "$(sha256sum "$WORK/dl/$DEB" | cut -d' ' -f1)" == "$SHA256" ]] \
+    || die "$WORK/dl/$DEB does not match its pinned SHA-256"
+
+stage="$(mktemp -d "$WORK/repack.XXXXXX")"
+trap 'rm -rf --one-file-system -- "$stage"' EXIT
+dpkg-deb -R "$WORK/dl/$DEB" "$stage/denial"
+flutter="$stage/denial/usr/lib/denial/flutter"
+install -m755 -- "$BUNDLE/lib/libapp.so" "$flutter/lib/libapp.so"
+rm -rf -- "$flutter/data/flutter_assets"
+cp -a -- "$BUNDLE/data/flutter_assets" "$flutter/data/flutter_assets"
+chmod -R u=rwX,go=rX -- "$flutter/data/flutter_assets"
+
+control="$stage/denial/DEBIAN/control"
+python3 -I - "$control" "$VERSION" "$MAINTAINER" "$(git -C "$ROOT" rev-parse HEAD)" <<'PY'
+import sys
+path, version, maintainer, revision = sys.argv[1:5]
+lines = open(path).read().splitlines()
+out = []
+for line in lines:
+    if line.startswith('Version: '):
+        line = 'Version: ' + version
+    elif line.startswith('Maintainer: '):
+        line = 'Maintainer: ' + maintainer
+    elif line.startswith('Installed-Size: '):
+        continue
+    out.append(line)
+out.append(' .')
+out.append(' This build replaces only the Flutter shell (libapp.so, flutter_assets)')
+out.append(' of the signed 0.6.8-1 release, built from EvilBorsch/denial ' + revision[:12] + '.')
+open(path, 'w').write('\n'.join(out) + '\n')
+PY
+size="$(du -sk --apparent-size --exclude=DEBIAN "$stage/denial" | cut -f1)"
+sed -i "/^Maintainer: /a Installed-Size: $size" "$control"
+
+epoch="$(git -C "$ROOT" log -1 --format=%ct)"
+find "$stage/denial" -print0 | xargs -0 touch --no-dereference --date="@$epoch"
+out="$OUTPUT/denial_${VERSION}_arm64.deb"
+env SOURCE_DATE_EPOCH="$epoch" dpkg-deb --root-owner-group --uniform-compression -Zxz \
+    --build "$stage/denial" "$out" >/dev/null
+dpkg-deb -I "$out" | sed -n '/Package:/,$p'
+(cd -- "$OUTPUT" && sha256sum "$(basename -- "$out")" | tee "$(basename -- "$out").sha256")

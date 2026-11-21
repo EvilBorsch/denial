@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# Build the arm64 Flutter shell bundle (lib/libapp.so and data/flutter_assets)
+# of this checkout for an installed Denial 0.6.8, without building the engine.
+#
+# The AOT shell must match the installed denial-flutter-engine exactly: the
+# same Dart VM (snapshot version and features) and the same dart:ui, which
+# Denial's Flutter fork changes. Both come from Denial's own signed release:
+# the plugin build kit in denial-plugin-manager_0.6.8-1_arm64.deb carries the
+# fork's flutter_patched_sdk (dart:ui, product mode) and the arm64
+# gen_snapshot, impellerc and font-subset of the release engine build. This
+# script runs those arm64 tools under qemu-user, behind a local-engine view,
+# and drives them with the fork's flutter tool at the revision
+# prebuilt/flutter-engine/SOURCE_LOCK.json names, using the same assemble
+# defines as tools/denial-pc build_bundle. See docs/EB-BUILD.md.
+#
+# Usage: tools/eb-build-shell [OUTPUT_DIRECTORY]
+# Environment: EB_WORK (cache, default ~/work-denial-shell), EB_JOBS (4).
+set -euo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+WORK="${EB_WORK:-$HOME/work-denial-shell}"
+JOBS="${EB_JOBS:-4}"
+OUT="${1:-$WORK/out}"
+
+KIT_VERSION=0.6.8-1
+KIT_DEB="denial-plugin-manager_${KIT_VERSION}_arm64.deb"
+KIT_URL="https://github.com/denialwm/denial/releases/download/v0.6.8/$KIT_DEB"
+# From the v0.6.8 SHA256SUMS, whose signature is the Denial release key
+# AE4108FA5E91E26BE0EE331E0F5B3AD16E023091.
+KIT_SHA256=b9e58e73131c5bc5e136af36cd0f2ea8c281ef0d19f63be36d2534fd1f2dbc41
+KIT_ENGINE=usr/lib/denial/plugin-build-kit/engine/out/denial_linux_arm64_release
+# What the 0.6.8 engine expects of an AOT snapshot (also in the official
+# libapp.so and in libflutter_engine.so).
+SNAPSHOT_HASH=0451907c2eaa8467e848c0067bfe8ed4
+
+die() { printf 'eb-build-shell: %s\n' "$*" >&2; exit 1; }
+need() { command -v "$1" >/dev/null || die "missing $1"; }
+for tool in git curl dpkg-deb qemu-aarch64 python3 rsync sha256sum; do need "$tool"; done
+[[ -e /usr/aarch64-linux-gnu/lib/ld-linux-aarch64.so.1 ]] \
+    || die 'missing the arm64 C library for qemu (libc6-arm64-cross)'
+
+lock() { python3 -I -c 'import json, sys
+print(json.load(open(sys.argv[1]))["flutter"][sys.argv[2]])' \
+    "$ROOT/prebuilt/flutter-engine/SOURCE_LOCK.json" "$1"; }
+FLUTTER_REPOSITORY="$(lock repository)"
+FLUTTER_REVISION="$(lock revision)"
+FLUTTER_DIR="$WORK/flutter"
+FLUTTER="$FLUTTER_DIR/bin/flutter"
+export FLUTTER_SUPPRESS_ANALYTICS=true
+mkdir -p -- "$WORK"
+
+fetch_kit() {
+    local deb="$WORK/dl/$KIT_DEB"
+    mkdir -p -- "$WORK/dl"
+    if [[ ! -s "$deb" ]]; then
+        curl -fL --retry 3 -o "$deb.part" "$KIT_URL"
+        mv -- "$deb.part" "$deb"
+    fi
+    [[ "$(sha256sum "$deb" | cut -d' ' -f1)" == "$KIT_SHA256" ]] \
+        || die "$deb does not match its pinned SHA-256"
+    if [[ ! -e "$WORK/kit/.extracted-$KIT_SHA256" ]]; then
+        rm -rf -- "$WORK/kit"
+        mkdir -p -- "$WORK/kit"
+        dpkg-deb -x "$deb" "$WORK/kit"
+        touch -- "$WORK/kit/.extracted-$KIT_SHA256"
+    fi
+    KIT="$WORK/kit/$KIT_ENGINE"
+    [[ -f "$KIT/flutter_patched_sdk/platform_strong.dill" && -x "$KIT/gen_snapshot" ]] \
+        || die "the build kit lacks its compiler inputs: $KIT"
+}
+
+fetch_flutter() {
+    if [[ ! -d "$FLUTTER_DIR/.git" ]]; then
+        git init -q -- "$FLUTTER_DIR"
+        git -C "$FLUTTER_DIR" remote add origin "$FLUTTER_REPOSITORY"
+    fi
+    git -C "$FLUTTER_DIR" cat-file -e "$FLUTTER_REVISION^{commit}" 2>/dev/null \
+        || git -C "$FLUTTER_DIR" fetch --depth=1 origin "$FLUTTER_REVISION"
+    git -C "$FLUTTER_DIR" checkout -q --detach --force "$FLUTTER_REVISION"
+    git -C "$FLUTTER_DIR" tag -f 3.47.5 "$FLUTTER_REVISION" >/dev/null
+    "$FLUTTER" --version --suppress-analytics >/dev/null
+    "$FLUTTER" precache --linux --suppress-analytics >/dev/null
+    [[ "$(< "$FLUTTER_DIR/bin/cache/dart-sdk/version")" == 3.13.4 ]] \
+        || die 'the Flutter fork did not provide Dart 3.13.4'
+    # The fork's dart:ui sources for pub and the analyzer (precache brings
+    # upstream's). Compilation takes dart:ui from the kit's patched SDK.
+    rsync -a --delete --         "$WORK/kit/usr/lib/denial/plugin-build-kit/flutter/bin/cache/pkg/sky_engine/"         "$FLUTTER_DIR/bin/cache/pkg/sky_engine/"
+}
+
+# The layout flutter assemble expects of --local-engine-src-path: the host
+# engine output (Dart SDK, asset compilers) and the target output (patched
+# SDK, gen_snapshot). Every arm64 tool runs under qemu-user.
+make_view() {
+    local view="$WORK/engine-view"
+    local host="$view/out/denial_host_release"
+    local target="$view/out/denial_linux_arm64_release"
+    local tool
+    rm -rf -- "$view"
+    mkdir -p -- "$host/gen" "$target"
+    for tool in gen_snapshot impellerc font-subset; do
+        printf '#!/bin/sh\nexec qemu-aarch64 -L /usr/aarch64-linux-gnu %q "$@"\n' \
+            "$KIT/$tool" > "$view/$tool"
+        chmod 755 -- "$view/$tool"
+    done
+    # Denial's engine builds with flutter_prebuilt_dart_sdk = true: its host
+    # Dart SDK is the prebuilt one the fork's flutter tool downloads.
+    ln -s -- "$FLUTTER_DIR/bin/cache/dart-sdk" "$host/dart-sdk"
+    ln -s -- "$view/impellerc" "$host/impellerc"
+    # flutter assemble passes impellerc the shader_lib beside it.
+    ln -s -- "$KIT/shader_lib" "$host/shader_lib"
+    ln -s -- "$view/font-subset" "$host/font-subset"
+    ln -s -- "$KIT/gen/const_finder.dart.snapshot" "$host/gen/const_finder.dart.snapshot"
+    # Copied into the assembly by unpack_linux and never used: Denial runs
+    # the raw embedder, not the GTK runner.
+    ln -s -- "$KIT/libflutter_linux_gtk.so" "$host/libflutter_linux_gtk.so"
+    ln -s -- "$KIT/flutter_linux" "$host/flutter_linux"
+    ln -s -- "$KIT/flutter_patched_sdk" "$target/flutter_patched_sdk"
+    ln -s -- "$KIT/icudtl.dat" "$target/icudtl.dat"
+    ln -s -- "$view/gen_snapshot" "$target/gen_snapshot"
+    VIEW="$view"
+}
+
+snapshot_identity() {
+    python3 -I - "$1" <<'PY'
+import struct, sys
+data = open(sys.argv[1], 'rb').read()
+shoff = struct.unpack_from('<Q', data, 0x28)[0]
+shentsize, shnum = struct.unpack_from('<HH', data, 0x3A)
+sections = [struct.unpack_from('<IIQQQQIIQQ', data, shoff + i * shentsize)
+            for i in range(shnum)]
+address = None
+for _, kind, _, _, offset, size, link, _, _, entsize in sections:
+    if kind not in (2, 11):
+        continue
+    strings = sections[link][4]
+    for i in range(size // entsize):
+        name, _, _, _, value, _ = struct.unpack_from('<IBBHQQ', data, offset + i * entsize)
+        end = data.index(b'\0', strings + name)
+        if data[strings + name:end] == b'_kDartSnapshotData':
+            address = value
+phoff = struct.unpack_from('<Q', data, 0x20)[0]
+phentsize, phnum = struct.unpack_from('<HH', data, 0x36)
+for i in range(phnum):
+    kind, _, offset, vaddr, _, filesz, _, _ = struct.unpack_from('<IIQQQQQQ', data, phoff + i * phentsize)
+    if kind == 1 and vaddr <= address < vaddr + filesz:
+        start = address - vaddr + offset + 20
+        end = data.index(b'\0', start + 32)
+        print(data[start:start + 32].decode(), data[start + 32:end].decode())
+        break
+PY
+}
+
+assemble() {
+    local assembly="$WORK/assembly"
+    rm -rf -- "$assembly"
+    (cd -- "$ROOT/packages/denial_flutter_sdk" && "$FLUTTER" pub get --enforce-lockfile)
+    (
+        cd -- "$ROOT/dart_shell"
+        "$FLUTTER" pub get --enforce-lockfile
+        "$FLUTTER" assemble \
+            --local-engine-src-path="$VIEW" \
+            --local-engine=denial_linux_arm64_release \
+            --local-engine-host=denial_host_release \
+            --suppress-analytics \
+            --resource-pool-size="$JOBS" \
+            --output="$assembly" \
+            -dTargetFile=lib/main.dart \
+            -dBuildMode=release \
+            -dTargetPlatform=linux-arm64 \
+            -dDartObfuscation=false \
+            -dTrackWidgetCreation=true \
+            -dTreeShakeIcons=true \
+            release_bundle_linux-arm64_assets
+    )
+    [[ -f "$assembly/lib/libapp.so" ]] || die 'assemble produced no lib/libapp.so'
+    local identity
+    identity="$(snapshot_identity "$assembly/lib/libapp.so")"
+    printf 'libapp.so snapshot: %s\n' "$identity"
+    [[ "$identity" == "$SNAPSHOT_HASH product no-asan no-msan no-tsan no-shared_data no-code_comments no-dwarf_stack_traces arm64 linux no-compressed-pointers" ]] \
+        || die 'libapp.so does not carry the snapshot identity of the 0.6.8 engine'
+    rm -rf -- "$OUT"
+    mkdir -p -- "$OUT/lib" "$OUT/data/flutter_assets"
+    install -m755 -- "$assembly/lib/libapp.so" "$OUT/lib/libapp.so"
+    rsync -a --delete -- "$assembly/flutter_assets/" "$OUT/data/flutter_assets/"
+    printf 'Shell bundle: %s\n' "$OUT"
+}
+
+fetch_kit
+fetch_flutter
+make_view
+assemble
