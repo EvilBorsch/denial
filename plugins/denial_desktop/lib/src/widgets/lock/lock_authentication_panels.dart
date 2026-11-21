@@ -11,6 +11,7 @@ class _LockAuthenticationPanel extends StatelessWidget {
     required this.onCancel,
     required this.onSwitchCredential,
     required this.usingPin,
+    this.onRequestKeyboard,
   });
 
   final bool desktop;
@@ -24,6 +25,10 @@ class _LockAuthenticationPanel extends StatelessWidget {
   /// Offered only when a PIN is set: switches between PIN and password.
   final VoidCallback? onSwitchCredential;
   final bool usingPin;
+
+  /// Mobile: a tap on the password field focuses it and brings the software
+  /// keyboard up.
+  final VoidCallback? onRequestKeyboard;
 
   @override
   Widget build(BuildContext context) {
@@ -58,6 +63,7 @@ class _LockAuthenticationPanel extends StatelessWidget {
         onBegin: onBegin,
         onCancel: onCancel,
         onUsePin: onSwitchCredential,
+        onRequestKeyboard: onRequestKeyboard ?? focusNode.requestFocus,
       );
     }
 
@@ -311,7 +317,7 @@ List<TextInputFormatter> _responseFormatters({
       ]
     : [LengthLimitingTextInputFormatter(1024)];
 
-class _MobileLockAuthenticationPanel extends StatelessWidget {
+class _MobileLockAuthenticationPanel extends ConsumerWidget {
   const _MobileLockAuthenticationPanel({
     required this.state,
     required this.controller,
@@ -320,6 +326,7 @@ class _MobileLockAuthenticationPanel extends StatelessWidget {
     required this.onBegin,
     required this.onCancel,
     required this.onUsePin,
+    required this.onRequestKeyboard,
   });
 
   final AuthenticationState state;
@@ -332,8 +339,21 @@ class _MobileLockAuthenticationPanel extends StatelessWidget {
   /// Offered when a PIN is set; this panel only ever asks for the password.
   final VoidCallback? onUsePin;
 
+  /// A tap anywhere on the field's row: focus and the software keyboard.
+  final VoidCallback onRequestKeyboard;
+
+  /// Space around the panel; the bottom is its distance from the screen's
+  /// edge while the keyboard is down.
+  static const EdgeInsets _margin = EdgeInsets.fromLTRB(18, 12, 18, 22);
+
+  /// Between the panel and the keys while the keyboard is up.
+  static const double _keyboardGap = 16;
+
+  /// The field's row is one touch target, comfortably finger sized.
+  static const double _fieldHeight = 64;
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
     final prompt = state.prompt;
     final error =
@@ -352,19 +372,41 @@ class _MobileLockAuthenticationPanel extends StatelessWidget {
       1,
       30,
     );
-    final accent = ShellTheme.of(context).accentPalette;
     final size = MediaQuery.sizeOf(context);
+    final padding = MediaQuery.paddingOf(context);
+    final (keyboardShown, shortcuts) = ref.watch(
+      referenceShellProvider.select(
+        (shell) => (shell.edgePanelVisible, shell.oskShortcuts),
+      ),
+    );
+    // The panel rides above the keyboard (KeyboardClearance), so it must fit
+    // in the room the keys leave, in either orientation.
+    final keyboardHeight = ReferenceShellMetrics.edgePanelHeight(
+      size,
+      shortcuts: shortcuts,
+    );
+    final roomAboveKeyboard =
+        size.height -
+        keyboardHeight -
+        _keyboardGap -
+        math.max(padding.top, _margin.top);
+    final maxHeight = math.max(
+      180.0,
+      math.min(size.height * 0.58, roomAboveKeyboard),
+    );
 
     return Positioned.fill(
-      child: MobileKeyboardViewport(
-        child: SafeArea(
-          minimum: const EdgeInsets.fromLTRB(18, 12, 18, 22),
-          child: Align(
-            alignment: Alignment.bottomCenter,
+      child: SafeArea(
+        minimum: _margin,
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: KeyboardClearance(
+            clearance: math.max(padding.bottom, _margin.bottom),
+            gap: _keyboardGap,
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: 480,
-                maxHeight: math.max(210.0, size.height * 0.58),
+                maxWidth: _MobileFace.isTablet(size) ? 560 : 480,
+                maxHeight: maxHeight,
               ),
               child: DecoratedBox(
                 key: const ValueKey<String>('mobile-lock-authentication-panel'),
@@ -374,7 +416,7 @@ class _MobileLockAuthenticationPanel extends StatelessWidget {
                   border: Border.all(color: context.shellColors.hairline),
                 ),
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+                  padding: const EdgeInsets.fromLTRB(20, 14, 14, 20),
                   child: FocusTraversalGroup(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -410,7 +452,7 @@ class _MobileLockAuthenticationPanel extends StatelessWidget {
                           ),
                         ],
                         if (message != null && message.isNotEmpty) ...[
-                          const SizedBox(height: 13),
+                          const SizedBox(height: 11),
                           Semantics(
                             liveRegion: true,
                             label: message,
@@ -420,7 +462,7 @@ class _MobileLockAuthenticationPanel extends StatelessWidget {
                                 color: error
                                     ? context.shellColors.performanceBad
                                     : context.shellColors.textSecondary,
-                                fontSize: 13,
+                                fontSize: 14,
                                 height: 1.3,
                                 fontWeight: error
                                     ? FontWeight.w600
@@ -436,15 +478,17 @@ class _MobileLockAuthenticationPanel extends StatelessWidget {
                             child: Text(
                               l10n.lockRetryInSeconds(cooldownSeconds),
                               style: ShellText.base.copyWith(
-                                color: context.shellColors.performanceWarning,
-                                fontSize: 12,
+                                color: context
+                                    .shellColors
+                                    .performanceWarning,
+                                fontSize: 13,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
                         ],
                         if (canRespond) ...[
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 14),
                           Text(
                             (promptLabel == null ||
                                     promptLabel.isEmpty ||
@@ -453,87 +497,19 @@ class _MobileLockAuthenticationPanel extends StatelessWidget {
                                 : promptLabel,
                             style: ShellText.base.copyWith(
                               color: context.shellColors.textSecondary,
-                              fontSize: 12,
+                              fontSize: 13,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
-                          const SizedBox(height: 7),
-                          Semantics(
-                            label: prompt!.obscure
-                                ? l10n.lockPasswordObscured
-                                : l10n.lockAuthenticationResponse,
-                            textField: true,
-                            obscured: prompt.obscure,
-                            child: TextFieldTapRegion(
-                              child: AnimatedBuilder(
-                                animation: focusNode,
-                                builder: (context, child) => DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    color: context.shellColors.background
-                                        .withValues(alpha: 0.72),
-                                    borderRadius: context.shellTheme
-                                        .borderRadius(14),
-                                    border: Border.all(
-                                      color: focusNode.hasFocus
-                                          ? accent.primary
-                                          : context.shellColors.hairline,
-                                    ),
-                                  ),
-                                  child: child,
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    15,
-                                    5,
-                                    6,
-                                    5,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: EditableText(
-                                          key: const ValueKey<String>(
-                                            'lock-authentication-field',
-                                          ),
-                                          controller: controller,
-                                          focusNode: focusNode,
-                                          style: context.shellTheme.text.base
-                                              .copyWith(
-                                                fontSize: 17,
-                                                letterSpacing: prompt.obscure
-                                                    ? 2.2
-                                                    : 0,
-                                              ),
-                                          cursorColor: accent.primary,
-                                          backgroundCursorColor:
-                                              context.shellColors.textTertiary,
-                                          selectionColor: accent.selection,
-                                          obscureText: prompt.obscure,
-                                          obscuringCharacter: '•',
-                                          autocorrect: false,
-                                          enableSuggestions: false,
-                                          enableInteractiveSelection: false,
-                                          keyboardType:
-                                              TextInputType.visiblePassword,
-                                          textInputAction: TextInputAction.done,
-                                          inputFormatters: [
-                                            LengthLimitingTextInputFormatter(
-                                              1024,
-                                            ),
-                                          ],
-                                          onSubmitted: (_) => onSubmit(),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      _MobileLockSubmitButton(
-                                        label: l10n.lockUnlock,
-                                        onPressed: onSubmit,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
+                          const SizedBox(height: 8),
+                          _MobileLockResponseField(
+                            prompt: prompt!,
+                            controller: controller,
+                            focusNode: focusNode,
+                            keyboardShown: keyboardShown,
+                            height: _fieldHeight,
+                            onSubmit: onSubmit,
+                            onRequestKeyboard: onRequestKeyboard,
                           ),
                         ] else ...[
                           const SizedBox(height: 16),
@@ -569,6 +545,126 @@ class _MobileLockAuthenticationPanel extends StatelessWidget {
   }
 }
 
+/// The password field: the whole row takes the touch, focuses the field and
+/// brings the software keyboard up, and it keeps focus until the panel
+/// closes, so a keyboard cover always types into it.
+class _MobileLockResponseField extends StatelessWidget {
+  const _MobileLockResponseField({
+    required this.prompt,
+    required this.controller,
+    required this.focusNode,
+    required this.keyboardShown,
+    required this.height,
+    required this.onSubmit,
+    required this.onRequestKeyboard,
+  });
+
+  final AuthenticationPrompt prompt;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool keyboardShown;
+  final double height;
+  final VoidCallback onSubmit;
+  final VoidCallback onRequestKeyboard;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final accent = ShellTheme.of(context).accentPalette;
+    return Semantics(
+      label: prompt.obscure
+          ? l10n.lockPasswordObscured
+          : l10n.lockAuthenticationResponse,
+      textField: true,
+      obscured: prompt.obscure,
+      onTap: onRequestKeyboard,
+      // Keys of the software keyboard belong to the same tap group, so
+      // typing on them is never a tap outside the field.
+      child: TextFieldTapRegion(
+        child: GestureDetector(
+          key: const ValueKey<String>('lock-authentication-field-row'),
+          behavior: HitTestBehavior.opaque,
+          onTap: onRequestKeyboard,
+          child: AnimatedBuilder(
+            animation: focusNode,
+            builder: (context, child) => DecoratedBox(
+              decoration: BoxDecoration(
+                color: context.shellColors.background.withValues(alpha: 0.72),
+                borderRadius: context.shellTheme.borderRadius(16),
+                border: Border.all(
+                  width: focusNode.hasFocus ? 2 : 1,
+                  color: focusNode.hasFocus
+                      ? accent.primary
+                      : context.shellColors.hairline,
+                ),
+              ),
+              child: child,
+            ),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: height),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 6, 6, 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: EditableText(
+                        key: const ValueKey<String>(
+                          'lock-authentication-field',
+                        ),
+                        controller: controller,
+                        focusNode: focusNode,
+                        style: context.shellTheme.text.base.copyWith(
+                          fontSize: 20,
+                          letterSpacing: prompt.obscure ? 2.6 : 0,
+                        ),
+                        cursorColor: accent.primary,
+                        backgroundCursorColor: context.shellColors.textTertiary,
+                        selectionColor: accent.selection,
+                        obscureText: prompt.obscure,
+                        obscuringCharacter: '•',
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        enableInteractiveSelection: false,
+                        // The row handles every touch on the field.
+                        rendererIgnoresPointer: true,
+                        // A touch elsewhere on the lock screen, or between
+                        // the keys, must not take the field's focus: a
+                        // keyboard cover would then type into nothing.
+                        onTapOutside: (_) {},
+                        keyboardType: TextInputType.visiblePassword,
+                        textInputAction: TextInputAction.done,
+                        inputFormatters: [
+                          LengthLimitingTextInputFormatter(1024),
+                        ],
+                        onSubmitted: (_) => onSubmit(),
+                      ),
+                    ),
+                    if (!keyboardShown) ...[
+                      const SizedBox(width: 8),
+                      ExcludeSemantics(
+                        child: Icon(
+                          Icons.keyboard_rounded,
+                          size: 24,
+                          color: context.shellColors.textTertiary,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 10),
+                    _MobileLockSubmitButton(
+                      label: l10n.lockUnlock,
+                      onPressed: onSubmit,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MobileLockCancelButton extends StatelessWidget {
   const _MobileLockCancelButton({required this.label, required this.onPressed});
 
@@ -583,14 +679,21 @@ class _MobileLockCancelButton extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onPressed,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
-          child: Text(
-            label,
-            style: ShellText.base.copyWith(
-              color: context.shellColors.textSecondary,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
+        // A finger-sized target around the small label.
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48, minWidth: 64),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            child: Center(
+              widthFactor: 1,
+              child: Text(
+                label,
+                style: ShellText.base.copyWith(
+                  color: context.shellColors.textSecondary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
         ),
@@ -620,11 +723,11 @@ class _MobileLockSubmitButton extends StatelessWidget {
             borderRadius: context.shellTheme.borderRadius(11),
           ),
           child: SizedBox(
-            width: 42,
-            height: 42,
+            width: 52,
+            height: 52,
             child: Icon(
               Icons.arrow_forward_rounded,
-              size: 19,
+              size: 22,
               color: accent.onPrimary,
             ),
           ),
@@ -661,7 +764,7 @@ class _MobileLockPrimaryButton extends StatelessWidget {
             borderRadius: context.shellTheme.borderRadius(14),
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: Text(
               label,
               textAlign: TextAlign.center,

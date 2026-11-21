@@ -186,6 +186,107 @@ class _KeyboardRideState extends ConsumerState<KeyboardRide> {
   }
 }
 
+/// Keeps [child], which sits [clearance] above the view's bottom edge, [gap]
+/// above the keyboard while the keys would cover it, and in place otherwise.
+///
+/// Unlike [KeyboardRide] it follows the keys themselves rather than the
+/// keyboard's open state: the same spring from the same start as
+/// [EdgePanelLayer], and the finger while the keyboard is dragged, so the
+/// two never overlap as the keyboard slides in or out. Only its layer moves.
+class KeyboardClearance extends ConsumerStatefulWidget {
+  const KeyboardClearance({
+    required this.clearance,
+    required this.child,
+    this.gap = 16,
+    super.key,
+  });
+
+  final double clearance;
+  final double gap;
+  final Widget child;
+
+  @override
+  ConsumerState<KeyboardClearance> createState() => _KeyboardClearanceState();
+}
+
+class _KeyboardClearanceState extends ConsumerState<KeyboardClearance>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _keys;
+  final _translation = ValueNotifier(Offset.zero);
+  double _panelHeight = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final state = ref.read(referenceShellProvider);
+    _keys = AnimationController.unbounded(
+      vsync: this,
+      value: state.edgePanelVisible ? 1.0 : state.edgePanelDragProgress,
+    )..addListener(_update);
+  }
+
+  @override
+  void didUpdateWidget(covariant KeyboardClearance oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _update();
+  }
+
+  @override
+  void dispose() {
+    _keys.dispose();
+    _translation.dispose();
+    super.dispose();
+  }
+
+  void _update() {
+    final keys =
+        _panelHeight * unit(_keys.value) + widget.gap - widget.clearance;
+    _translation.value = Offset(0, keys > 0 ? -keys : 0);
+  }
+
+  /// As [_EdgePanelLayerState._onPanelChanged].
+  void _onPanelChanged((bool, double, bool) signal) {
+    final (visible, drag, dragActive) = signal;
+    if (dragActive) {
+      _keys.stop();
+      _keys.value = drag;
+    } else {
+      springTo(
+        _keys,
+        visible ? 1.0 : 0.0,
+        spring: Motion.gentle,
+        telemetryLabel: 'keyboard_clearance',
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    ref.listen<(bool, double, bool)>(
+      referenceShellProvider.select(
+        (state) => (
+          state.edgePanelVisible,
+          state.edgePanelDragProgress,
+          state.edgePanelDragActive,
+        ),
+      ),
+      (_, next) => _onPanelChanged(next),
+    );
+    _panelHeight = ReferenceShellMetrics.edgePanelHeight(
+      MediaQuery.sizeOf(context),
+      shortcuts: ref.watch(
+        referenceShellProvider.select((state) => state.oskShortcuts),
+      ),
+    );
+    _update();
+    return CompositedTranslation(
+      translation: _translation,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      child: widget.child,
+    );
+  }
+}
+
 class EdgePanelLayer extends ConsumerStatefulWidget {
   const EdgePanelLayer({this.hints = false, super.key});
 
