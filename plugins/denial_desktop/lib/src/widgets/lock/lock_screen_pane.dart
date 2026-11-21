@@ -100,6 +100,26 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
   bool _authenticationVisible = false;
   int? _focusedPromptSequence;
 
+  /// Holds focus for the lock screen's keys while no field does: Enter,
+  /// Escape and typing ahead of the password field.
+  final FocusNode _paneFocus = FocusNode(debugLabel: 'lock-screen');
+  late final ReferenceShellController _shell;
+
+  /// Mobile: the password panel is up, and this pane alone shows and hides
+  /// the software keyboard (ReferenceShellController.setLockScreenKeyboardOwner).
+  bool _keyboardOwned = false;
+
+  /// The next password field to get ready brings the software keyboard up by
+  /// itself, unless a keyboard cover is attached. Once per opening.
+  bool _keyboardOnPrompt = false;
+
+  /// Typed on a keyboard cover before the password field was ready; it goes
+  /// into the field as soon as there is one.
+  String _typedAhead = '';
+
+  /// Enter came with [_typedAhead]: submit it once it is in the field.
+  bool _submitTypedAhead = false;
+
   /// The user asked for the account password although a PIN is set.
   bool _usePassword = false;
 
@@ -146,6 +166,7 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
     super.initState();
     _motion = createTicker(_syncMotion);
     widget.ambient.addStatusListener(_ambientStatusChanged);
+    _shell = ref.read(referenceShellProvider.notifier);
   }
 
   @override
@@ -168,9 +189,13 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
 
   @override
   void dispose() {
+    // A flag only: the session's unlock closes the keyboard itself.
+    if (_keyboardOwned) _shell.setLockScreenKeyboardOwner(false);
+    _typedAhead = '';
     _responseController.clear();
     _responseController.dispose();
     _responseFocus.dispose();
+    _paneFocus.dispose();
     widget.ambient.removeStatusListener(_ambientStatusChanged);
     _motion.dispose();
     _face.dispose();
@@ -249,8 +274,141 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
     ref.read(authenticationProvider.notifier).begin(password: _usePassword);
   }
 
+  /// The software keyboard follows the password panel: it becomes this
+  /// pane's while the panel is up, and goes down with the panel.
+  void _syncKeyboardOwnership(bool owned) {
+    if (owned) {
+      // Every build: only a flag, which the controller drops when it
+      // rebuilds or the session locks or unlocks.
+      _shell.setLockScreenKeyboardOwner(true);
+    }
+    if (owned == _keyboardOwned) {
+      return;
+    }
+    _keyboardOwned = owned;
+    if (owned) {
+      _keyboardOnPrompt = true;
+      // A prompt already waiting is answered as soon as the field is built.
+      WidgetsBinding.instance.addPostFrameCallback((_) => _readyResponse());
+      return;
+    }
+    _shell.setLockScreenKeyboardOwner(false);
+    _keyboardOnPrompt = false;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_keyboardOwned) _shell.closeEdgePanel();
+    });
+  }
+
+  /// After a prompt that wants an answer: the field takes focus. On mobile
+  /// what was typed ahead goes into it, and the first field of an opening
+  /// brings the software keyboard up unless a keyboard cover is attached.
+  void _readyResponse() {
+    if (!mounted || !widget.authenticationEnabled) {
+      return;
+    }
+    final authentication = ref.read(authenticationProvider);
+    if (!(authentication.prompt?.requiresResponse ?? false) ||
+        !(_authenticationVisible || authentication.busy)) {
+      return;
+    }
+    _responseFocus.requestFocus();
+    if (!_keyboardOwned || !authentication.busy) {
+      return;
+    }
+    _flushTypedAhead();
+    if (_keyboardOnPrompt) {
+      _keyboardOnPrompt = false;
+      if (!ref.read(hardwareKeyboardAttachedProvider)) {
+        _shell.openEdgePanel();
+      }
+    }
+  }
+
+  /// A tap on the password field: always the software keyboard, cover or
+  /// not, since a cover folded behind the screen cannot type.
+  void _requestKeyboard() {
+    _responseFocus.requestFocus();
+    if (!_keyboardOwned) {
+      return;
+    }
+    _keyboardOnPrompt = false;
+    _shell.openEdgePanel();
+  }
+
+  void _flushTypedAhead() {
+    final text = _typedAhead;
+    final submit = _submitTypedAhead;
+    _typedAhead = '';
+    _submitTypedAhead = false;
+    if (text.isNotEmpty) {
+      _responseController.value = TextEditingValue(
+        text: text,
+        selection: TextSelection.collapsed(offset: text.length),
+      );
+    }
+    if (submit && text.isNotEmpty) {
+      _submitResponse();
+    }
+  }
+
+  /// Mobile: keys typed while no password field is ready open the panel,
+  /// start an attempt and wait for the field, so a password typed right
+  /// after the swipe, or straight on the clock face, keeps its first
+  /// characters. Keys the field has focus for never come here as text: the
+  /// field takes them.
+  KeyEventResult _handlePaneKey(FocusNode node, KeyEvent event) {
+    if (widget.desktop ||
+        !widget.authenticationEnabled ||
+        event is KeyUpEvent ||
+        _responseFocus.hasFocus) {
+      return KeyEventResult.ignored;
+    }
+    final authentication = ref.read(authenticationProvider);
+    if (!authentication.locked ||
+        !authentication.available ||
+        ref.read(simPinPendingProvider) ||
+        _pinMode(authentication)) {
+      return KeyEventResult.ignored;
+    }
+    final keys = HardwareKeyboard.instance;
+    if (keys.isControlPressed || keys.isAltPressed || keys.isMetaPressed) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.backspace) {
+      if (_typedAhead.isEmpty) {
+        return KeyEventResult.ignored;
+      }
+      _typedAhead = _typedAhead.characters.skipLast(1).toString();
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      if (_typedAhead.isEmpty) {
+        // The lock screen's own Enter shortcut opens the panel.
+        return KeyEventResult.ignored;
+      }
+      _submitTypedAhead = true;
+      _showAuthentication();
+      return KeyEventResult.handled;
+    }
+    final character = event.character;
+    if (character == null ||
+        character.isEmpty ||
+        character.runes.any((rune) => rune < 0x20 || rune == 0x7f)) {
+      return KeyEventResult.ignored;
+    }
+    if (_typedAhead.length < 1024) {
+      _typedAhead += character;
+    }
+    _showAuthentication();
+    return KeyEventResult.handled;
+  }
+
   void _switchCredential({required bool password}) {
     _responseController.clear();
+    _typedAhead = '';
+    _submitTypedAhead = false;
     setState(() {
       _usePassword = password;
       _beginWhenIdle = true;
@@ -318,6 +476,20 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
       // Beside a docked pad the finger works until a PIN attempt starts.
       _syncFingerprintOffer(docked ? !authentication.busy : !credentialShown);
     }
+    // Mobile, while the password panel is up; the PIN pad has its own keys.
+    _syncKeyboardOwnership(credentialShown && !simPending && !pinMode);
+    if (widget.authenticationEnabled && !widget.desktop) {
+      // A keyboard cover attached while the panel is up takes over from the
+      // software keyboard; detached, it hands the field back to it.
+      ref.listen<bool>(hardwareKeyboardAttachedProvider, (_, attached) {
+        if (!_keyboardOwned) return;
+        if (attached) {
+          _shell.closeEdgePanel();
+        } else if (_responseFocus.hasFocus) {
+          _shell.openEdgePanel();
+        }
+      });
+    }
     final lockSettings = ref.watch(
       shellSettingsProvider.select((settings) => settings.lockScreen),
     );
@@ -326,11 +498,7 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
       _focusedPromptSequence = authentication.prompt?.sequence;
       _responseController.clear();
       if (authentication.prompt?.requiresResponse ?? false) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && (_authenticationVisible || authentication.busy)) {
-            _responseFocus.requestFocus();
-          }
-        });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _readyResponse());
       }
     }
     final now = ref.watch(clockProvider).value ?? DateTime.now();
@@ -537,6 +705,7 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
                       ? () => _switchCredential(password: pinMode)
                       : null,
                   usingPin: pinMode,
+                  onRequestKeyboard: widget.desktop ? null : _requestKeyboard,
                 ),
               if (revealed == _LockCredential.sim)
                 _MobileSimPinStage(
@@ -579,7 +748,9 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
                 _showAuthentication,
           },
           child: Focus(
+            focusNode: _paneFocus,
             autofocus: true,
+            onKeyEvent: _handlePaneKey,
             child: Semantics(
               container: true,
               explicitChildNodes: true,
@@ -647,6 +818,10 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
     if (opening) {
       setState(() => _authenticationVisible = true);
     }
+    // Until the password field is ready the pane takes the keys typed ahead.
+    if (!widget.desktop && !_responseFocus.hasFocus) {
+      _paneFocus.requestFocus();
+    }
     final authentication = ref.read(authenticationProvider);
     if (authentication.busy) {
       // On mobile a cancelled attempt may still be closing; open a new one
@@ -681,7 +856,11 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
   void _cancelAuthentication() {
     ref.read(lockNotificationOpenProvider.notifier).clear();
     _responseController.clear();
+    _typedAhead = '';
+    _submitTypedAhead = false;
     _responseFocus.unfocus();
+    // Enter or typing on a keyboard cover opens the panel again.
+    if (!widget.desktop) _paneFocus.requestFocus();
     _beginWhenIdle = false;
     final authentication = ref.read(authenticationProvider);
     if (authentication.busy) {

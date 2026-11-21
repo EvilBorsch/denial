@@ -337,6 +337,10 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
   Timer? _launchRequestTimer;
   Timer? _appSwitchOrderTimer;
   bool _automaticSoftwareKeyboard = false;
+
+  /// The lock screen's password panel shows and hides the software keyboard
+  /// itself; see [setLockScreenKeyboardOwner].
+  bool _lockScreenOwnsKeyboard = false;
   final Set<String> _legacyTextInputAppIds = <String>{};
   final Set<String> _backgroundLaunchAppIds = <String>{};
   Timer? _automaticSoftwareKeyboardCloseTimer;
@@ -345,6 +349,7 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
   void _resetBuildFields() {
     _lastTextInput = null;
     _edgePanelDismissalSerial = null;
+    _lockScreenOwnsKeyboard = false;
     _automaticSoftwareKeyboardCloseTimer?.cancel();
     _automaticSoftwareKeyboardCloseTimer = null;
     unawaited(_textInputStateSubscription?.cancel());
@@ -372,7 +377,7 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
 
   void _handleTextInputState(DenialTextInputState input) {
     _lastTextInput = input;
-    if (!_automaticSoftwareKeyboard) {
+    if (!_automaticSoftwareKeyboard || _lockScreenKeyboardOwned) {
       return;
     }
     // Text fields on a desk take the desk's keyboard, never the phone's.
@@ -402,11 +407,35 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
         _automaticSoftwareKeyboardCloseGrace,
         () {
           _automaticSoftwareKeyboardCloseTimer = null;
-          if (isBuildGenerationActive(generation)) {
+          if (isBuildGenerationActive(generation) &&
+              !_lockScreenKeyboardOwned) {
             closeEdgePanel();
           }
         },
       );
+    }
+  }
+
+  bool get _lockScreenKeyboardOwned => _lockScreenOwnsKeyboard && state.locked;
+
+  /// [owned] while the lock screen's password panel is up: it then decides
+  /// alone whether the software keyboard shows, and deniald's editor states
+  /// neither open nor close it.
+  ///
+  /// deniald opens the panel for a shell editor only when the editor asks
+  /// within 250 ms of a touch on the shell. The password field is focused
+  /// after the swipe has ended and deniald has answered with a prompt, so
+  /// that request comes too late; and while a prompt is replaced, after a
+  /// wrong password, the editor closes and reopens, which would drop the
+  /// keyboard and lift it again. The lock screen also knows whether a
+  /// keyboard cover is attached, which deniald does not tell it.
+  ///
+  /// Only a flag changes here: a widget may call this while it builds.
+  void setLockScreenKeyboardOwner(bool owned) {
+    _lockScreenOwnsKeyboard = owned;
+    if (owned) {
+      _automaticSoftwareKeyboardCloseTimer?.cancel();
+      _automaticSoftwareKeyboardCloseTimer = null;
     }
   }
 
@@ -459,6 +488,7 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
   void _resetSecurePresentation() {
     _endFingerGesture();
     _deck.halt();
+    _lockScreenOwnsKeyboard = false;
     _quickSettingsDragStartedOpen = false;
     _quickSettingsDragMoved = false;
     _edgePanelDragStartedOpen = false;
