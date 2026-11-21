@@ -1,13 +1,15 @@
-# Building the shell for an installed Denial 0.6.8 (EvilBorsch fork)
+# Building Denial 0.6.8 parts for the tablet (EvilBorsch fork)
 
-This fork changes only Denial's Flutter shell (`dart_shell`, `plugins/*`,
-`packages/*`). The compositor (`deniald`), the Flutter engine package
-(`denial-flutter-engine` 0.6.8-1, ABI `3.47.5.denial1`) and Settings stay the
-signed v0.6.8 release builds. A change is installed by replacing the shell's
-two files in `/usr/lib/denial/flutter/`:
+This fork changes Denial's Flutter shell (`dart_shell`, `plugins/*`,
+`packages/*`) and the compositor `deniald`. The Flutter engine package
+(`denial-flutter-engine` 0.6.8-1, ABI `3.47.5.denial1`), `denialctl`, the
+portal, the polkit agent and Settings stay the signed v0.6.8 release builds.
+A change is installed as a `denial` package made from the release's, in which
+only these differ:
 
-- `lib/libapp.so`, the AOT-compiled shell;
-- `data/flutter_assets/`, its assets.
+- `/usr/lib/denial/flutter/lib/libapp.so`, the AOT-compiled shell;
+- `/usr/lib/denial/flutter/data/flutter_assets/`, its assets;
+- `/usr/bin/deniald`, when the change touches the compositor.
 
 ## Why no engine build is needed
 
@@ -32,13 +34,21 @@ bit-identical to the release's (`libapp.so` SHA-256
 `c09d7b6b4b399e23c27969d3e8675b323c043734cc9aa3b08d7b9e99d8d8d168`, and all
 33 files of `flutter_assets`).
 
+`deniald` loads the engine with `dlopen` and talks to it through the
+embedder API of the same ABI, so a rebuilt `deniald` runs with the release's
+engine package as long as `FLUTTER_ENGINE_ABI` stays `3.47.5.denial1`.
+
 ## Prerequisites
 
 An x86-64 Linux host (here WSL Ubuntu 26.04) with network access and:
 
 ```sh
-sudo apt install git curl dpkg qemu-user libc6-arm64-cross python3 rsync unzip
+sudo apt install git curl dpkg qemu-user libc6-arm64-cross python3 rsync unzip \
+    mmdebstrap gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu pkg-config
 ```
+
+For `deniald`, rustup with the toolchain that `rust-toolchain.toml` pins
+(1.98.0) and the target `aarch64-unknown-linux-gnu`.
 
 Caches go to `$EB_WORK` (default `~/work-denial-shell`, about 2 GB): the
 Flutter fork checkout with its downloaded artifacts and Dart 3.13.4, and the
@@ -49,7 +59,7 @@ extracted build kit. Downloads are pinned by SHA-256 or Git revision.
 ```sh
 git clone https://github.com/EvilBorsch/denial ~/androidlinux/components/denial
 cd ~/androidlinux/components/denial
-git checkout eb/lockscreen-keyboard        # or the branch to build
+git checkout eb/compositor-inhibit-keyboard   # or the branch to build
 EB_JOBS=4 tools/eb-build-shell ~/work-denial-shell/out
 ```
 
@@ -62,32 +72,119 @@ lib/libapp.so
 data/flutter_assets/...
 ```
 
-Pack it for the tablet:
-
-```sh
-tar -C ~/work-denial-shell/out -czf denial-shell-0.6.8-eb1-lockscreen.tar.gz lib data
-sha256sum denial-shell-0.6.8-eb1-lockscreen.tar.gz > denial-shell-0.6.8-eb1-lockscreen.tar.gz.sha256
-```
-
 The bundle keeps the release's `.denial-ui-source.json` on the device: plugin
 bundles built with the 0.6.8 kit keep loading.
+
+## Build deniald
+
+`deniald` is cross-built on the x86-64 host against an Ubuntu 26.04 arm64
+root, the libraries the tablet runs (glibc 2.43). Upstream's tools expect an
+Arch Linux ARM root; `denial_cross_configure_rust` in
+`tools/lib/denial-architecture.sh` also takes a Debian or Ubuntu root, whose
+libraries and pkg-config files are in `/usr/lib/aarch64-linux-gnu`.
+
+Make the root once, as root (about 4 minutes, 376 MB):
+
+```sh
+sudo tools/eb-arm64-sysroot ~/work-denial-sysroot
+```
+
+It extracts the `-dev` packages `deniald` builds against, with their
+dependencies, from `ports.ubuntu.com` (`resolute`, `-updates`, `-security`)
+with mmdebstrap's extract variant: no maintainer scripts run, so no
+emulator is needed. `EB-SYSROOT-PACKAGES.txt` in the root lists the exact
+packages (on 22.11.2026: `libc6 2.43-2ubuntu2.7`, `libinput10
+1.31.1-1ubuntu1.2`, `libseat1 0.9.2-2`, `libgbm1 26.0.8-1ubuntu0.3`,
+`libudev1 259.9-0ubuntu0.1`, `libxkbcommon0 1.13.1-1`, 190 in all).
+
+Build, as the release does (`cargo build --locked --release --features
+flutter --bin deniald`, default features):
+
+```sh
+EB_JOBS=8 tools/eb-build-deniald build ~/work-denial-sysroot ~/work-denial-deniald/out
+```
+
+About 8 minutes with 8 jobs. The Cargo target directory is
+`~/work-denial-deniald/target` (`EB_WORK`). The binary names the fork's
+commit as its build (`deniald --version`: `deniald 0.6.8 (build
+eb.g<commit>; …)` once installed); `out/deniald.txt` lists its SHA-256, the
+libraries it links and the glibc symbol versions it needs.
+
+### Checked against the release
+
+Built the same way from the untouched `v0.6.8` tag
+(`EB_BUILD_IDENTITY=main.g01b588ec50831bce9e57aed623901f49846ec791`), the
+binary is not byte-identical to the release's (another root and linker), but
+on 22.11.2026:
+
+- it links the same eight libraries as the release's `deniald`
+  (`libgbm.so.1 libseat.so.1 libudev.so.1 libinput.so.10 libxkbcommon.so.0
+  libgcc_s.so.1 libm.so.6 libc.so.6`) with the same interpreter
+  `/lib/ld-linux-aarch64.so.1`;
+- it imports exactly the same 376 versioned dynamic symbols
+  (`objdump -T`), the newest glibc one `GLIBC_2.39`, which is what the
+  package's `libc6 (>= 2.39)` says;
+- under `qemu-aarch64 -L ~/work-denial-sysroot` its `--help` output is
+  identical to the release binary's, and `--version` reports the same build
+  identity and engine ABI.
+
+`deniald` 0.6.8-1+eb3 (commit `a0943dd`) differs from it by one import,
+`libinput_device_keyboard_has_key@LIBINPUT_0.15.0`, which the keyboard
+report uses.
+
+### deniald's tests
+
+```sh
+EB_JOBS=8 tools/eb-build-deniald test ~/work-denial-sysroot
+EB_JOBS=8 tools/eb-build-deniald test ~/work-denial-sysroot -- idle_policy system_controls
+```
+
+The tests run under qemu-aarch64 with the root. On
+`eb/compositor-inhibit-keyboard` 692 of 697 pass, 1 is ignored and 4 fail
+that need what qemu-user in WSL does not give; they fail the same way on
+untouched v0.6.8: the three `cpu_scheduling` kernel tests (utilization clamp
+`EOPNOTSUPP` in the WSL kernel; a test re-executing its own binary, which
+qemu-user cannot) and the timing-sensitive
+`frame_deadline_source_tests::acquire_callback_removes_queued_deadline_source`.
+
+## The wire protocol
+
+`protocol/denial.fbs` is compiled into `protocol/generated/{dart,rust}` with
+flatc 25.9.23 (`protocol/FLATBUFFERS_VERSION`). Its release binary
+(`Linux.flatc.binary.g++-13.zip`, SHA-256
+`de0c6ad114a5a686ecf64322528c602c7d4512446a93f290f54f00ee5abea487`)
+reproduces the committed code:
+
+```sh
+mkdir -p ~/work-denial-flatc/bin && cd ~/work-denial-flatc
+curl -fLo flatc.zip https://github.com/google/flatbuffers/releases/download/v25.9.23/Linux.flatc.binary.g++-13.zip
+echo "de0c6ad114a5a686ecf64322528c602c7d4512446a93f290f54f00ee5abea487  flatc.zip" | sha256sum -c
+python3 -c "import zipfile; zipfile.ZipFile('flatc.zip').extractall('bin')" && chmod +x bin/flatc
+cd ~/androidlinux/components/denial
+FLATC=~/work-denial-flatc/bin/flatc tools/generate-denial-wire --check   # or without --check to regenerate
+```
+
+Add fields only at the end of a table: then a new `deniald` and the
+release's shell, or the release's `deniald` and a new shell, still read each
+other.
 
 ## A complete `denial` package
 
 ```sh
-tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb1 ~/debs
+tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb3 ~/debs ~/work-denial-deniald/out/deniald
 ```
 
-It takes the signed `denial_0.6.8-1_arm64.deb`, replaces only the two shell
-paths, and sets the version and maintainer. Every other file, the conffiles
-(`/etc/denial/session.conf` stays as packaged) and the maintainer scripts are
-the release's. It installs over 0.6.8-1 with the release's engine package.
+It takes the signed `denial_0.6.8-1_arm64.deb`, replaces the two shell paths
+and, with the fourth argument, `/usr/bin/deniald`, and sets the version and
+maintainer. If the new `deniald` needs a newer glibc than the package's
+`libc6 (>= 2.39)`, the tool raises that dependency. Every other file, the
+conffiles (`/etc/denial/session.conf` stays as packaged) and the maintainer
+scripts are the release's, except that the postinst gives `deniald`
+`cap_sys_nice` (the package depends on `libcap2-bin` for `setcap`). It
+installs over 0.6.8-1 and earlier `+ebN` builds with the release's engine
+package, `denial-flutter-engine (= 0.6.8-1)`.
 
-Building `deniald`, the engine or Settings from source is a separate,
-much larger job (`CROSS_BUILDING.md`, `tools/denial-flutter-engine`) and is
-not needed for shell changes.
-
-## Tests
+## Shell tests
 
 Denial runs its widget tests on its own engine's `flutter_tester`
 (`tools/denial-flutter-engine test`), which needs the engine build. Without
@@ -111,8 +208,8 @@ $F/bin/flutter test --local-engine-src-path=$W/test-view \
 
 On v0.6.8 this passes 188 tests and fails 12 that need Denial's engine
 (`left_app_test`, `session_power_test`, one of `phone_desk_test`, two of
-`mobile_connectivity_marks_test`); `eb/lockscreen-keyboard` passes 193 with
-the same 12 failing.
+`mobile_connectivity_marks_test`); `eb/lockscreen-keyboard` passes 193 and
+`eb/compositor-inhibit-keyboard` 196, with the same 12 failing.
 
 ## Another Denial release
 
@@ -121,4 +218,5 @@ SHA-256, snapshot identity) belong to v0.6.8. For another release, take that
 release's `denial-plugin-manager_*_arm64.deb` and `denial_*_arm64.deb`, check
 them against its signed `SHA256SUMS`, read the snapshot identity of its
 `libapp.so`, update the pins, and first rebuild the untouched release tag to
-confirm a bit-identical result.
+confirm a bit-identical shell and a `deniald` with the release's libraries
+and symbol imports.
