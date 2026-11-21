@@ -667,6 +667,9 @@ pub(super) struct WaylandFrontend {
     idle_inhibition_dirty: bool,
     #[cfg(feature = "flutter")]
     idle_inhibition_cached: bool,
+    /// logind holds the session out of idle: a block inhibitor on `idle`.
+    #[cfg(feature = "flutter")]
+    session_idle_inhibited: bool,
     #[cfg(feature = "flutter")]
     idle_notifier: smithay::wayland::idle_notify::IdleNotifierState<RuntimeState>,
     output_power: OutputPowerManager,

@@ -527,6 +527,8 @@ impl WaylandFrontend {
             #[cfg(feature = "flutter")]
             idle_inhibition_cached: false,
             #[cfg(feature = "flutter")]
+            session_idle_inhibited: false,
+            #[cfg(feature = "flutter")]
             idle_notifier,
             output_power,
             shortcuts_inhibit,

@@ -1054,3 +1054,270 @@ fn desk_leaving_a_dark_phone_locks_it() {
     let mut policy = phone_beside_desk(now);
     assert!(!policy.set_phone_with_desk(None, now));
 }
+
+fn sleep_test_policy(started: Instant) -> IdlePolicy {
+    let mut policy = IdlePolicy::default();
+    policy.configure(
+        configuration(
+            Some(Duration::from_secs(5)),
+            Some(Duration::from_secs(10)),
+            Some(Duration::from_secs(15)),
+        ),
+        started,
+    );
+    policy
+}
+
+#[test]
+fn sleep_inhibitor_lets_the_screen_lock_and_go_dark_but_holds_suspend_off() {
+    let started = Instant::now();
+    let mut policy = sleep_test_policy(started);
+    policy.set_sleep_inhibited(true, started + Duration::from_secs(1));
+
+    let lock = policy.evaluate(started + Duration::from_secs(5), false, [(output(1), true)]);
+    assert!(lock.lock);
+    let dpms = policy.evaluate(
+        started + Duration::from_secs(10),
+        false,
+        [(output(1), true)],
+    );
+    assert_eq!(
+        dpms.power_requests,
+        [IdlePowerRequest {
+            output: output(1),
+            powered: false,
+        }]
+    );
+
+    let held = policy.evaluate(
+        started + Duration::from_secs(15),
+        false,
+        [(output(1), false)],
+    );
+    assert!(!held.suspend);
+    assert!(held.suspend_withheld);
+    // Reported once; nothing more to wait for, so the loop sleeps until the
+    // inhibitor's end wakes it.
+    assert!(
+        policy
+            .evaluate(
+                started + Duration::from_secs(60),
+                false,
+                [(output(1), false)],
+            )
+            .eq(&IdlePolicyActions::default())
+    );
+    assert_eq!(policy.next_deadline(), None);
+
+    // The inhibitor ends: a full suspend timeout counts from there, and the
+    // dark, locked screen stays as it is.
+    let released = started + Duration::from_secs(100);
+    policy.set_sleep_inhibited(false, released);
+    assert_eq!(
+        policy.next_deadline(),
+        Some(released + Duration::from_secs(15))
+    );
+    let early = policy.evaluate(
+        released + Duration::from_secs(14),
+        false,
+        [(output(1), false)],
+    );
+    assert!(early.eq(&IdlePolicyActions::default()));
+    let suspend = policy.evaluate(
+        released + Duration::from_secs(15),
+        false,
+        [(output(1), false)],
+    );
+    assert!(suspend.suspend);
+    assert!(!suspend.suspend_withheld);
+    assert!(suspend.power_requests.is_empty());
+    assert!(!suspend.lock);
+}
+
+#[test]
+fn sleep_inhibitor_that_ends_early_moves_the_suspend_a_full_timeout_on() {
+    let started = Instant::now();
+    let mut policy = sleep_test_policy(started);
+    policy.set_sleep_inhibited(true, started + Duration::from_secs(1));
+    // Repeating the same state is no edge.
+    policy.set_sleep_inhibited(true, started + Duration::from_secs(2));
+    policy.set_sleep_inhibited(false, started + Duration::from_secs(3));
+    // Repeated releases do not move the deadline again.
+    policy.set_sleep_inhibited(false, started + Duration::from_secs(4));
+
+    policy.evaluate(started + Duration::from_secs(5), false, [(output(1), true)]);
+    policy.evaluate(
+        started + Duration::from_secs(10),
+        false,
+        [(output(1), true)],
+    );
+    assert_eq!(
+        policy.next_deadline(),
+        Some(started + Duration::from_secs(18))
+    );
+    assert!(
+        !policy
+            .evaluate(
+                started + Duration::from_secs(15),
+                false,
+                [(output(1), false)],
+            )
+            .suspend
+    );
+    assert!(
+        policy
+            .evaluate(
+                started + Duration::from_secs(18),
+                false,
+                [(output(1), false)],
+            )
+            .suspend
+    );
+}
+
+#[test]
+fn activity_under_a_sleep_inhibitor_restarts_the_interval_and_the_report() {
+    let started = Instant::now();
+    let mut policy = sleep_test_policy(started);
+    policy.set_sleep_inhibited(true, started);
+    policy.evaluate(started + Duration::from_secs(5), false, [(output(1), true)]);
+    policy.evaluate(
+        started + Duration::from_secs(10),
+        false,
+        [(output(1), true)],
+    );
+    assert!(
+        policy
+            .evaluate(
+                started + Duration::from_secs(15),
+                false,
+                [(output(1), false)],
+            )
+            .suspend_withheld
+    );
+
+    let touched = started + Duration::from_secs(20);
+    assert_eq!(
+        policy.note_activity(touched),
+        [IdlePowerRequest {
+            output: output(1),
+            powered: true,
+        }]
+    );
+    assert!(
+        policy
+            .evaluate(touched + Duration::from_secs(5), false, [(output(1), true)])
+            .lock
+    );
+    assert_eq!(
+        policy
+            .evaluate(
+                touched + Duration::from_secs(10),
+                false,
+                [(output(1), true)]
+            )
+            .power_requests
+            .len(),
+        1
+    );
+    let held = policy.evaluate(
+        touched + Duration::from_secs(15),
+        false,
+        [(output(1), false)],
+    );
+    assert!(held.suspend_withheld);
+    assert!(!held.suspend);
+}
+
+#[test]
+fn end_of_a_sleep_inhibitor_asks_again_for_a_refused_suspend() {
+    let started = Instant::now();
+    let mut policy = sleep_test_policy(started);
+    policy.evaluate(started + Duration::from_secs(5), false, [(output(1), true)]);
+    policy.evaluate(
+        started + Duration::from_secs(10),
+        false,
+        [(output(1), true)],
+    );
+    // logind refused this one: an inhibitor appeared just before it.
+    assert!(
+        policy
+            .evaluate(
+                started + Duration::from_secs(15),
+                false,
+                [(output(1), false)],
+            )
+            .suspend
+    );
+    policy.set_sleep_inhibited(true, started + Duration::from_secs(16));
+    assert_eq!(policy.next_deadline(), None);
+    policy.set_sleep_inhibited(false, started + Duration::from_secs(30));
+    assert!(
+        policy
+            .evaluate(
+                started + Duration::from_secs(45),
+                false,
+                [(output(1), false)],
+            )
+            .suspend
+    );
+}
+
+#[test]
+fn idle_inhibitor_over_a_sleep_inhibitor_holds_everything_until_both_end() {
+    let started = Instant::now();
+    let mut policy = sleep_test_policy(started);
+    policy.set_sleep_inhibited(true, started);
+    // logind's block on idle reaches the policy as an inhibition, as a
+    // visible Wayland inhibitor does.
+    for second in [5, 10, 15, 100] {
+        assert!(
+            policy
+                .evaluate(
+                    started + Duration::from_secs(second),
+                    true,
+                    [(output(1), true)],
+                )
+                .eq(&IdlePolicyActions::default())
+        );
+    }
+    assert_eq!(policy.next_deadline(), None);
+
+    // The idle block ends first: lock and display power-off count again, a
+    // suspend still waits for the sleep block.
+    let idle_released = started + Duration::from_secs(200);
+    policy.evaluate(idle_released, false, [(output(1), true)]);
+    assert_eq!(
+        policy.next_deadline(),
+        Some(idle_released + Duration::from_secs(5))
+    );
+    policy.evaluate(
+        idle_released + Duration::from_secs(5),
+        false,
+        [(output(1), true)],
+    );
+    policy.evaluate(
+        idle_released + Duration::from_secs(10),
+        false,
+        [(output(1), true)],
+    );
+    let held = policy.evaluate(
+        idle_released + Duration::from_secs(15),
+        false,
+        [(output(1), false)],
+    );
+    assert!(!held.suspend);
+    assert!(held.suspend_withheld);
+
+    let sleep_released = idle_released + Duration::from_secs(20);
+    policy.set_sleep_inhibited(false, sleep_released);
+    assert!(
+        policy
+            .evaluate(
+                sleep_released + Duration::from_secs(15),
+                false,
+                [(output(1), false)],
+            )
+            .suspend
+    );
+}

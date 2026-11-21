@@ -1,9 +1,14 @@
 //! Compositor-owned inactivity policy for locking, display power, and suspend.
 //!
 //! Flutter publishes one bounded, versioned configuration packet. Physical
-//! input and visible Wayland idle inhibitors remain native concerns, so the
-//! policy keeps working while the shell is busy, restarting, or all outputs
-//! are powered down.
+//! input, visible Wayland idle inhibitors and logind's block inhibitors remain
+//! native concerns, so the policy keeps working while the shell is busy,
+//! restarting, or all outputs are powered down.
+//!
+//! A logind block inhibitor on `idle` holds the session out of idle as a
+//! visible Wayland inhibitor does: the caller passes either as `inhibited`.
+//! One on `sleep` holds only automatic suspend off: the screen still goes
+//! dark and the session still locks ([`IdlePolicy::set_sleep_inhibited`]).
 
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -163,6 +168,9 @@ pub(super) struct IdlePolicyActions {
     pub(super) power_requests: Vec<IdlePowerRequest>,
     pub(super) lock: bool,
     pub(super) suspend: bool,
+    /// The suspend timeout passed while a sleep inhibitor holds suspend off.
+    /// Reported once per idle interval.
+    pub(super) suspend_withheld: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -565,6 +573,13 @@ pub(super) struct IdlePolicy {
     lock_triggered: bool,
     dpms_triggered: bool,
     suspend_triggered: bool,
+    /// A logind block inhibitor on `sleep` holds automatic suspend off.
+    sleep_inhibited: bool,
+    /// When the last sleep inhibitor ended: the suspend timeout counts from
+    /// there if that came after the last activity.
+    sleep_released_at: Option<Instant>,
+    /// The withheld suspend was reported in this idle interval.
+    suspend_withheld: bool,
     blanked_outputs: BTreeSet<OutputId>,
     manually_blanked: bool,
     /// When the dark screen locks, while `lock_after_screen_off` counts.
@@ -584,6 +599,9 @@ impl Default for IdlePolicy {
             lock_triggered: false,
             dpms_triggered: false,
             suspend_triggered: false,
+            sleep_inhibited: false,
+            sleep_released_at: None,
+            suspend_withheld: false,
             blanked_outputs: BTreeSet::new(),
             manually_blanked: false,
             screen_off_lock_at: None,
@@ -790,6 +808,23 @@ impl IdlePolicy {
         self.reset_idle_interval(now);
     }
 
+    /// Follows logind's block inhibitors on `sleep`. While one is held,
+    /// inactivity never suspends the system; locking and display power-off
+    /// go on as configured. When the last one ends, the full suspend timeout
+    /// counts again from that moment, as the end of a Wayland inhibitor gives
+    /// the user a full interval: a finished download or backup does not put
+    /// the system to sleep at once.
+    pub(super) fn set_sleep_inhibited(&mut self, inhibited: bool, now: Instant) {
+        if !std::mem::replace(&mut self.sleep_inhibited, inhibited) || inhibited {
+            return;
+        }
+        self.sleep_released_at = Some(now);
+        // A suspend asked for before the hold, and refused or failed, counts
+        // anew too.
+        self.suspend_triggered = false;
+        self.suspend_withheld = false;
+    }
+
     pub(super) fn note_activity(&mut self, now: Instant) -> Vec<IdlePowerRequest> {
         self.reset_idle_interval(now);
         self.wake_blanked_outputs()
@@ -882,11 +917,18 @@ impl IdlePolicy {
             && (phone.is_none() || !outputs.clone().any(|(_, powered)| powered))
             && !self.suspend_triggered
             && self
-                .effective_suspend_timeout()
-                .is_some_and(|timeout| elapsed >= timeout)
+                .suspend_deadline()
+                .is_some_and(|deadline| now >= deadline)
         {
-            self.suspend_triggered = true;
-            actions.suspend = true;
+            if self.sleep_inhibited {
+                // logind refuses a suspend that a block inhibitor holds off,
+                // so it is not asked. The interval starts again once the
+                // inhibitor ends.
+                actions.suspend_withheld = !std::mem::replace(&mut self.suspend_withheld, true);
+            } else {
+                self.suspend_triggered = true;
+                actions.suspend = true;
+            }
         }
         actions
     }
@@ -916,17 +958,36 @@ impl IdlePolicy {
         if self.inhibited {
             return None;
         }
-        let mut deadline = None;
+        let mut timeout = None;
         if !self.lock_triggered {
-            deadline = earlier(deadline, self.effective_lock_timeout());
+            timeout = earlier(timeout, self.effective_lock_timeout());
         }
         if !self.dpms_triggered {
-            deadline = earlier(deadline, self.configuration.dpms_timeout);
+            timeout = earlier(timeout, self.configuration.dpms_timeout);
         }
-        if !self.suspend_triggered {
-            deadline = earlier(deadline, self.effective_suspend_timeout());
+        let deadline = timeout.map(|timeout| self.last_activity + timeout);
+        // A held suspend waits for the inhibitor's end, which wakes the
+        // compositor by itself.
+        if self.suspend_triggered || self.sleep_inhibited {
+            return deadline;
         }
-        deadline.map(|timeout| self.last_activity + timeout)
+        match (deadline, self.suspend_deadline()) {
+            (Some(deadline), Some(suspend)) => Some(deadline.min(suspend)),
+            (deadline, suspend) => deadline.or(suspend),
+        }
+    }
+
+    /// When inactivity suspends the system: the suspend timeout after the
+    /// last activity, or after the last sleep inhibitor ended if that came
+    /// later.
+    fn suspend_deadline(&self) -> Option<Instant> {
+        let timeout = self.effective_suspend_timeout()?;
+        let start = self
+            .sleep_released_at
+            .map_or(self.last_activity, |released| {
+                released.max(self.last_activity)
+            });
+        Some(start + timeout)
     }
 
     pub(super) fn limit_dispatch_timeout(&self, now: Instant, timeout: Duration) -> Duration {
@@ -952,6 +1013,8 @@ impl IdlePolicy {
         self.lock_triggered = false;
         self.dpms_triggered = false;
         self.suspend_triggered = false;
+        self.sleep_released_at = None;
+        self.suspend_withheld = false;
     }
 
     /// The screen just went dark: with a screen-off delay configured,

@@ -313,8 +313,20 @@ pub(super) fn synchronize_idle_dpms(scanouts: &[Scanout], events: &mut RuntimeSt
         return;
     }
     synchronize_phone_with_desk(events, now);
+    // logind's block inhibitors: one on idle holds every inactivity action
+    // off, as a visible Wayland inhibitor does; one on sleep holds only the
+    // automatic suspend.
+    let logind = events
+        .system_controls
+        .as_ref()
+        .map(system_controls::SystemControls::logind_blocks)
+        .unwrap_or_default();
+    events
+        .frontend_mut()
+        .set_session_idle_inhibited(logind.idle);
+    events.idle_policy.set_sleep_inhibited(logind.sleep, now);
     if let Some(phone) = events.idle_policy.phone_output() {
-        let inhibited = events.frontend_mut().phone_idle_inhibited();
+        let inhibited = events.frontend_mut().phone_idle_inhibited() || logind.idle;
         let powered = scanouts
             .iter()
             .any(|scanout| scanout.output.id == phone && scanout.powered);
@@ -323,11 +335,12 @@ pub(super) fn synchronize_idle_dpms(scanouts: &[Scanout], events: &mut RuntimeSt
             info!("turned the phone's idle panel off beside the desk");
         }
     }
-    let inhibited = events.frontend_mut().idle_inhibited();
+    let inhibited = events.frontend_mut().idle_inhibited() || logind.idle;
     let idle_policy::IdlePolicyActions {
         power_requests,
         lock,
         suspend,
+        suspend_withheld,
     } = events.idle_policy.evaluate(
         now,
         inhibited,
@@ -344,6 +357,9 @@ pub(super) fn synchronize_idle_dpms(scanouts: &[Scanout], events: &mut RuntimeSt
         } else {
             warn!("could not lock the session after inactivity: authentication is unavailable");
         }
+    }
+    if suspend_withheld {
+        info!("a logind sleep inhibitor holds the automatic suspend off");
     }
     if suspend {
         if events

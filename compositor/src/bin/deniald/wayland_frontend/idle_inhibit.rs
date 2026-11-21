@@ -1,4 +1,5 @@
-//! `zwp_idle_inhibit_manager_v1` integration for visible client surfaces.
+//! `zwp_idle_inhibit_manager_v1` integration for visible client surfaces, and
+//! the idle inhibition idle clients see.
 
 use std::collections::HashMap;
 
@@ -63,6 +64,15 @@ impl WaylandFrontend {
         self.idle_inhibition_dirty = true;
     }
 
+    /// Follows logind's block inhibitors on `idle`, which hold Denial's idle
+    /// policy off as a visible surface does. Idle clients see them too.
+    pub(crate) fn set_session_idle_inhibited(&mut self, inhibited: bool) {
+        if self.session_idle_inhibited != inhibited {
+            self.session_idle_inhibited = inhibited;
+            self.invalidate_idle_inhibition();
+        }
+    }
+
     /// Whether a mapped, visible client surface currently asks Denial to keep
     /// the displays awake. Hidden/minimized videos do not inhibit DPMS.
     pub(crate) fn idle_inhibited(&mut self) -> bool {
@@ -83,7 +93,8 @@ impl WaylandFrontend {
         self.idle_inhibition_cached = inhibited;
         self.idle_inhibition_dirty = false;
         // Idle clients see the same inhibition as Denial's own display power.
-        self.idle_notifier.set_is_inhibited(inhibited);
+        self.idle_notifier
+            .set_is_inhibited(inhibited || self.session_idle_inhibited);
         inhibited
     }
 

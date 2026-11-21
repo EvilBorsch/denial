@@ -15,6 +15,8 @@ use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::Arc;
+#[cfg(feature = "flutter")]
+use std::sync::atomic::AtomicU8;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Mutex, MutexGuard};
@@ -300,12 +302,66 @@ pub(super) enum SleepTransition {
     Resumed,
 }
 
+/// What logind's block inhibitors hold off that inactivity would do, from
+/// the Manager's `BlockInhibited` and `BlockWeakInhibited` properties. A weak
+/// block counts too: it lets the user's explicit request through, not an
+/// automatic one.
+#[cfg(feature = "flutter")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct LogindBlocks {
+    /// `idle`: the session does not go idle. Nothing locks, darkens the
+    /// screen or suspends on inactivity.
+    pub(super) idle: bool,
+    /// `sleep`: the system does not suspend on inactivity.
+    pub(super) sleep: bool,
+}
+
+#[cfg(feature = "flutter")]
+impl LogindBlocks {
+    const IDLE: u8 = 1 << 0;
+    const SLEEP: u8 = 1 << 1;
+
+    /// Reads one of logind's inhibitor lists, such as
+    /// `sleep:idle:handle-power-key`.
+    pub(super) fn parse(what: &str) -> Self {
+        let mut blocks = Self::default();
+        for operation in what.split(':') {
+            match operation {
+                "idle" => blocks.idle = true,
+                "sleep" => blocks.sleep = true,
+                _ => {}
+            }
+        }
+        blocks
+    }
+
+    pub(super) fn union(self, other: Self) -> Self {
+        Self {
+            idle: self.idle || other.idle,
+            sleep: self.sleep || other.sleep,
+        }
+    }
+
+    fn bits(self) -> u8 {
+        u8::from(self.idle) * Self::IDLE | u8::from(self.sleep) * Self::SLEEP
+    }
+
+    fn from_bits(bits: u8) -> Self {
+        Self {
+            idle: bits & Self::IDLE != 0,
+            sleep: bits & Self::SLEEP != 0,
+        }
+    }
+}
+
 #[cfg(feature = "flutter")]
 struct SleepMonitorShared {
     transitions: Mutex<VecDeque<SleepTransition>>,
     transitions_pending: AtomicBool,
     delay_inhibitor: Mutex<Option<OwnedFd>>,
     power_key_inhibitor: Mutex<Option<OwnedFd>>,
+    /// `LogindBlocks` as last read from logind.
+    blocks: AtomicU8,
     stop: AtomicBool,
     stop_wake: crate::wakeup::Wakeup,
 }
@@ -318,6 +374,7 @@ impl SleepMonitorShared {
             transitions_pending: AtomicBool::new(false),
             delay_inhibitor: Mutex::default(),
             power_key_inhibitor: Mutex::default(),
+            blocks: AtomicU8::new(0),
             stop: AtomicBool::new(false),
             stop_wake: crate::wakeup::Wakeup::new()?,
         })
@@ -352,6 +409,25 @@ impl SleepMonitorShared {
         self.transitions_pending
             .store(!transitions.is_empty(), Ordering::Release);
         transition
+    }
+
+    /// Publishes logind's block inhibitors; a change wakes the compositor,
+    /// whose idle policy follows it.
+    fn set_blocks(&self, blocks: LogindBlocks) {
+        let previous = LogindBlocks::from_bits(self.blocks.swap(blocks.bits(), Ordering::AcqRel));
+        if previous == blocks {
+            return;
+        }
+        info!(
+            idle = blocks.idle,
+            sleep = blocks.sleep,
+            "logind block inhibitors changed"
+        );
+        crate::loop_wake::wake();
+    }
+
+    fn blocks(&self) -> LogindBlocks {
+        LogindBlocks::from_bits(self.blocks.load(Ordering::Acquire))
     }
 
     fn install_delay_inhibitor(&self, inhibitor: OwnedFd) {
@@ -647,6 +723,13 @@ impl SystemControls {
         self.sleep_monitor.release_delay_inhibitor()
     }
 
+    /// What logind's block inhibitors hold off, as last read from logind.
+    /// Nothing while logind is out of reach.
+    #[cfg(feature = "flutter")]
+    pub(super) fn logind_blocks(&self) -> LogindBlocks {
+        self.sleep_monitor.blocks()
+    }
+
     fn adjust_audio(&self, delta: f64) {
         let _ = self.audio_commands.try_send(AudioCommand::Adjust(delta));
     }
@@ -766,6 +849,70 @@ mod sleep_readiness_tests {
         monitor.publish(SleepTransition::Preparing);
         assert_eq!(monitor.take_transition(), Some(SleepTransition::Preparing));
         assert_eq!(monitor.take_transition(), None);
+    }
+
+    #[test]
+    fn logind_inhibitor_lists_hold_idle_and_sleep_only() {
+        assert_eq!(LogindBlocks::parse(""), LogindBlocks::default());
+        // Denial's own power key inhibitor holds nothing off.
+        assert_eq!(
+            LogindBlocks::parse("handle-power-key"),
+            LogindBlocks::default()
+        );
+        assert_eq!(
+            LogindBlocks::parse("sleep:idle:handle-power-key"),
+            LogindBlocks {
+                idle: true,
+                sleep: true,
+            }
+        );
+        assert_eq!(
+            LogindBlocks::parse("shutdown:sleep"),
+            LogindBlocks {
+                idle: false,
+                sleep: true,
+            }
+        );
+        assert_eq!(
+            LogindBlocks::parse("idle"),
+            LogindBlocks {
+                idle: true,
+                sleep: false,
+            }
+        );
+        // Only whole names count.
+        assert_eq!(LogindBlocks::parse("sleepy:idler"), LogindBlocks::default());
+        assert_eq!(
+            LogindBlocks::parse("idle").union(LogindBlocks::parse("sleep")),
+            LogindBlocks {
+                idle: true,
+                sleep: true,
+            }
+        );
+    }
+
+    #[test]
+    fn logind_blocks_round_trip_through_the_shared_state() {
+        let monitor = SleepMonitorShared::new().unwrap();
+        assert_eq!(monitor.blocks(), LogindBlocks::default());
+        for blocks in [
+            LogindBlocks {
+                idle: true,
+                sleep: false,
+            },
+            LogindBlocks {
+                idle: false,
+                sleep: true,
+            },
+            LogindBlocks {
+                idle: true,
+                sleep: true,
+            },
+            LogindBlocks::default(),
+        ] {
+            monitor.set_blocks(blocks);
+            assert_eq!(monitor.blocks(), blocks);
+        }
     }
 
     #[test]

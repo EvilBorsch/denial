@@ -7,6 +7,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 const SUSPEND_MODE_DIRECTORY: &str = "denial";
 const SLEEP_MONITOR_RECONNECT_DELAY: Duration = Duration::from_secs(2);
+const LOGIND: &str = "org.freedesktop.login1";
+const LOGIND_PATH: &str = "/org/freedesktop/login1";
+const LOGIND_MANAGER: &str = "org.freedesktop.login1.Manager";
 static SUSPEND_MODE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) fn run_session_worker(commands: Receiver<SessionCommand>) {
@@ -45,6 +48,9 @@ pub(super) fn run_sleep_monitor(shared: Arc<SleepMonitorShared>) {
             }
             shared.release_delay_inhibitor();
             shared.release_power_key_inhibitor();
+            // Without logind nobody holds an inhibitor; the next connection
+            // reads them again.
+            shared.set_blocks(LogindBlocks::default());
             future::race(shared.stopped(), async {
                 async_io::Timer::after(SLEEP_MONITOR_RECONNECT_DELAY).await;
             })
@@ -53,18 +59,28 @@ pub(super) fn run_sleep_monitor(shared: Arc<SleepMonitorShared>) {
     });
 }
 
+/// What wakes the logind monitor.
+enum ManagerEvent {
+    Sleep(Option<zbus::Message>),
+    Properties(Option<zbus::Message>),
+    Stop,
+}
+
 async fn monitor_sleep_transitions(shared: &Arc<SleepMonitorShared>) -> Result<(), String> {
     let connection = crate::bus::system()
         .await
         .map_err(|error| format!("could not connect to the system bus: {error}"))?;
-    let manager = zbus::Proxy::new(
+    let manager = zbus::Proxy::new(&connection, LOGIND, LOGIND_PATH, LOGIND_MANAGER)
+        .await
+        .map_err(|error| format!("could not open the logind manager: {error}"))?;
+    let properties = zbus::Proxy::new(
         &connection,
-        "org.freedesktop.login1",
-        "/org/freedesktop/login1",
-        "org.freedesktop.login1.Manager",
+        LOGIND,
+        LOGIND_PATH,
+        "org.freedesktop.DBus.Properties",
     )
     .await
-    .map_err(|error| format!("could not open the logind manager: {error}"))?;
+    .map_err(|error| format!("could not open the logind manager properties: {error}"))?;
     if let Err(error) = acquire_power_key_inhibitor(&manager, shared).await {
         warn!(%error, "could not acquire the logind power-key inhibitor");
     }
@@ -75,18 +91,48 @@ async fn monitor_sleep_transitions(shared: &Arc<SleepMonitorShared>) -> Result<(
     if let Err(error) = acquire_sleep_delay(&manager, shared).await {
         warn!(%error, "could not acquire the logind sleep delay inhibitor");
     }
+    // logind announces every change of its block inhibitors as a change of
+    // BlockInhibited. Subscribe before the first read, so that no change
+    // falls between the two. Sleep preparation works without either.
+    let mut changes = match properties.receive_signal("PropertiesChanged").await {
+        Ok(changes) => {
+            refresh_blocks(&properties, shared).await;
+            Some(changes)
+        }
+        Err(error) => {
+            warn!(%error, "could not follow logind's block inhibitors");
+            None
+        }
+    };
 
     loop {
         if shared.stopping() {
             return Ok(());
         }
-        let signal = future::race(async { Some(signals.next().await) }, async {
-            shared.stopped().await;
-            None
-        })
+        let event = future::race(
+            future::race(async { ManagerEvent::Sleep(signals.next().await) }, async {
+                match changes.as_mut() {
+                    Some(changes) => ManagerEvent::Properties(changes.next().await),
+                    None => future::pending().await,
+                }
+            }),
+            async {
+                shared.stopped().await;
+                ManagerEvent::Stop
+            },
+        )
         .await;
-        let Some(message) = signal else {
-            return Ok(());
+        let message = match event {
+            ManagerEvent::Stop => return Ok(()),
+            ManagerEvent::Properties(change) => {
+                let change =
+                    change.ok_or_else(|| "logind property change stream ended".to_owned())?;
+                if changes_block_inhibitors(&change) {
+                    refresh_blocks(&properties, shared).await;
+                }
+                continue;
+            }
+            ManagerEvent::Sleep(message) => message,
         };
         let message = message.ok_or_else(|| "PrepareForSleep stream ended".to_owned())?;
         let preparing = message
@@ -107,6 +153,57 @@ async fn monitor_sleep_transitions(shared: &Arc<SleepMonitorShared>) -> Result<(
             info!("logind completed the sleep transition");
         }
     }
+}
+
+/// Whether a PropertiesChanged signal of logind's object concerns its block
+/// inhibitors.
+fn changes_block_inhibitors(message: &zbus::Message) -> bool {
+    let Ok((interface, changed, invalidated)) = message.body().deserialize::<(
+        String,
+        std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+        Vec<String>,
+    )>() else {
+        return false;
+    };
+    interface == LOGIND_MANAGER
+        && changed
+            .keys()
+            .map(String::as_str)
+            .chain(invalidated.iter().map(String::as_str))
+            .any(names_block_inhibitors)
+}
+
+fn names_block_inhibitors(property: &str) -> bool {
+    matches!(property, "BlockInhibited" | "BlockWeakInhibited")
+}
+
+/// Publishes logind's block inhibitors as they are now. A failed read keeps
+/// what was known.
+async fn refresh_blocks(properties: &zbus::Proxy<'_>, shared: &SleepMonitorShared) {
+    match read_blocks(properties).await {
+        Ok(blocks) => shared.set_blocks(blocks),
+        Err(error) => warn!(%error, "could not read logind's block inhibitors"),
+    }
+}
+
+/// Reads logind's block inhibitors afresh. BlockWeakInhibited is newer than
+/// BlockInhibited (systemd 257); without it, there are no weak blocks.
+async fn read_blocks(properties: &zbus::Proxy<'_>) -> Result<LogindBlocks, String> {
+    let strong = read_inhibited(properties, "BlockInhibited")
+        .await
+        .map_err(|error| format!("could not read logind BlockInhibited: {error}"))?;
+    let weak = read_inhibited(properties, "BlockWeakInhibited")
+        .await
+        .unwrap_or_default();
+    Ok(LogindBlocks::parse(&strong).union(LogindBlocks::parse(&weak)))
+}
+
+async fn read_inhibited(properties: &zbus::Proxy<'_>, name: &str) -> Result<String, String> {
+    let value: zbus::zvariant::OwnedValue = properties
+        .call("Get", &(LOGIND_MANAGER, name))
+        .await
+        .map_err(|error| error.to_string())?;
+    String::try_from(value).map_err(|error| error.to_string())
 }
 
 async fn acquire_sleep_delay(
@@ -302,6 +399,15 @@ fn perform_power_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_block_inhibitor_properties_wake_a_reread() {
+        assert!(names_block_inhibitors("BlockInhibited"));
+        assert!(names_block_inhibitors("BlockWeakInhibited"));
+        // Denial's own sleep delay comes and goes with every suspend.
+        assert!(!names_block_inhibitors("DelayInhibited"));
+        assert!(!names_block_inhibitors("IdleHint"));
+    }
 
     #[test]
     fn explicit_suspend_mode_is_published_and_system_default_removes_it() {
