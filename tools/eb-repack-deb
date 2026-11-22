@@ -110,6 +110,16 @@ for line in lines:
         if glibc and newer(glibc, match.group(1)):
             line = line.replace(match.group(0), 'libc6 (>= ' + glibc + ')')
         line = line + ', libcap2-bin'
+        out.append(line)
+        # deniald is the session's notification server
+        # (org.freedesktop.Notifications) and denial-polkit-agent its polkit
+        # agent. Ubuntu packages that need one of either (update-notifier,
+        # update-manager, nm-connection-editor) are satisfied by GNOME Shell
+        # otherwise; without it APT would install notification-daemon, which
+        # would compete for the bus name, and policykit-1-gnome.
+        assert not any(l.startswith('Provides: ') for l in lines), 'release has Provides'
+        out.append('Provides: notification-daemon, polkit-1-auth-agent')
+        continue
     out.append(line)
 out.append(' .')
 if glibc:
