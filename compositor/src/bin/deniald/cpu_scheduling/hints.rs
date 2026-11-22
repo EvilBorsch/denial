@@ -515,9 +515,12 @@ impl Worker {
         }
         if let Some(process) = next {
             self.pending.retain(|(pending, _)| *pending != process);
+            // Lift the background cap first: the kernel rejects a minimum
+            // above the current maximum (EINVAL), so a floor applied while
+            // the demoted cap is still in place is lost for the interaction.
+            self.restore_focused(process, &topology);
             let floor = self.current_floor(&topology);
             self.apply_frame_floor(process, floor);
-            self.restore_focused(process, &topology);
         }
         self.focused = next;
     }
