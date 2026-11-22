@@ -1,8 +1,10 @@
 [Desktop Entry]
 Type=Application
 Name=Welcome to Denial
+Name[ru]=Знакомство с Denial
 Name[zh_CN]=欢迎使用 Denial
 Comment=Discover shortcuts and make Denial your own
+Comment[ru]=Сочетания клавиш и настройка Denial под себя
 Comment[zh_CN]=了解快捷键并个性化设置 Denial
 Exec=/usr/lib/denial-apps/settings --welcome
 TryExec=/usr/lib/denial-apps/settings

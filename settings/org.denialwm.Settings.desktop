@@ -2,9 +2,11 @@
 Type=Application
 Name=Settings
 Name[it]=Impostazioni
+Name[ru]=Настройки
 Name[zh_CN]=设置
 Comment=Configure Denial
 Comment[it]=Configura Denial
+Comment[ru]=Настройка Denial
 Comment[zh_CN]=配置 Denial
 Exec=/usr/lib/denial-apps/settings
 TryExec=/usr/lib/denial-apps/settings
