@@ -5,10 +5,28 @@ import 'package:path/path.dart' as p;
 import '../config/startup_environment.dart';
 
 class RuntimePaths {
-  RuntimePaths({required Map<String, String> environment})
-    : environment = Map.unmodifiable(environment);
+  RuntimePaths({
+    required Map<String, String> environment,
+    List<String> gettextLocaleDirs = systemGettextLocaleDirs,
+  }) : environment = Map.unmodifiable(environment),
+       gettextLocaleDirs = List.unmodifiable(gettextLocaleDirs);
+
+  /// Where the system's gettext catalogues are installed, in the order the
+  /// C library searches them for a domain that is not bound to a directory
+  /// of its own: the catalogues the packages install themselves, then
+  /// Ubuntu's language packs, which hold the translations of the packages in
+  /// its main archive (Ubuntu's glibc adds that directory after the default
+  /// one; it does not exist elsewhere).
+  static const List<String> systemGettextLocaleDirs = <String>[
+    '/usr/share/locale',
+    '/usr/share/locale-langpack',
+  ];
 
   final Map<String, String> environment;
+
+  /// The directories searched for `LOCALE/LC_MESSAGES/DOMAIN.mo`, in this
+  /// order. [systemGettextLocaleDirs] unless a test gives its own.
+  final List<String> gettextLocaleDirs;
 
   String get homeDir {
     final home = environment['HOME'];

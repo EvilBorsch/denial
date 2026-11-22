@@ -5,6 +5,7 @@ import 'package:path/path.dart' as p;
 
 import '../runtime_paths.dart';
 import '../models/desktop_app.dart';
+import 'gettext_catalog.dart';
 
 class DesktopAppsRepository {
   const DesktopAppsRepository({required this._paths});
@@ -123,10 +124,18 @@ class DesktopAppsRepository {
     }
 
     final iconCache = <String, String?>{};
+    // One set of catalogues for the scan: applications of one gettext domain
+    // share its catalogue.
+    final catalogs = _gettextCatalogs();
     final apps = <DesktopApp>[];
     for (final entry in filesById.entries) {
       try {
-        final app = await _parseDesktopFile(entry.key, entry.value, iconCache);
+        final app = await _parseDesktopFile(
+          entry.key,
+          entry.value,
+          iconCache,
+          catalogs,
+        );
         if (app != null) {
           apps.add(app);
         }
@@ -163,7 +172,12 @@ class DesktopAppsRepository {
       final file = File(p.join(directory.path, id));
       try {
         if (await file.exists()) {
-          return await _parseDesktopFile(id, file, <String, String?>{});
+          return await _parseDesktopFile(
+            id,
+            file,
+            <String, String?>{},
+            _gettextCatalogs(),
+          );
         }
       } on FileSystemException {
         // A directory that disappears does not hide the next one.
@@ -178,6 +192,7 @@ class DesktopAppsRepository {
     String id,
     File file,
     Map<String, String?> iconCache,
+    GettextCatalogs catalogs,
   ) async {
     final fields = <String, String>{};
     var inDesktopEntry = false;
@@ -223,7 +238,7 @@ class DesktopAppsRepository {
       return null;
     }
 
-    final name = _localizedDesktopValue(fields, 'Name');
+    final name = _localizedDesktopValue(fields, 'Name', catalogs);
     final exec = fields['Exec'];
     if (name == null || name.trim().isEmpty || exec == null || exec.isEmpty) {
       return null;
@@ -239,7 +254,7 @@ class DesktopAppsRepository {
         .where((category) => category.isNotEmpty)
         .toList(growable: false);
     final keywords = _desktopStringList(
-      _localizedDesktopValue(fields, 'Keywords'),
+      _localizedDesktopValue(fields, 'Keywords', catalogs),
     );
 
     return DesktopApp(
@@ -255,13 +270,39 @@ class DesktopAppsRepository {
     );
   }
 
-  String? _localizedDesktopValue(Map<String, String> fields, String key) {
-    final locale = _paths.environment['LANG'] ?? '';
-    final localeBase = locale.split('.').first;
+  /// The session's locale, which names the language of the applications.
+  String get _locale => _paths.environment['LANG'] ?? '';
+
+  GettextCatalogs _gettextCatalogs() =>
+      GettextCatalogs(directories: _paths.gettextLocaleDirs, locale: _locale);
+
+  /// The value of [key] in the session's language: the entry's own
+  /// `key[locale]`, else the translation of the untranslated value in the
+  /// gettext domain the entry names, else the untranslated value.
+  ///
+  /// Ubuntu strips the `key[locale]` lines from the desktop entries of the
+  /// packages in its main archive and adds `X-Ubuntu-Gettext-Domain`; the
+  /// translations are then in the language packs' catalogues, where GLib
+  /// looks them up. GNOME's own key for the same is `X-GNOME-Gettext-Domain`.
+  String? _localizedDesktopValue(
+    Map<String, String> fields,
+    String key,
+    GettextCatalogs catalogs,
+  ) {
+    final localeBase = _locale.split('.').first;
     final language = localeBase.split('_').first;
-    return fields['$key[$localeBase]'] ??
-        fields['$key[$language]'] ??
-        fields[key];
+    final localized = fields['$key[$localeBase]'] ?? fields['$key[$language]'];
+    final value = fields[key];
+    if (localized != null || value == null) {
+      return localized;
+    }
+    for (final domainKey in _gettextDomainKeys) {
+      final domain = fields[domainKey]?.trim() ?? '';
+      if (domain.isNotEmpty) {
+        return catalogs.translate(domain, value.trim()) ?? value;
+      }
+    }
+    return value;
   }
 
   bool _matchesCurrentDesktop(Map<String, String> fields) {
@@ -549,6 +590,11 @@ class DesktopAppsRepository {
     return null;
   }
 }
+
+const List<String> _gettextDomainKeys = <String>[
+  'X-Ubuntu-Gettext-Domain',
+  'X-GNOME-Gettext-Domain',
+];
 
 Future<String?> _nearestExistingAncestor(String path) async {
   var current = p.dirname(path);
