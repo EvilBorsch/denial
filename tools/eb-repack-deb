@@ -2,13 +2,16 @@
 # Repack Denial's signed denial_0.6.8-1_arm64.deb with a shell bundle from
 # tools/eb-build-shell and, if given, a deniald from tools/eb-build-deniald:
 # only /usr/lib/denial/flutter/lib/libapp.so,
-# /usr/lib/denial/flutter/data/flutter_assets and /usr/bin/deniald change.
-# denialctl, the portal, the polkit agent, Settings and the conffiles stay the
-# release's, the postinst also gives deniald CAP_SYS_NICE (see below), and the
-# package still depends on the release's denial-flutter-engine (= 0.6.8-1).
+# /usr/lib/denial/flutter/data/flutter_assets and /usr/bin/deniald change, and
+# /usr/bin/denial-portal with EB_PORTAL=path (built with deniald by
+# tools/eb-build-deniald: the two speak one portal protocol, so a portal comes
+# only with its deniald). denialctl, the polkit agent, Settings and the
+# conffiles stay the release's, the postinst also gives deniald CAP_SYS_NICE
+# (see below), and the package still depends on the release's
+# denial-flutter-engine (= 0.6.8-1).
 # See docs/EB-BUILD.md.
 #
-# Usage: tools/eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY [DENIALD]
+# Usage: [EB_PORTAL=DENIAL_PORTAL] tools/eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY [DENIALD]
 #   e.g. tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb1 ~/debs
 set -euo pipefail
 
@@ -17,6 +20,7 @@ BUNDLE="${1:?$USAGE}"
 VERSION="${2:?$USAGE}"
 OUTPUT="${3:?$USAGE}"
 DENIALD="${4:-}"
+PORTAL="${EB_PORTAL:-}"
 WORK="${EB_WORK:-$HOME/work-denial-shell}"
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tools/lib/denial-architecture.sh
@@ -37,6 +41,11 @@ if [[ -n "$DENIALD" ]]; then
         || die "not an aarch64 deniald: $DENIALD"
     command -v aarch64-linux-gnu-objdump >/dev/null \
         || die 'aarch64-linux-gnu-objdump (binutils-aarch64-linux-gnu) is required'
+fi
+if [[ -n "$PORTAL" ]]; then
+    [[ -n "$DENIALD" ]] || die 'EB_PORTAL needs the deniald built with it'
+    [[ -f "$PORTAL" && "$(denial_elf_arch "$PORTAL")" == aarch64 ]] \
+        || die "not an aarch64 denial-portal: $PORTAL"
 fi
 
 mkdir -p -- "$WORK/dl" "$OUTPUT"
@@ -60,7 +69,12 @@ if [[ -n "$DENIALD" ]]; then
     install -m755 -- "$DENIALD" "$stage/denial/usr/bin/deniald"
     # The newest glibc symbol version it needs: built against another root
     # than the release's, it may need a newer libc than the package names.
-    glibc_needed="$(aarch64-linux-gnu-objdump -T "$DENIALD" \
+    binaries=("$DENIALD")
+    if [[ -n "$PORTAL" ]]; then
+        install -m755 -- "$PORTAL" "$stage/denial/usr/bin/denial-portal"
+        binaries+=("$PORTAL")
+    fi
+    glibc_needed="$(aarch64-linux-gnu-objdump -T "${binaries[@]}" \
         | grep -o 'GLIBC_[0-9.]*' | sed 's/^GLIBC_//' | sort -V | tail -1)"
 fi
 
@@ -85,10 +99,10 @@ PY2
 
 control="$stage/denial/DEBIAN/control"
 python3 -I - "$control" "$VERSION" "$MAINTAINER" "$(git -C "$ROOT" rev-parse HEAD)" \
-    "$glibc_needed" <<'PY'
+    "$glibc_needed" "${PORTAL:+portal}" <<'PY'
 import re
 import sys
-path, version, maintainer, revision, glibc = sys.argv[1:6]
+path, version, maintainer, revision, glibc, portal = sys.argv[1:7]
 
 
 def newer(a, b):
@@ -122,7 +136,11 @@ for line in lines:
         continue
     out.append(line)
 out.append(' .')
-if glibc:
+if glibc and portal:
+    out.append(' This build replaces the Flutter shell (libapp.so, flutter_assets),')
+    out.append(' deniald and denial-portal of the signed 0.6.8-1 release, built from')
+    out.append(' EvilBorsch/denial ' + revision[:12] + '.')
+elif glibc:
     out.append(' This build replaces the Flutter shell (libapp.so, flutter_assets) and')
     out.append(' deniald of the signed 0.6.8-1 release, built from EvilBorsch/denial')
     out.append(' ' + revision[:12] + '.')
