@@ -340,6 +340,215 @@ fn shell_named_key_stroke(key: &str) -> Option<ShellKeyStroke> {
     })
 }
 
+/// A key of the seat keymap that types one character of shell-keyboard
+/// text, and the keymap layout it types the character in.
+#[cfg(feature = "flutter")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct PlannedShellStroke {
+    pub(super) stroke: ShellKeyStroke,
+    pub(super) layout: u32,
+}
+
+/// Finds the key of `keymap` that types `character` with no modifier or
+/// with Shift alone, so that every client, Xwayland's included, reads it
+/// from the keymap it already has: the key of [`shell_text_key_stroke`]
+/// when the `active` layout types the character there, else another key of
+/// the active layout, else a key of another layout in the keymap's order.
+/// Keypad keys are left out: a terminal may turn them into escape
+/// sequences. `None` when no layout types the character that way.
+#[cfg(feature = "flutter")]
+fn plan_shell_text_stroke(
+    keymap: &xkb::Keymap,
+    active: u32,
+    character: char,
+) -> Option<PlannedShellStroke> {
+    const XKB_KEYCODE_OFFSET: u32 = 8;
+
+    let shift_index = keymap.mod_get_index(xkb::MOD_NAME_SHIFT);
+    let shift_mask = (shift_index != xkb::MOD_INVALID).then(|| 1 << shift_index);
+    let types = |keycode: Keycode, layout: u32, shift: bool| {
+        let wanted = if shift { shift_mask } else { Some(0) };
+        let Some(wanted) = wanted else {
+            return false;
+        };
+        let mut masks = [0; 16];
+        (0..keymap.num_levels_for_key(keycode, layout)).any(|level| {
+            let syms = keymap.key_get_syms_by_level(keycode, layout, level);
+            if !syms
+                .iter()
+                .any(|sym| xkb::keysym_to_utf32(*sym) == u32::from(character))
+            {
+                return false;
+            }
+            let count = keymap.key_get_mods_for_level(keycode, layout, level, &mut masks);
+            masks[..count.min(masks.len())].contains(&wanted)
+        })
+    };
+
+    if let Some(stroke) = shell_text_key_stroke(character)
+        && types(
+            Keycode::new(stroke.evdev_keycode + XKB_KEYCODE_OFFSET),
+            active,
+            stroke.shift,
+        )
+    {
+        return Some(PlannedShellStroke {
+            stroke,
+            layout: active,
+        });
+    }
+    let first = keymap.min_keycode().raw().max(XKB_KEYCODE_OFFSET);
+    let last = keymap.max_keycode().raw();
+    let layouts =
+        std::iter::once(active).chain((0..keymap.num_layouts()).filter(|&layout| layout != active));
+    for layout in layouts {
+        for shift in [false, true] {
+            for raw in first..=last {
+                let keycode = Keycode::new(raw);
+                let keypad = (0..keymap.num_levels_for_key(keycode, layout)).any(|level| {
+                    keymap
+                        .key_get_syms_by_level(keycode, layout, level)
+                        .iter()
+                        .any(|sym| sym.is_keypad_key())
+                });
+                if !keypad && types(keycode, layout, shift) {
+                    return Some(PlannedShellStroke {
+                        stroke: ShellKeyStroke {
+                            evdev_keycode: raw - XKB_KEYCODE_OFFSET,
+                            shift,
+                        },
+                        layout,
+                    });
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Plans every character of `text` against the seat keymap as it is now.
+#[cfg(feature = "flutter")]
+fn plan_shell_text(
+    state: &mut RuntimeState,
+    keyboard: &KeyboardHandle<RuntimeState>,
+    text: &str,
+) -> Vec<(char, Option<PlannedShellStroke>)> {
+    keyboard.with_xkb_state(state, |context| {
+        let xkb = context.xkb().lock().unwrap();
+        let active = xkb.active_layout().0;
+        // SAFETY: the keymap reference is used only while the owning XKB
+        // mutex is held and is not retained beyond this call.
+        let keymap = unsafe { xkb.keymap() };
+        text.chars()
+            .map(|character| (character, plan_shell_text_stroke(keymap, active, character)))
+            .collect()
+    })
+}
+
+/// Types one planned key. A key of another layout types with that layout
+/// locked around it, as a layout switch reaches clients, and the active
+/// layout back after it; the shell is not told of the passing switch.
+#[cfg(feature = "flutter")]
+fn inject_planned_shell_stroke(
+    state: &mut RuntimeState,
+    keyboard: &KeyboardHandle<RuntimeState>,
+    planned: PlannedShellStroke,
+    time: InputTime,
+) -> bool {
+    let active = keyboard.with_xkb_state(state, |context| {
+        context.xkb().lock().unwrap().active_layout().0
+    });
+    if planned.layout == active {
+        return inject_shell_key_stroke(state, keyboard, planned.stroke, false, time);
+    }
+    state.frontend_mut().shell_keyboard_borrows_layout = true;
+    keyboard.with_xkb_state(state, |mut context| {
+        context.set_layout(smithay::input::keyboard::Layout(planned.layout));
+    });
+    let delivered = inject_shell_key_stroke(state, keyboard, planned.stroke, false, time);
+    keyboard.with_xkb_state(state, |mut context| {
+        context.set_layout(smithay::input::keyboard::Layout(active));
+    });
+    state.frontend_mut().shell_keyboard_borrows_layout = false;
+    delivered
+}
+
+/// Types characters that no layout of the seat keymap has. Smithay hands
+/// the focused client a keymap of just these keysyms for the strokes and
+/// then the seat keymap again, which reaches clients without text-input,
+/// Xwayland's among them. Only a client window takes them: not the shell,
+/// which reads text from the seat keymap, and not a locked session.
+#[cfg(feature = "flutter")]
+fn inject_unplanned_shell_text(
+    state: &mut RuntimeState,
+    keyboard: &KeyboardHandle<RuntimeState>,
+    characters: &mut Vec<char>,
+) -> bool {
+    if characters.is_empty() {
+        return false;
+    }
+    let characters = std::mem::take(characters);
+    let client = keyboard
+        .current_focus()
+        .is_some_and(|focus| !matches!(focus, super::focus::KeyboardFocusTarget::Flutter));
+    if !client || state.secure_session_locked() {
+        warn!(
+            count = characters.len(),
+            "ignored characters the keymap lacks without a client window to take them"
+        );
+        return false;
+    }
+    let keysyms = characters
+        .iter()
+        .map(|character| xkb::utf32_to_keysym(u32::from(*character)))
+        .filter(|keysym| keysym.raw() != xkb::keysyms::KEY_NoSymbol)
+        .collect::<Vec<_>>();
+    if keysyms.is_empty() {
+        return false;
+    }
+    keyboard.inject_text_keysyms(state, &keysyms);
+    true
+}
+
+/// Whether `text` types on the keys a US keyboard has it on, in the active
+/// layout: as every client reads keys, also one that reads only keycodes
+/// through a US map of its own, as Droidloom's Android apps do.
+#[cfg(feature = "flutter")]
+fn types_on_us_keys(active: u32, planned: &[(char, Option<PlannedShellStroke>)]) -> bool {
+    planned.iter().all(|(character, planned)| {
+        planned.is_some_and(|planned| {
+            planned.layout == active && Some(planned.stroke) == shell_text_key_stroke(*character)
+        })
+    })
+}
+
+/// Shell-keyboard text. On the keys a US keyboard has it on, in the active
+/// layout, it is typed: the keyboard as it always was. Anything else, a
+/// letter of another layout or a mark another layout moves, goes to a
+/// focused editor whole, as an input method's commit; with no editor
+/// speaking text-input, Xwayland's clients and terminals among them, it is
+/// typed on the keymap's keys in whichever layout has them, and the rest
+/// with keysyms of its own.
+#[cfg(feature = "flutter")]
+fn type_or_commit_shell_text(
+    state: &mut RuntimeState,
+    keyboard: &KeyboardHandle<RuntimeState>,
+    text: &str,
+    time: InputTime,
+) -> bool {
+    let planned = plan_shell_text(state, keyboard, text);
+    let active = keyboard.with_xkb_state(state, |context| {
+        context.xkb().lock().unwrap().active_layout().0
+    });
+    if !types_on_us_keys(active, &planned) {
+        let frontend = state.frontend_mut();
+        if let Some(delivered) = frontend.commit_shell_keyboard_text(None, text) {
+            return delivered;
+        }
+    }
+    type_shell_text(state, keyboard, text, time)
+}
+
 #[cfg(feature = "flutter")]
 fn inject_shell_key_stroke(
     state: &mut RuntimeState,
@@ -470,8 +679,9 @@ pub(super) fn navigate_back(state: &mut RuntimeState, window: &smithay::desktop:
 ///
 /// These transitions enter the same focus, XKB, shortcut, Flutter and Wayland
 /// router as libinput keyboard events. The software keyboard is an input
-/// source; only text the keymap cannot type, and replacements of the word
-/// before the cursor, go to the focused editor as input-method commits.
+/// source; only text off the keys a US keyboard has it on, in the active
+/// layout, and replacements of the word before the cursor, go to the
+/// focused editor as input-method commits.
 pub(crate) fn dispatch_shell_keyboard(
     state: &mut RuntimeState,
     command: &super::super::wire::KeyboardCommand,
@@ -500,17 +710,14 @@ pub(crate) fn dispatch_shell_keyboard(
             frontend.set_keyboard_height(*height, *duration_ms);
             true
         }
-        super::super::wire::KeyboardCommand::Text(text)
-            if text
-                .chars()
-                .any(|character| shell_text_key_stroke(character).is_none()) =>
-        {
-            // The keymap types ASCII only; an editor takes any text.
-            let frontend = state.frontend_mut();
-            match frontend.commit_shell_keyboard_text(None, text) {
-                Some(delivered) => delivered,
-                None => type_shell_text(state, &keyboard, text, time),
-            }
+        super::super::wire::KeyboardCommand::Text(text) => {
+            type_or_commit_shell_text(state, &keyboard, text, time)
+        }
+        super::super::wire::KeyboardCommand::SelectLayout { layout } => {
+            select_keyboard_layout(state, *layout)
+        }
+        super::super::wire::KeyboardCommand::TypingLayouts(layouts) => {
+            set_shell_typing_layouts(state, layouts)
         }
         super::super::wire::KeyboardCommand::Replace { replaced, text } => {
             let frontend = state.frontend_mut();
@@ -532,9 +739,6 @@ pub(crate) fn dispatch_shell_keyboard(
                 }
             }
         }
-        super::super::wire::KeyboardCommand::Text(text) => {
-            type_shell_text(state, &keyboard, text, time)
-        }
         super::super::wire::KeyboardCommand::Key { key, ctrl, phase } => {
             let Some(stroke) = shell_named_key_stroke(key) else {
                 warn!(%key, "ignored unsupported shell keyboard key");
@@ -555,6 +759,8 @@ pub(crate) fn dispatch_shell_keyboard(
     }
 }
 
+/// Types `text` key by key through the seat keymap, in order; characters no
+/// layout has go with keysyms of their own.
 #[cfg(feature = "flutter")]
 fn type_shell_text(
     state: &mut RuntimeState,
@@ -563,13 +769,17 @@ fn type_shell_text(
     time: InputTime,
 ) -> bool {
     let mut delivered = false;
-    for character in text.chars() {
-        let Some(stroke) = shell_text_key_stroke(character) else {
-            warn!(%character, "ignored character unsupported by the shell keyboard keymap");
-            continue;
-        };
-        delivered |= inject_shell_key_stroke(state, keyboard, stroke, false, time);
+    let mut unplanned = Vec::new();
+    for (character, planned) in plan_shell_text(state, keyboard, text) {
+        match planned {
+            Some(planned) => {
+                delivered |= inject_unplanned_shell_text(state, keyboard, &mut unplanned);
+                delivered |= inject_planned_shell_stroke(state, keyboard, planned, time);
+            }
+            None => unplanned.push(character),
+        }
     }
+    delivered |= inject_unplanned_shell_text(state, keyboard, &mut unplanned);
     delivered
 }
 
@@ -2059,6 +2269,11 @@ pub(in super::super) fn install_keyboard_settings(
 ) -> Result<Vec<String>, Box<dyn Error>> {
     let layout_names = settings.compiled_layout_names()?;
     let names = settings.xkb_names();
+    let (layout, variant) = keymap_layouts_with_typing_layouts(
+        &names.layout,
+        &names.variant,
+        &state.frontend().shell_typing_layouts,
+    );
     // Retire every key against the old map before replacing it. A later
     // physical release is consumed, so neither Flutter nor a client can keep
     // a modifier logically held across the keymap boundary.
@@ -2075,16 +2290,38 @@ pub(in super::super) fn install_keyboard_settings(
         .as_ref()
         .and_then(|frontend| frontend.seat.get_keyboard())
         .ok_or("seat has no keyboard")?;
-    keyboard.set_xkb_config(
+    let with_typing_layouts = keyboard.set_xkb_config(
         state,
         XkbConfig {
             rules: "evdev",
             model: "pc105",
-            layout: &names.layout,
-            variant: &names.variant,
-            options: Some(names.options),
+            layout: &layout,
+            variant: &variant,
+            options: Some(names.options.clone()),
         },
-    )?;
+    );
+    if let Err(error) = with_typing_layouts {
+        if layout == names.layout {
+            return Err(error.into());
+        }
+        // The configured layouts compile: the software keyboard's own
+        // layouts must not cost the hardware keyboard its keymap.
+        warn!(
+            %error,
+            layouts = %layout,
+            "keymap without the software keyboard's layouts, which do not compile"
+        );
+        keyboard.set_xkb_config(
+            state,
+            XkbConfig {
+                rules: "evdev",
+                model: "pc105",
+                layout: &names.layout,
+                variant: &names.variant,
+                options: Some(names.options),
+            },
+        )?;
+    }
     keyboard.change_repeat_info(
         i32::try_from(settings.repeat_rate_hz)?,
         i32::try_from(settings.repeat_delay_ms)?,
@@ -2105,6 +2342,72 @@ pub(in super::super) fn install_keyboard_settings(
         i32::try_from(settings.repeat_delay_ms)?,
     );
     Ok(layout_names)
+}
+
+/// An X server's keymap holds four layouts at most.
+#[cfg(feature = "flutter")]
+const MAX_KEYMAP_LAYOUTS: usize = 4;
+
+/// XKB layout and variant lists: the configured `layout` and `variant`,
+/// then each of `typing` that no configured layout is named, as long as the
+/// keymap has room. The software keyboard types with those; layout cycling
+/// and the shell never see them.
+#[cfg(feature = "flutter")]
+fn keymap_layouts_with_typing_layouts(
+    layout: &str,
+    variant: &str,
+    typing: &[String],
+) -> (String, String) {
+    let configured = layout.split(',').collect::<Vec<_>>();
+    let mut layouts = layout.to_owned();
+    let mut variants = variant.to_owned();
+    let mut count = configured.len();
+    for name in typing {
+        if count >= MAX_KEYMAP_LAYOUTS {
+            break;
+        }
+        if configured.contains(&name.as_str()) {
+            continue;
+        }
+        layouts.push(',');
+        layouts.push_str(name);
+        variants.push(',');
+        count += 1;
+    }
+    (layouts, variants)
+}
+
+/// Gives the keymap a layout for each layout the shell keyboard's letter
+/// pages are made for: compiles it again when they change, the active
+/// layout kept.
+#[cfg(feature = "flutter")]
+fn set_shell_typing_layouts(state: &mut RuntimeState, layouts: &[String]) -> bool {
+    let settings = state.frontend().settings.keyboard().clone();
+    let names = settings.xkb_names();
+    let keymap_before = keymap_layouts_with_typing_layouts(
+        &names.layout,
+        &names.variant,
+        &state.frontend().shell_typing_layouts,
+    );
+    let previous = std::mem::replace(
+        &mut state.frontend_mut().shell_typing_layouts,
+        layouts.to_vec(),
+    );
+    // Layouts the configuration already has change nothing.
+    if keymap_layouts_with_typing_layouts(&names.layout, &names.variant, layouts) == keymap_before {
+        return true;
+    }
+    let active = state.frontend().active_keyboard_layout;
+    if let Err(error) = install_keyboard_settings(state, &settings) {
+        warn!(%error, "could not install the keymap for the software keyboard's layouts");
+        state.frontend_mut().shell_typing_layouts = previous;
+        return false;
+    }
+    info!(layouts = %layouts.join(","), "software keyboard layouts");
+    if active != 0 {
+        select_keyboard_layout(state, u32::try_from(active).unwrap_or(0));
+    }
+    true
 }
 
 fn reset_input_devices(state: &mut RuntimeState, reset: InputDeviceReset) {
@@ -2975,6 +3278,40 @@ fn execute_shortcut_disposition_at(
     }
 }
 
+/// The layouts the configuration lists. The keymap may hold more after
+/// them, for the software keyboard alone.
+fn configured_keyboard_layouts(state: &RuntimeState) -> usize {
+    state
+        .wayland
+        .as_ref()
+        .map_or(1, |frontend| frontend.keyboard_layout_names.len())
+        .max(1)
+}
+
+/// The configured layout after `active` in one direction, round the list.
+fn next_configured_layout(active: usize, count: usize, forward: bool) -> usize {
+    match (active < count, forward) {
+        (true, true) => (active + 1) % count,
+        (true, false) => (active + count - 1) % count,
+        (false, true) => 0,
+        (false, false) => count - 1,
+    }
+}
+
+/// The configured layout an XKB group action means when it reached
+/// `active`, one of the software keyboard's layouts after the configured
+/// ones: on past the last configured layout to the first, or back from the
+/// first to the last.
+fn configured_layout_after_group_action(active: usize, previous: usize, count: usize) -> usize {
+    if active < count {
+        active
+    } else if previous + 1 >= count {
+        0
+    } else {
+        count - 1
+    }
+}
+
 fn cycle_keyboard_layout(state: &mut RuntimeState, forward: bool) {
     let Some(keyboard) = state
         .wayland
@@ -2983,22 +3320,72 @@ fn cycle_keyboard_layout(state: &mut RuntimeState, forward: bool) {
     else {
         return;
     };
+    // Only configured layouts: the software keyboard's own come after them.
+    let count = configured_keyboard_layouts(state);
     let active = keyboard.with_xkb_state(state, |mut context| {
-        if forward {
-            context.cycle_next_layout();
-        } else {
-            context.cycle_prev_layout();
-        }
+        let active = context.xkb().lock().unwrap().active_layout().0 as usize;
+        let next = next_configured_layout(active, count, forward);
+        context.set_layout(smithay::input::keyboard::Layout(next as u32));
         context.xkb().lock().unwrap().active_layout().0 as usize
     });
     publish_active_keyboard_layout(state, active);
+}
+
+/// Makes `layout`, one of the configured layouts, the active one, as
+/// Super+Space does: the software keyboard's language key. The shell hears
+/// of it as of a switch on a hardware keyboard.
+#[cfg(feature = "flutter")]
+fn select_keyboard_layout(state: &mut RuntimeState, layout: u32) -> bool {
+    let Some(keyboard) = state
+        .wayland
+        .as_ref()
+        .and_then(|frontend| frontend.seat.get_keyboard())
+    else {
+        return false;
+    };
+    let count = configured_keyboard_layouts(state);
+    if usize::try_from(layout).map_or(true, |layout| layout >= count) {
+        warn!(
+            layout,
+            "ignored a keyboard layout the configuration does not have"
+        );
+        return false;
+    }
+    let active = keyboard.with_xkb_state(state, |mut context| {
+        context.set_layout(smithay::input::keyboard::Layout(layout));
+        context.xkb().lock().unwrap().active_layout().0 as usize
+    });
+    publish_active_keyboard_layout(state, active);
+    true
 }
 
 fn synchronize_active_keyboard_layout(
     state: &mut RuntimeState,
     keyboard: &KeyboardHandle<RuntimeState>,
 ) {
-    let active = keyboard.with_xkb_state(state, |context| {
+    // A shell-keyboard key that lends itself another layout for a stroke
+    // switches back before it returns.
+    #[cfg(feature = "flutter")]
+    if state
+        .wayland
+        .as_ref()
+        .is_some_and(|frontend| frontend.shell_keyboard_borrows_layout)
+    {
+        return;
+    }
+    let count = configured_keyboard_layouts(state);
+    let previous = state
+        .wayland
+        .as_ref()
+        .map_or(0, |frontend| frontend.active_keyboard_layout);
+    let active = keyboard.with_xkb_state(state, |mut context| {
+        let active = context.xkb().lock().unwrap().active_layout().0 as usize;
+        // An XKB option such as grp:alt_shift_toggle steps through every
+        // layout of the keymap; the software keyboard's are skipped.
+        let configured = configured_layout_after_group_action(active, previous, count);
+        if configured != active {
+            context.set_layout(smithay::input::keyboard::Layout(configured as u32));
+        }
         context.xkb().lock().unwrap().active_layout().0 as usize
     });
     publish_active_keyboard_layout(state, active);
@@ -3219,6 +3606,249 @@ fn process_flutter_keyboard_transition(
     );
     synchronize_active_keyboard_layout(state, &keyboard);
     true
+}
+
+#[cfg(all(test, feature = "flutter"))]
+mod shell_text_stroke_tests {
+    use super::*;
+
+    fn keymap(layouts: &str) -> xkb::Keymap {
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        xkb::Keymap::new_from_names(
+            &context,
+            "evdev",
+            "pc105",
+            layouts,
+            "",
+            None,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )
+        .expect("xkeyboard-config compiles the layouts")
+    }
+
+    /// The evdev key, its Shift and the layout that type `character`.
+    fn planned(keymap: &xkb::Keymap, active: u32, character: char) -> Option<(u32, bool, u32)> {
+        plan_shell_text_stroke(keymap, active, character).map(|planned| {
+            (
+                planned.stroke.evdev_keycode,
+                planned.stroke.shift,
+                planned.layout,
+            )
+        })
+    }
+
+    #[test]
+    fn a_us_keymap_types_ascii_with_the_keys_it_always_did() {
+        let us = keymap("us");
+        let mut covered = 0;
+        for character in ' '..='~' {
+            let Some(stroke) = shell_text_key_stroke(character) else {
+                continue;
+            };
+            covered += 1;
+            assert_eq!(
+                planned(&us, 0, character),
+                Some((stroke.evdev_keycode, stroke.shift, 0)),
+                "{character:?}"
+            );
+        }
+        assert_eq!(covered, 95);
+    }
+
+    #[test]
+    fn russian_letters_type_on_their_keys_of_the_russian_layout() {
+        let keymap = keymap("us,ru");
+        // ЙЦУКЕН lies on the QWERTY keys from Q, A and Z on.
+        for (row, first) in [("йцукенгшщзхъ", 16), ("фывапролджэ", 30), ("ячсмитьбю", 44)]
+        {
+            for (offset, letter) in (0..).zip(row.chars()) {
+                let key = first + offset;
+                let capital = letter.to_uppercase().next().unwrap();
+                assert_eq!(
+                    planned(&keymap, 1, letter),
+                    Some((key, false, 1)),
+                    "{letter}"
+                );
+                assert_eq!(
+                    planned(&keymap, 1, capital),
+                    Some((key, true, 1)),
+                    "{capital}"
+                );
+                // While English is active the key borrows the Russian layout.
+                assert_eq!(
+                    planned(&keymap, 0, letter),
+                    Some((key, false, 1)),
+                    "{letter}"
+                );
+                assert_eq!(
+                    planned(&keymap, 0, capital),
+                    Some((key, true, 1)),
+                    "{capital}"
+                );
+            }
+        }
+        assert_eq!(planned(&keymap, 0, 'ё'), Some((41, false, 1)));
+        assert_eq!(planned(&keymap, 1, 'Ё'), Some((41, true, 1)));
+    }
+
+    #[test]
+    fn the_active_layout_types_what_it_has_and_borrows_the_rest() {
+        let keymap = keymap("us,ru");
+        // Russian has the full stop and the comma on the slash key.
+        assert_eq!(planned(&keymap, 1, '.'), Some((53, false, 1)));
+        assert_eq!(planned(&keymap, 1, ','), Some((53, true, 1)));
+        assert_eq!(planned(&keymap, 1, ' '), Some((57, false, 1)));
+        assert_eq!(planned(&keymap, 1, '1'), Some((2, false, 1)));
+        assert_eq!(planned(&keymap, 1, '?'), Some((8, true, 1)));
+        // It has no @ and no Latin letters.
+        assert_eq!(planned(&keymap, 1, '@'), Some((3, true, 0)));
+        assert_eq!(planned(&keymap, 1, 'q'), Some((16, false, 0)));
+        assert_eq!(planned(&keymap, 1, 'Q'), Some((16, true, 0)));
+        assert_eq!(planned(&keymap, 0, ','), Some((51, false, 0)));
+        assert_eq!(planned(&keymap, 0, '?'), Some((53, true, 0)));
+    }
+
+    #[test]
+    fn letters_come_from_the_keymap_not_from_us_positions() {
+        let german = keymap("de");
+        assert_eq!(planned(&german, 0, 'z'), Some((21, false, 0)));
+        assert_eq!(planned(&german, 0, 'y'), Some((44, false, 0)));
+        assert_eq!(planned(&german, 0, 'Y'), Some((44, true, 0)));
+    }
+
+    #[test]
+    fn a_character_no_layout_types_is_left_to_the_fallbacks() {
+        assert_eq!(planned(&keymap("us"), 0, 'й'), None);
+        assert_eq!(planned(&keymap("us,ru"), 1, 'ä'), None);
+    }
+
+    fn typing(layouts: &[&str]) -> Vec<String> {
+        layouts.iter().map(|layout| (*layout).to_owned()).collect()
+    }
+
+    #[test]
+    fn the_keymap_adds_only_typing_layouts_the_configuration_lacks() {
+        let with = |layout, variant, layouts: &[&str]| {
+            keymap_layouts_with_typing_layouts(layout, variant, &typing(layouts))
+        };
+        // No software-keyboard layouts: the configured keymap, untouched.
+        assert_eq!(with("us", "", &[]), ("us".into(), "".into()));
+        assert_eq!(with("us", "", &["us"]), ("us".into(), "".into()));
+        assert_eq!(with("us", "", &["us", "ru"]), ("us,ru".into(), ",".into()));
+        assert_eq!(
+            with("us,ru", ",", &["us", "ru"]),
+            ("us,ru".into(), ",".into())
+        );
+        // A configured variant of the layout serves.
+        assert_eq!(
+            with("ru,us", "phonetic,", &["us", "ru"]),
+            ("ru,us".into(), "phonetic,".into())
+        );
+        assert_eq!(
+            with("de", "nodeadkeys", &["us", "ru"]),
+            ("de,us,ru".into(), "nodeadkeys,,".into())
+        );
+        // Never more than four layouts.
+        assert_eq!(
+            with("de,fr,it", ",,", &["us", "ru"]),
+            ("de,fr,it,us".into(), ",,,".into())
+        );
+        assert_eq!(
+            with("de,fr,it,es", ",,,", &["us", "ru"]),
+            ("de,fr,it,es".into(), ",,,".into())
+        );
+    }
+
+    #[test]
+    fn a_keymap_with_typing_layouts_compiles_and_keeps_the_configured_order() {
+        let (layout, variant) =
+            keymap_layouts_with_typing_layouts("us", "", &typing(&["us", "ru"]));
+        let context = xkb::Context::new(xkb::CONTEXT_NO_FLAGS);
+        let keymap = xkb::Keymap::new_from_names(
+            &context,
+            "evdev",
+            "pc105",
+            &layout,
+            &variant,
+            None,
+            xkb::KEYMAP_COMPILE_NO_FLAGS,
+        )
+        .expect("compiles");
+        assert_eq!(keymap.num_layouts(), 2);
+        assert_eq!(keymap.layout_get_name(0), "English (US)");
+        assert_eq!(keymap.layout_get_name(1), "Russian");
+        // English stays active; Russian letters borrow the added layout.
+        assert_eq!(planned(&keymap, 0, 'ж'), Some((39, false, 1)));
+        assert_eq!(planned(&keymap, 0, 'q'), Some((16, false, 0)));
+    }
+
+    #[test]
+    fn only_text_on_us_keys_of_the_active_layout_skips_the_editor() {
+        let on_us_keys = |keymap: &xkb::Keymap, active, text: &str| {
+            let planned = text
+                .chars()
+                .map(|character| (character, plan_shell_text_stroke(keymap, active, character)))
+                .collect::<Vec<_>>();
+            types_on_us_keys(active, &planned)
+        };
+        let us = keymap("us");
+        assert!(on_us_keys(&us, 0, "Hello, world? 1+1=2"));
+        assert!(!on_us_keys(&us, 0, "perché"));
+        let us_ru = keymap("us,ru");
+        assert!(on_us_keys(&us_ru, 0, "Hello, world?"));
+        // A Russian letter borrows the Russian layout.
+        assert!(!on_us_keys(&us_ru, 0, "привет"));
+        // Russian active: its letters and the marks it moves are off the
+        // US keys, digits and the space are on them.
+        assert!(!on_us_keys(&us_ru, 1, "привет"));
+        assert!(!on_us_keys(&us_ru, 1, ","));
+        assert!(!on_us_keys(&us_ru, 1, "q"));
+        assert!(on_us_keys(&us_ru, 1, "1 2"));
+    }
+
+    #[test]
+    fn layout_cycling_steps_through_the_configured_layouts_only() {
+        assert_eq!(next_configured_layout(0, 1, true), 0);
+        assert_eq!(next_configured_layout(0, 1, false), 0);
+        assert_eq!(next_configured_layout(0, 2, true), 1);
+        assert_eq!(next_configured_layout(1, 2, true), 0);
+        assert_eq!(next_configured_layout(0, 2, false), 1);
+        assert_eq!(next_configured_layout(2, 3, true), 0);
+        assert_eq!(next_configured_layout(1, 3, false), 0);
+        // From a software keyboard's layout, should one be active.
+        assert_eq!(next_configured_layout(2, 2, true), 0);
+        assert_eq!(next_configured_layout(2, 2, false), 1);
+    }
+
+    #[test]
+    fn a_group_action_into_a_typing_layout_lands_on_a_configured_one() {
+        // Configured layouts stay as they are.
+        assert_eq!(configured_layout_after_group_action(1, 0, 2), 1);
+        assert_eq!(configured_layout_after_group_action(0, 1, 2), 0);
+        // On from the last configured layout: round to the first.
+        assert_eq!(configured_layout_after_group_action(2, 1, 2), 0);
+        assert_eq!(configured_layout_after_group_action(1, 0, 1), 0);
+        // Back from the first: XKB wraps to the keymap's last layout.
+        assert_eq!(configured_layout_after_group_action(3, 0, 2), 1);
+        assert_eq!(configured_layout_after_group_action(3, 0, 3), 2);
+    }
+
+    #[test]
+    fn keypad_keys_are_never_chosen() {
+        const KEYPAD: [u32; 18] = [
+            55, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 96, 98, 117, 121,
+        ];
+        let keymap = keymap("us,ru");
+        for character in "+-*/.,=0123456789".chars() {
+            for active in [0, 1] {
+                let (key, ..) = planned(&keymap, active, character).expect("typeable");
+                assert!(
+                    !KEYPAD.contains(&key),
+                    "{character} with layout {active} on {key}"
+                );
+            }
+        }
+    }
 }
 
 #[cfg(all(test, feature = "flutter"))]

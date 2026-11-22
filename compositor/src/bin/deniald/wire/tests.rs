@@ -1812,6 +1812,108 @@ fn keyboard_replace_needs_both_texts() {
     assert!(bridge.pending_keyboard_commands.is_empty());
 }
 
+fn keyboard_layout_selection(layout: u32, text: Option<&str>) -> Vec<u8> {
+    let mut builder = FlatBufferBuilder::new();
+    let text = text.map(|text| builder.create_string(text));
+    let command = fb::KeyboardCommand::create(
+        &mut builder,
+        &fb::KeyboardCommandArgs {
+            kind: fb::KeyboardCommandKind::SelectLayout,
+            text,
+            layout,
+            ..Default::default()
+        },
+    );
+    let envelope = fb::Envelope::create(
+        &mut builder,
+        &fb::EnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            sequence: 13,
+            payload_type: fb::Payload::KeyboardCommand,
+            payload: Some(command.as_union_value()),
+            ..Default::default()
+        },
+    );
+    fb::finish_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+#[test]
+fn keyboard_layout_selection_carries_only_the_layout() {
+    let mut bridge = bridge();
+    bridge.handle(&keyboard_layout_selection(1, None)).unwrap();
+    assert_eq!(
+        bridge.pending_keyboard_commands.pop_front().unwrap(),
+        KeyboardCommand::SelectLayout { layout: 1 }
+    );
+    assert!(
+        bridge
+            .handle(&keyboard_layout_selection(0, Some("ru")))
+            .is_err()
+    );
+    assert!(bridge.pending_keyboard_commands.is_empty());
+}
+
+fn keyboard_typing_layouts(text: Option<&str>, layout: u32) -> Vec<u8> {
+    let mut builder = FlatBufferBuilder::new();
+    let text = text.map(|text| builder.create_string(text));
+    let command = fb::KeyboardCommand::create(
+        &mut builder,
+        &fb::KeyboardCommandArgs {
+            kind: fb::KeyboardCommandKind::TypingLayouts,
+            text,
+            layout,
+            ..Default::default()
+        },
+    );
+    let envelope = fb::Envelope::create(
+        &mut builder,
+        &fb::EnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            sequence: 14,
+            payload_type: fb::Payload::KeyboardCommand,
+            payload: Some(command.as_union_value()),
+            ..Default::default()
+        },
+    );
+    fb::finish_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+#[test]
+fn keyboard_typing_layouts_are_distinct_xkb_names() {
+    let mut bridge = bridge();
+    for (text, layouts) in [
+        (Some("us,ru"), vec!["us", "ru"]),
+        (Some("ru"), vec!["ru"]),
+        (Some(""), vec![]),
+        (None, vec![]),
+    ] {
+        bridge.handle(&keyboard_typing_layouts(text, 0)).unwrap();
+        assert_eq!(
+            bridge.pending_keyboard_commands.pop_front().unwrap(),
+            KeyboardCommand::TypingLayouts(layouts.into_iter().map(str::to_owned).collect()),
+            "{text:?}"
+        );
+    }
+    for (text, layout) in [
+        (Some("us,,ru"), 0),
+        (Some("us,ru,"), 0),
+        (Some("us,us"), 0),
+        (Some("us ru"), 0),
+        (Some("us,ru,de,fr,ua"), 0),
+        (Some("ru"), 1),
+    ] {
+        assert!(
+            bridge
+                .handle(&keyboard_typing_layouts(text, layout))
+                .is_err(),
+            "{text:?} {layout}"
+        );
+    }
+    assert!(bridge.pending_keyboard_commands.is_empty());
+}
+
 fn prediction_request(serial: u64, word: &str, xs: &[f32], ys: &[f32], request_id: u64) -> Vec<u8> {
     let mut builder = FlatBufferBuilder::new();
     let word = builder.create_string(word);

@@ -472,6 +472,10 @@ impl WaylandFrontend {
             #[cfg(feature = "flutter")]
             shell_keyboard_keys: HashSet::new(),
             #[cfg(feature = "flutter")]
+            shell_keyboard_borrows_layout: false,
+            #[cfg(feature = "flutter")]
+            shell_typing_layouts: Vec::new(),
+            #[cfg(feature = "flutter")]
             flutter_compose,
             #[cfg(feature = "flutter")]
             flutter_repeat_key: None,
