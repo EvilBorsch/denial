@@ -4,6 +4,7 @@ library;
 export 'l10n/generated/app_localizations.dart'
     show AppLocalizations, lookupAppLocalizations;
 export 'l10n/generated/app_localizations_en.dart' show AppLocalizationsEn;
+export 'l10n/generated/app_localizations_ru.dart' show AppLocalizationsRu;
 export 'l10n/generated/app_localizations_zh.dart' show AppLocalizationsZh;
 export 'src/localization/denial_localizations.dart'
     show
@@ -15,6 +16,8 @@ export 'src/localization/denial_localizations.dart'
         localizedLongDate,
         localizedMonth,
         localizedShortDate,
+        localizedShortMonth,
+        localizedShortWeekday,
         localizedThermalSensor,
         localizedTime,
         localizedWeekday,

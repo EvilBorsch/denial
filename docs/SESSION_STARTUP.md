@@ -287,7 +287,7 @@ HELPER USERNAME FULL_NAME DEVICE_NAME LANGUAGE TIME_ZONE
 ```
 
 with the password as the first line of standard input and the PIN, six
-digits or empty for none, as the second. `LANGUAGE` is `en` or `zh`; an empty
+digits or empty for none, as the second. `LANGUAGE` is `en`, `zh` or `ru`; an empty
 `TIME_ZONE` keeps the system's. The helper makes the account, password
 included, in one step. Its exit status: 0 made; 4 made, but the device's
 name, time zone or language failed; 5 made, but the PIN was not set; 3 an

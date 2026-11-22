@@ -161,17 +161,43 @@ String localizedTime(BuildContext context, DateTime value) {
 
 String localizedShortDate(BuildContext context, DateTime value) {
   final l10n = context.l10n;
-  final weekday = localizedWeekday(l10n, value.weekday);
-  final month = localizedMonth(l10n, value.month);
   return l10n.shortDate(
-    _abbreviateDateName(weekday),
+    localizedShortWeekday(l10n, value.weekday),
     value.day,
-    _abbreviateDateName(month),
+    localizedShortMonth(l10n, value.month),
   );
 }
 
-String _abbreviateDateName(String value) =>
-    value.length <= 3 ? value : value.substring(0, 3);
+/// A weekday as a short date writes it. Each language names it itself: the
+/// first letters of the full name are not how every language shortens one.
+String localizedShortWeekday(AppLocalizations l10n, int weekday) =>
+    switch (weekday) {
+      DateTime.monday => l10n.weekdayShortMonday,
+      DateTime.tuesday => l10n.weekdayShortTuesday,
+      DateTime.wednesday => l10n.weekdayShortWednesday,
+      DateTime.thursday => l10n.weekdayShortThursday,
+      DateTime.friday => l10n.weekdayShortFriday,
+      DateTime.saturday => l10n.weekdayShortSaturday,
+      DateTime.sunday => l10n.weekdayShortSunday,
+      _ => l10n.weekdayShortMonday,
+    };
+
+/// A month as a short date writes it.
+String localizedShortMonth(AppLocalizations l10n, int month) => switch (month) {
+  DateTime.january => l10n.monthShortJanuary,
+  DateTime.february => l10n.monthShortFebruary,
+  DateTime.march => l10n.monthShortMarch,
+  DateTime.april => l10n.monthShortApril,
+  DateTime.may => l10n.monthShortMay,
+  DateTime.june => l10n.monthShortJune,
+  DateTime.july => l10n.monthShortJuly,
+  DateTime.august => l10n.monthShortAugust,
+  DateTime.september => l10n.monthShortSeptember,
+  DateTime.october => l10n.monthShortOctober,
+  DateTime.november => l10n.monthShortNovember,
+  DateTime.december => l10n.monthShortDecember,
+  _ => l10n.monthShortJanuary,
+};
 
 String localizedWeekday(AppLocalizations l10n, int weekday) =>
     switch (weekday) {

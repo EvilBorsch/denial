@@ -18,22 +18,26 @@ def load(path):
 
 en = load(catalog / 'app_en.arb')
 zh = load(catalog / 'app_zh.arb')
-assert en['@@locale'] == 'en' and zh['@@locale'] == 'zh'
+ru = load(catalog / 'app_ru.arb')
+assert en['@@locale'] == 'en' and zh['@@locale'] == 'zh' and ru['@@locale'] == 'ru'
 keys = {key for key in en if key.startswith('plugins')}
 assert keys and keys == {key for key in zh if key.startswith('plugins')}
+assert keys == {key for key in ru if key.startswith('plugins')}
 for key in keys:
-    assert en[key].strip() and zh[key].strip(), key
+    assert en[key].strip() and zh[key].strip() and ru[key].strip(), key
     metadata = en['@' + key]
     assert metadata['description'], key
     declared = metadata.get('placeholders', {})
-    for language in [en, zh]:
+    for language in [en, zh, ru]:
         used = set(re.findall(r'\{(\w+)(?:\}|,)', language[key]))
         assert used == set(declared), (key, used, declared)
     for value in declared.values():
         assert value['type'] in {'String', 'int'}, (key, value)
 assert ', plural,' in en['pluginsSelectedCount']
 assert '{count}' in zh['pluginsSelectedCount']
-print(f'PASS {len(keys)} Plugin Manager ARB pairs, metadata, placeholders and selected-count plural')
+for category in ['one', 'few', 'many', 'other']:
+    assert category + '{' in ru['pluginsSelectedCount'], category
+print(f'PASS {len(keys)} Plugin Manager ARB messages in three languages, metadata, placeholders and selected-count plural')
 
 sources = root / 'plugin_manager_app/lib'
 main = (sources / 'main.dart').read_text()
@@ -72,8 +76,9 @@ assert 'excludeSemantics: true' in progress
 assert 'progressDescription(context.l10n, widget.progress, DateTime.now())' in progress
 print('PASS backend compilation/composition stages and stable localized accessibility labels')
 
-for filename in ['app_localizations.dart', 'app_localizations_en.dart', 'app_localizations_zh.dart']:
+for filename in ['app_localizations.dart', 'app_localizations_en.dart',
+                 'app_localizations_ru.dart', 'app_localizations_zh.dart']:
     generated = (catalog / 'generated' / filename).read_text()
     for key in keys:
         assert key in generated, (filename, key)
-print('PASS generated interfaces and both locale implementations contain every added key')
+print('PASS generated interfaces and the three locale implementations contain every added key')

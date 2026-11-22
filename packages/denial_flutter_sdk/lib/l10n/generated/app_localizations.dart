@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
 
 import 'app_localizations_en.dart';
+import 'app_localizations_ru.dart';
 import 'app_localizations_zh.dart';
 
 // ignore_for_file: type=lint
@@ -95,6 +96,7 @@ abstract class AppLocalizations {
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
     Locale('en'),
+    Locale('ru'),
     Locale('zh'),
   ];
 
@@ -4162,6 +4164,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'简体中文'**
   String get settingsLanguageSimplifiedChinese;
+
+  /// Self-name for the Russian language option.
+  ///
+  /// In en, this message translates to:
+  /// **'Русский'**
+  String get settingsLanguageRussian;
 
   /// Language option that follows the operating system locale.
   ///
@@ -9849,6 +9857,120 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Tap again to restart Denial. Open apps close.'**
   String get mobilePowerTapToRestartDenial;
+
+  /// Monday as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Mon'**
+  String get weekdayShortMonday;
+
+  /// Tuesday as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Tue'**
+  String get weekdayShortTuesday;
+
+  /// Wednesday as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Wed'**
+  String get weekdayShortWednesday;
+
+  /// Thursday as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Thu'**
+  String get weekdayShortThursday;
+
+  /// Friday as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Fri'**
+  String get weekdayShortFriday;
+
+  /// Saturday as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Sat'**
+  String get weekdayShortSaturday;
+
+  /// Sunday as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Sun'**
+  String get weekdayShortSunday;
+
+  /// January as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Jan'**
+  String get monthShortJanuary;
+
+  /// February as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Feb'**
+  String get monthShortFebruary;
+
+  /// March as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Mar'**
+  String get monthShortMarch;
+
+  /// April as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Apr'**
+  String get monthShortApril;
+
+  /// May as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'May'**
+  String get monthShortMay;
+
+  /// June as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Jun'**
+  String get monthShortJune;
+
+  /// July as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Jul'**
+  String get monthShortJuly;
+
+  /// August as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Aug'**
+  String get monthShortAugust;
+
+  /// September as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Sep'**
+  String get monthShortSeptember;
+
+  /// October as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Oct'**
+  String get monthShortOctober;
+
+  /// November as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Nov'**
+  String get monthShortNovember;
+
+  /// December as a short date writes it: the system bar and notifications from another day.
+  ///
+  /// In en, this message translates to:
+  /// **'Dec'**
+  String get monthShortDecember;
 }
 
 class _AppLocalizationsDelegate
@@ -9862,7 +9984,7 @@ class _AppLocalizationsDelegate
 
   @override
   bool isSupported(Locale locale) =>
-      <String>['en', 'zh'].contains(locale.languageCode);
+      <String>['en', 'ru', 'zh'].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
@@ -9873,6 +9995,8 @@ AppLocalizations lookupAppLocalizations(Locale locale) {
   switch (locale.languageCode) {
     case 'en':
       return AppLocalizationsEn();
+    case 'ru':
+      return AppLocalizationsRu();
     case 'zh':
       return AppLocalizationsZh();
   }

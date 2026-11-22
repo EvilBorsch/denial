@@ -27,9 +27,11 @@ final class OpenApplicationsAction implements ShellAction {
   String get provider => 'Launcher';
   @override
   String label(BuildContext context) =>
-      Localizations.localeOf(context).languageCode == 'zh'
-      ? '打开应用列表'
-      : 'Open applications';
+      switch (Localizations.localeOf(context).languageCode) {
+        'zh' => '打开应用列表',
+        'ru' => 'Открыть приложения',
+        _ => 'Open applications',
+      };
   @override
   String description(BuildContext context) => '';
   @override

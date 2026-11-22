@@ -31,7 +31,8 @@ final firstUserHelperProvider = Provider<String?>((ref) {
 
 enum SetupLanguage {
   english('en'),
-  simplifiedChinese('zh');
+  simplifiedChinese('zh'),
+  russian('ru');
 
   const SetupLanguage(this.code);
 

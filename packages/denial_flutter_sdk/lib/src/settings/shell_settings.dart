@@ -68,7 +68,7 @@ const double clipboardTrayMaximumExtent = 300;
 const double clipboardTrayDefaultExtent = 160;
 const double launcherOverlayMinimumHeight = 200;
 
-enum ShellLocalePreference { system, english, simplifiedChinese }
+enum ShellLocalePreference { system, english, simplifiedChinese, russian }
 
 @immutable
 class ShellLocalizationSettings {
@@ -86,6 +86,7 @@ class ShellLocalizationSettings {
     ShellLocalePreference.system => null,
     ShellLocalePreference.english => const Locale('en'),
     ShellLocalePreference.simplifiedChinese => const Locale('zh'),
+    ShellLocalePreference.russian => const Locale('ru'),
   };
 
   ShellLocalizationSettings copyWith({

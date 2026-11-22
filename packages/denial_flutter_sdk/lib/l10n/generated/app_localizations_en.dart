@@ -2321,6 +2321,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsLanguageSimplifiedChinese => '简体中文';
 
   @override
+  String get settingsLanguageRussian => 'Русский';
+
+  @override
   String get settingsLanguageSystemDefault => 'System default';
 
   @override
@@ -5518,4 +5521,61 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get mobilePowerTapToRestartDenial =>
       'Tap again to restart Denial. Open apps close.';
+
+  @override
+  String get weekdayShortMonday => 'Mon';
+
+  @override
+  String get weekdayShortTuesday => 'Tue';
+
+  @override
+  String get weekdayShortWednesday => 'Wed';
+
+  @override
+  String get weekdayShortThursday => 'Thu';
+
+  @override
+  String get weekdayShortFriday => 'Fri';
+
+  @override
+  String get weekdayShortSaturday => 'Sat';
+
+  @override
+  String get weekdayShortSunday => 'Sun';
+
+  @override
+  String get monthShortJanuary => 'Jan';
+
+  @override
+  String get monthShortFebruary => 'Feb';
+
+  @override
+  String get monthShortMarch => 'Mar';
+
+  @override
+  String get monthShortApril => 'Apr';
+
+  @override
+  String get monthShortMay => 'May';
+
+  @override
+  String get monthShortJune => 'Jun';
+
+  @override
+  String get monthShortJuly => 'Jul';
+
+  @override
+  String get monthShortAugust => 'Aug';
+
+  @override
+  String get monthShortSeptember => 'Sep';
+
+  @override
+  String get monthShortOctober => 'Oct';
+
+  @override
+  String get monthShortNovember => 'Nov';
+
+  @override
+  String get monthShortDecember => 'Dec';
 }
