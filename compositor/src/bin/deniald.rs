@@ -215,7 +215,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use calloop::signals::{Signal, Signals};
 #[cfg(feature = "flutter")]
-use denial_core::portal_protocol::{DesktopAccentColor, DesktopThemeSnapshot};
+use denial_core::portal_protocol::{DesktopAccentColor, DesktopPresentation, DesktopThemeSnapshot};
 use denial_core::topology::{
     AtlasPlan, LogicalPoint, OutputId, OutputSpec, OutputTransform, PixelRect, PixelSize,
     SCALE_BASE, TopologyChange, TopologyManager, TopologySnapshot,

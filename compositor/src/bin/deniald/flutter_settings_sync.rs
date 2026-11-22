@@ -111,6 +111,9 @@ pub(super) fn synchronize_settings(
     if let Some(accent) = runtime.take_theme_accent() {
         events.resolved_theme_accent = DesktopAccentColor::from_srgb24(accent);
     }
+    if let Some(presentation) = runtime.take_shell_presentation() {
+        events.shell_presentation = presentation;
+    }
     synchronize_control_settings(runtime, events)?;
     let commands = runtime.drain_settings_commands().collect::<Vec<_>>();
     for command in commands {
@@ -706,13 +709,29 @@ fn synchronize_committed_theme(
     runtime: &mut flutter_runtime::FlutterRuntime,
     events: &mut RuntimeState,
 ) -> Result<(), Box<dyn Error>> {
-    let snapshot = events
-        .frontend()
-        .settings
+    let settings = &events.frontend().settings;
+    let shell = settings.apps_follow().shell_state(
+        events.shell_presentation,
+        !events.input_devices.typing_keyboards.is_empty(),
+    );
+    let snapshot = settings
         .theme_snapshot()
-        .with_accent(events.resolved_theme_accent);
+        .with_accent(events.resolved_theme_accent)
+        .with_shell(shell);
     if events.published_theme_snapshot == Some(snapshot) {
         return Ok(());
+    }
+    if events
+        .published_theme_snapshot
+        .is_none_or(|previous| previous.shell != shell)
+    {
+        info!(
+            presentation = shell.presentation.portal_name(),
+            keyboard_attached = shell.keyboard_attached,
+            tablet_mode = shell.tablet_mode,
+            text_scaling_factor = ?shell.text_scaling_factor(),
+            "apps follow the shell"
+        );
     }
     if let Some(publisher) = events.portal_ipc.as_ref() {
         publisher.publish(snapshot);

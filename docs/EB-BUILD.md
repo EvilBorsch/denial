@@ -1,10 +1,10 @@
 # Building Denial 0.6.8 parts for the tablet (EvilBorsch fork)
 
 This fork changes Denial's Flutter shell (`dart_shell`, `plugins/*`,
-`packages/*`) and the compositor `deniald`; the fork
-[EvilBorsch/denial-apps](https://github.com/EvilBorsch/denial-apps) changes
-Settings. The Flutter engine package (`denial-flutter-engine` 0.6.8-1, ABI
-`3.47.5.denial1`), `denialctl`, the portal, the polkit agent and Settings'
+`packages/*`), the compositor `deniald` and its portal `denial-portal`; the
+fork [EvilBorsch/denial-apps](https://github.com/EvilBorsch/denial-apps)
+changes Settings. The Flutter engine package (`denial-flutter-engine`
+0.6.8-1, ABI `3.47.5.denial1`), `denialctl`, the polkit agent and Settings'
 Wi-Fi country helper stay the signed v0.6.8 release builds. A change is
 installed as a `denial` package made from the release's, in which only these
 differ:
@@ -12,6 +12,8 @@ differ:
 - `/usr/lib/denial/flutter/lib/libapp.so`, the AOT-compiled shell;
 - `/usr/lib/denial/flutter/data/flutter_assets/`, its assets;
 - `/usr/bin/deniald`, when the change touches the compositor;
+- `/usr/bin/denial-portal`, with a `deniald` that speaks portal protocol 3
+  (`eb/mode-follow` and later);
 - `/usr/lib/denial-apps/settings`, when the change touches Settings.
 
 ## Why no engine build is needed
@@ -113,6 +115,13 @@ commit as its build (`deniald --version`: `deniald 0.6.8 (build
 eb.g<commit>; …)` once installed); `out/deniald.txt` lists its SHA-256, the
 libraries it links and the glibc symbol versions it needs.
 
+The same command builds `denial-portal` (`cargo build --locked --release -p
+denial-portal`, as the release does) into `out/denial-portal`, with
+`out/denial-portal.txt`. `deniald` and the portal speak one private protocol
+(`src/portal_protocol.rs`); since protocol version 3 (the shell's state for
+apps, docs/APPS_FOLLOW_MODE.md) a `deniald` of this fork needs its own
+portal, and the release's portal refuses it.
+
 ### Checked against the release
 
 Built the same way from the untouched `v0.6.8` tag
@@ -149,6 +158,18 @@ untouched v0.6.8: the three `cpu_scheduling` kernel tests (utilization clamp
 `EOPNOTSUPP` in the WSL kernel; a test re-executing its own binary, which
 qemu-user cannot) and the timing-sensitive
 `frame_deadline_source_tests::acquire_callback_removes_queued_deadline_source`.
+On `eb/mode-follow` 709 of 714 pass with the same 4 failing.
+
+The portal's tests and the protocol's run the same way, the D-Bus ones on a
+private session bus:
+
+```sh
+EB_JOBS=8 tools/eb-build-deniald test-portal ~/work-denial-sysroot
+```
+
+On `eb/mode-follow` all pass but
+`access::tests::asks_through_the_dialog_and_reports_its_choices`, which
+re-executes its own binary as the dialog and fails the same way on `eb/main`.
 
 ## Build Settings
 
@@ -256,12 +277,14 @@ other.
 ## A complete `denial` package
 
 ```sh
-tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb3 ~/debs ~/work-denial-deniald/out/deniald
+EB_PORTAL=~/work-denial-deniald/out/denial-portal \
+  tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb3 ~/debs ~/work-denial-deniald/out/deniald
 ```
 
 It takes the signed `denial_0.6.8-1_arm64.deb`, replaces the two shell paths
-and, with the fourth argument, `/usr/bin/deniald`, and sets the version and
-maintainer. If the new `deniald` needs a newer glibc than the package's
+and, with the fourth argument, `/usr/bin/deniald` (with `EB_PORTAL` also
+`/usr/bin/denial-portal`, which needs the `deniald` built with it), and sets
+the version and maintainer. If the new `deniald` needs a newer glibc than the package's
 `libc6 (>= 2.39)`, the tool raises that dependency. Every other file, the
 conffiles (`/etc/denial/session.conf` stays as packaged) and the maintainer
 scripts are the release's, except that the postinst gives `deniald`

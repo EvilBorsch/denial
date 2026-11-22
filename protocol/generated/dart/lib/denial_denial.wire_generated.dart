@@ -1135,6 +1135,40 @@ class _ShortcutTargetTypeIdReader extends fb.Reader<ShortcutTargetTypeId> {
       ShortcutTargetTypeId.fromValue(const fb.Uint8Reader().read(bc, offset));
 }
 
+enum ShellPresentationKind {
+  Desktop(0),
+  Tablet(1);
+
+  final int value;
+  const ShellPresentationKind(this.value);
+
+  factory ShellPresentationKind.fromValue(int value) {
+    switch (value) {
+      case 0: return ShellPresentationKind.Desktop;
+      case 1: return ShellPresentationKind.Tablet;
+      default: throw StateError('Invalid value $value for bit flag enum');
+    }
+  }
+
+  static ShellPresentationKind? _createOrNull(int? value) =>
+      value == null ? null : ShellPresentationKind.fromValue(value);
+
+  static const int minValue = 0;
+  static const int maxValue = 1;
+  static const fb.Reader<ShellPresentationKind> reader = _ShellPresentationKindReader();
+}
+
+class _ShellPresentationKindReader extends fb.Reader<ShellPresentationKind> {
+  const _ShellPresentationKindReader();
+
+  @override
+  int get size => 1;
+
+  @override
+  ShellPresentationKind read(fb.BufferContext bc, int offset) =>
+      ShellPresentationKind.fromValue(const fb.Uint8Reader().read(bc, offset));
+}
+
 enum PetRequestKind {
   Hold(0),
   Carried(1);
@@ -1194,7 +1228,8 @@ enum PayloadTypeId {
   PluginActionInvocation(21),
   PetRequest(22),
   TextPredictionRequest(23),
-  TextPrediction(24);
+  TextPrediction(24),
+  ShellPresentation(25);
 
   final int value;
   const PayloadTypeId(this.value);
@@ -1226,6 +1261,7 @@ enum PayloadTypeId {
       case 22: return PayloadTypeId.PetRequest;
       case 23: return PayloadTypeId.TextPredictionRequest;
       case 24: return PayloadTypeId.TextPrediction;
+      case 25: return PayloadTypeId.ShellPresentation;
       default: throw StateError('Invalid value $value for bit flag enum');
     }
   }
@@ -1234,7 +1270,7 @@ enum PayloadTypeId {
       value == null ? null : PayloadTypeId.fromValue(value);
 
   static const int minValue = 0;
-  static const int maxValue = 24;
+  static const int maxValue = 25;
   static const fb.Reader<PayloadTypeId> reader = _PayloadTypeIdReader();
 }
 
@@ -7103,6 +7139,77 @@ class ThemeStateObjectBuilder extends fb.ObjectBuilder {
     return fbBuilder.buffer;
   }
 }
+class ShellPresentation {
+  ShellPresentation._(this._bc, this._bcOffset);
+  factory ShellPresentation(List<int> bytes) {
+    final rootRef = fb.BufferContext.fromBytes(bytes);
+    return reader.read(rootRef, 0);
+  }
+
+  static const fb.Reader<ShellPresentation> reader = _ShellPresentationReader();
+
+  final fb.BufferContext _bc;
+  final int _bcOffset;
+
+  ShellPresentationKind get kind => ShellPresentationKind.fromValue(const fb.Uint8Reader().vTableGet(_bc, _bcOffset, 4, 0));
+
+  @override
+  String toString() {
+    return 'ShellPresentation{kind: ${kind}}';
+  }
+}
+
+class _ShellPresentationReader extends fb.TableReader<ShellPresentation> {
+  const _ShellPresentationReader();
+
+  @override
+  ShellPresentation createObject(fb.BufferContext bc, int offset) => 
+    ShellPresentation._(bc, offset);
+}
+
+class ShellPresentationBuilder {
+  ShellPresentationBuilder(this.fbBuilder);
+
+  final fb.Builder fbBuilder;
+
+  void begin() {
+    fbBuilder.startTable(1);
+  }
+
+  int addKind(ShellPresentationKind? kind) {
+    fbBuilder.addUint8(0, kind?.value);
+    return fbBuilder.offset;
+  }
+
+  int finish() {
+    return fbBuilder.endTable();
+  }
+}
+
+class ShellPresentationObjectBuilder extends fb.ObjectBuilder {
+  final ShellPresentationKind? _kind;
+
+  ShellPresentationObjectBuilder({
+    ShellPresentationKind? kind,
+  })
+      : _kind = kind;
+
+  /// Finish building, and store into the [fbBuilder].
+  @override
+  int finish(fb.Builder fbBuilder) {
+    fbBuilder.startTable(1);
+    fbBuilder.addUint8(0, _kind?.value);
+    return fbBuilder.endTable();
+  }
+
+  /// Convenience method to serialize to byte list.
+  @override
+  Uint8List toBytes([String? fileIdentifier]) {
+    final fbBuilder = fb.Builder(deduplicateTables: false);
+    fbBuilder.finish(finish(fbBuilder), fileIdentifier);
+    return fbBuilder.buffer;
+  }
+}
 class PluginActionCatalog {
   PluginActionCatalog._(this._bc, this._bcOffset);
   factory PluginActionCatalog(List<int> bytes) {
@@ -7443,6 +7550,7 @@ class Envelope {
       case 22: return PetRequest.reader.vTableGetNullable(_bc, _bcOffset, 12);
       case 23: return TextPredictionRequest.reader.vTableGetNullable(_bc, _bcOffset, 12);
       case 24: return TextPrediction.reader.vTableGetNullable(_bc, _bcOffset, 12);
+      case 25: return ShellPresentation.reader.vTableGetNullable(_bc, _bcOffset, 12);
       default: return null;
     }
   }

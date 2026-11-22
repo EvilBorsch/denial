@@ -929,6 +929,21 @@ table ThemeState {
   accent_srgb:uint;
 }
 
+// What the embedded shell presents on the built-in screen: a tablet's shell
+// (DENIAL_SHELL_PROFILE=mobile, or the Desktop mode tile switched off) or a
+// desktop's. A monitor beside the tablet makes it Desktop. deniald publishes
+// it to desktop clients (org.denialwm.shell in the Settings portal), whose
+// apps may follow it with touch or desktop layouts. Supplied only by the
+// embedded shell.
+enum ShellPresentationKind : ubyte {
+  Desktop = 0,
+  Tablet = 1
+}
+
+table ShellPresentation {
+  kind:ShellPresentationKind = Desktop;
+}
+
 // Versioned, bounded action descriptors; supplied only by the embedded shell.
 // JSON schema: [{id, label, description, provider}]. IDs are package-qualified.
 table PluginActionCatalog {
@@ -992,7 +1007,8 @@ union Payload {
   PluginActionInvocation,
   PetRequest,
   TextPredictionRequest,
-  TextPrediction
+  TextPrediction,
+  ShellPresentation
 }
 
 table Envelope {

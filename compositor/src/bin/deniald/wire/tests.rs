@@ -2034,3 +2034,69 @@ fn text_prediction_encodes_suggestions() {
         .unwrap();
     assert_eq!(decoded.correction(), None);
 }
+
+fn shell_presentation(kind: fb::ShellPresentationKind, request_id: u64) -> Vec<u8> {
+    let mut builder = FlatBufferBuilder::new();
+    let presentation =
+        fb::ShellPresentation::create(&mut builder, &fb::ShellPresentationArgs { kind });
+    let envelope = fb::Envelope::create(
+        &mut builder,
+        &fb::EnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            sequence: 4,
+            request_id,
+            payload_type: fb::Payload::ShellPresentation,
+            payload: Some(presentation.as_union_value()),
+        },
+    );
+    fb::finish_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+#[test]
+fn shell_presentation_keeps_the_latest_report() {
+    use denial_core::portal_protocol::DesktopPresentation;
+
+    let mut bridge = bridge();
+    assert_eq!(bridge.take_shell_presentation(), None);
+    for kind in [
+        fb::ShellPresentationKind::Desktop,
+        fb::ShellPresentationKind::Tablet,
+    ] {
+        assert!(
+            bridge
+                .handle(&shell_presentation(kind, 0))
+                .unwrap()
+                .is_none()
+        );
+    }
+    assert_eq!(
+        bridge.take_shell_presentation(),
+        Some(DesktopPresentation::Tablet)
+    );
+    assert_eq!(bridge.take_shell_presentation(), None);
+    assert!(
+        bridge
+            .handle(&shell_presentation(fb::ShellPresentationKind::Desktop, 0))
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        bridge.take_shell_presentation(),
+        Some(DesktopPresentation::Desktop)
+    );
+}
+
+#[test]
+fn shell_presentation_rejects_requests_and_unknown_kinds() {
+    let mut bridge = bridge();
+    assert!(matches!(
+        bridge.handle(&shell_presentation(fb::ShellPresentationKind::Tablet, 3)),
+        Err(WireError::RequestId)
+    ));
+    assert!(matches!(
+        bridge.handle(&shell_presentation(fb::ShellPresentationKind(7), 0)),
+        Err(WireError::Enumeration)
+    ));
+    assert_eq!(bridge.take_shell_presentation(), None);
+}

@@ -375,6 +375,16 @@ final class BridgeSessionClient {
     }
   }
 
+  /// Tells deniald whether the shell presents a tablet's or a desktop's
+  /// shell on the built-in screen; it publishes this to apps, which may
+  /// follow it. Standalone Denial clients cannot author it.
+  void publishShellPresentation({required bool tablet}) {
+    if (_context.useControlSocket) {
+      return;
+    }
+    _context.sendWire(_context.codec.encodeShellPresentation(tablet: tablet));
+  }
+
   /// Read mapped desktop-background metadata without starting the shell scene.
 
   Future<Map<String, Object?>> getWallpaperStatus() =>
