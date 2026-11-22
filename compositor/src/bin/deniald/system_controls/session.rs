@@ -10,6 +10,15 @@ const SLEEP_MONITOR_RECONNECT_DELAY: Duration = Duration::from_secs(2);
 const LOGIND: &str = "org.freedesktop.login1";
 const LOGIND_PATH: &str = "/org/freedesktop/login1";
 const LOGIND_MANAGER: &str = "org.freedesktop.login1.Manager";
+/// logind's `Inhibit` arguments for the lid switch: what, who, why, mode.
+/// Only the lid's own handling is blocked, never `sleep`, so a suspend asked
+/// for any other way still happens.
+const LID_SWITCH_INHIBITOR: (&str, &str, &str, &str) = (
+    "handle-lid-switch",
+    "Denial",
+    "Stay awake is on: closing the cover turns the screen off instead of suspending",
+    "block",
+);
 static SUSPEND_MODE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub(super) fn run_session_worker(commands: Receiver<SessionCommand>) {
@@ -48,6 +57,11 @@ pub(super) fn run_sleep_monitor(shared: Arc<SleepMonitorShared>) {
             }
             shared.release_delay_inhibitor();
             shared.release_power_key_inhibitor();
+            // The lid switch inhibitor stays: logind keeps an inhibitor's
+            // pipe across its own restart, and letting go while the cover is
+            // closed would have logind suspend at once. The next connection
+            // takes it only if it is not held.
+            //
             // Without logind nobody holds an inhibitor; the next connection
             // reads them again.
             shared.set_blocks(LogindBlocks::default());
@@ -63,6 +77,8 @@ pub(super) fn run_sleep_monitor(shared: Arc<SleepMonitorShared>) {
 enum ManagerEvent {
     Sleep(Option<zbus::Message>),
     Properties(Option<zbus::Message>),
+    /// The compositor changed whether it wants the lid switch.
+    LidSwitch,
     Stop,
 }
 
@@ -84,6 +100,7 @@ async fn monitor_sleep_transitions(shared: &Arc<SleepMonitorShared>) -> Result<(
     if let Err(error) = acquire_power_key_inhibitor(&manager, shared).await {
         warn!(%error, "could not acquire the logind power-key inhibitor");
     }
+    synchronize_lid_switch_inhibitor(&manager, shared).await;
     let mut signals = manager
         .receive_signal("PrepareForSleep")
         .await
@@ -110,12 +127,18 @@ async fn monitor_sleep_transitions(shared: &Arc<SleepMonitorShared>) -> Result<(
             return Ok(());
         }
         let event = future::race(
-            future::race(async { ManagerEvent::Sleep(signals.next().await) }, async {
-                match changes.as_mut() {
-                    Some(changes) => ManagerEvent::Properties(changes.next().await),
-                    None => future::pending().await,
-                }
-            }),
+            future::race(
+                future::race(async { ManagerEvent::Sleep(signals.next().await) }, async {
+                    match changes.as_mut() {
+                        Some(changes) => ManagerEvent::Properties(changes.next().await),
+                        None => future::pending().await,
+                    }
+                }),
+                async {
+                    shared.lid_switch_wake.wait().await;
+                    ManagerEvent::LidSwitch
+                },
+            ),
             async {
                 shared.stopped().await;
                 ManagerEvent::Stop
@@ -124,6 +147,10 @@ async fn monitor_sleep_transitions(shared: &Arc<SleepMonitorShared>) -> Result<(
         .await;
         let message = match event {
             ManagerEvent::Stop => return Ok(()),
+            ManagerEvent::LidSwitch => {
+                synchronize_lid_switch_inhibitor(&manager, shared).await;
+                continue;
+            }
             ManagerEvent::Properties(change) => {
                 let change =
                     change.ok_or_else(|| "logind property change stream ended".to_owned())?;
@@ -244,6 +271,27 @@ async fn acquire_power_key_inhibitor(
         .map_err(|error| format!("logind power-key Inhibit failed: {error}"))?;
     shared.install_power_key_inhibitor(inhibitor.into());
     Ok(())
+}
+
+/// Takes logind's lid switch handling if the compositor wants it and it is
+/// not held. Letting go needs no logind call and happened already, on the
+/// compositor's side. A refused or failed `Inhibit` is tried again on the
+/// next change of the setting or the next connection to logind.
+async fn synchronize_lid_switch_inhibitor(manager: &zbus::Proxy<'_>, shared: &SleepMonitorShared) {
+    if !shared.lid_switch_wanted() || shared.lid_switch_held() {
+        return;
+    }
+    let inhibitor = manager
+        .call::<_, _, zbus::zvariant::OwnedFd>("Inhibit", &LID_SWITCH_INHIBITOR)
+        .await;
+    match inhibitor {
+        Ok(inhibitor) => {
+            if shared.install_lid_switch_inhibitor(inhibitor.into()) {
+                info!("holding logind's lid switch: closing the cover no longer suspends");
+            }
+        }
+        Err(error) => warn!(%error, "logind lid-switch Inhibit failed"),
+    }
 }
 
 fn synchronize_suspend_mode(mode: crate::idle_policy::SuspendMode) -> Result<(), String> {
@@ -399,6 +447,17 @@ fn perform_power_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_lid_switch_inhibitor_blocks_only_the_lid_handling() {
+        let (what, who, _, mode) = LID_SWITCH_INHIBITOR;
+        assert_eq!(what, "handle-lid-switch");
+        assert_eq!(who, "Denial");
+        assert_eq!(mode, "block");
+        // A suspend from the power menu or the idle timeout is not held off,
+        // and Denial's own idle policy does not count it as a block.
+        assert_eq!(LogindBlocks::parse(what), LogindBlocks::default());
+    }
 
     #[test]
     fn only_block_inhibitor_properties_wake_a_reread() {

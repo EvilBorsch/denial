@@ -506,6 +506,7 @@ pub(super) fn synchronize_settings(
     }
     publish_settings_document(events)?;
     synchronize_committed_theme(runtime, events)?;
+    synchronize_stay_awake(events);
     Ok(())
 }
 
@@ -686,6 +687,17 @@ fn publish_settings_document(events: &mut RuntimeState) -> Result<(), Box<dyn Er
 pub(super) fn synchronize_fingerprint_unlock(events: &RuntimeState) {
     if let Some(authentication) = events.authentication.as_ref() {
         authentication.enable_fingerprint(events.frontend().settings.fingerprint_unlock());
+    }
+}
+
+/// Holds logind's lid switch while Stay awake is on, so that closing the
+/// cover does not suspend: at start and after every settings change, from
+/// the shell, the control socket or an edit of the file alike. Repeating the
+/// current value changes nothing.
+#[cfg(feature = "flutter")]
+pub(super) fn synchronize_stay_awake(events: &RuntimeState) {
+    if let Some(controls) = events.system_controls.as_ref() {
+        controls.hold_lid_switch(events.frontend().settings.stay_awake());
     }
 }
 

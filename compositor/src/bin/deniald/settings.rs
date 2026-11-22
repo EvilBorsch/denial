@@ -885,6 +885,19 @@ impl SettingsManager {
             .unwrap_or(true)
     }
 
+    /// Stay awake (`power.stayAwake`): nothing suspends the system on its
+    /// own. The shell leaves the suspend timeout out of the idle policy, and
+    /// deniald takes the lid switch from logind so that closing the cover
+    /// does not suspend either. Off unless the user turned it on.
+    pub(super) fn stay_awake(&self) -> bool {
+        self.document
+            .get("power")
+            .and_then(Value::as_object)
+            .and_then(|power| power.get("stayAwake"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
     /// The desktop entry of the calls app, the one app whose call window may
     /// show over the lock screen while its call notification stands.
     pub(super) fn calls_app(&self) -> &str {

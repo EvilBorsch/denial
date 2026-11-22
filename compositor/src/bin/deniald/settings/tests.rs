@@ -269,6 +269,36 @@ fn apps_scale_defaults_to_the_screen_and_rejects_out_of_range_values() {
 }
 
 #[test]
+fn stay_awake_is_off_until_the_power_section_turns_it_on() {
+    let temporary = TemporaryDirectory::new("settings-stay-awake");
+    let mut manager = SettingsManager::load_path(temporary.settings_path()).unwrap();
+    assert!(!manager.stay_awake());
+    let with_power = |power: Value| {
+        shell_document(serde_json::json!({
+            "appearance": {"colorSchemePreference": "preferDark"},
+            "power": power
+        }))
+    };
+    for (power, expected) in [
+        (
+            serde_json::json!({"idleSuspendEnabled": true, "stayAwake": true}),
+            true,
+        ),
+        (
+            serde_json::json!({"idleSuspendEnabled": true, "stayAwake": false}),
+            false,
+        ),
+        (serde_json::json!({"idleSuspendEnabled": true}), false),
+    ] {
+        let update = manager
+            .prepare_shell_update(manager.revision(), &with_power(power))
+            .unwrap();
+        manager.commit(update).unwrap();
+        assert_eq!(manager.stay_awake(), expected);
+    }
+}
+
+#[test]
 fn shell_update_rejects_missing_or_unknown_color_scheme() {
     let temporary = TemporaryDirectory::new("settings-color-scheme");
     let manager = SettingsManager::load_path(temporary.settings_path()).unwrap();
