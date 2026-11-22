@@ -1921,7 +1921,7 @@
   },
   "quickSettingsStayAwakeOn": "Режим «Не засыпать» включён",
   "@quickSettingsStayAwakeOn": {
-    "description": "Spoken label of the status bar mark shown while the Stay awake tile is on."
+    "description": "Spoken label of the mark shown in the status bar, and in the desktop system bar, while Stay awake is on."
   },
   "quickSettingsScreenRecording": "Запись экрана",
   "@quickSettingsScreenRecording": {

@@ -49,6 +49,7 @@ final class TopBarPlugin implements ShellSurface {
         side:
             surface.environment.settings.layout.systemBarSide ?? PanelEdge.top,
         services: surface.services,
+        stayAwake: surface.environment.settings.power.stayAwake,
       );
 }
 

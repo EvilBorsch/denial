@@ -208,6 +208,10 @@ abstract interface class ShellStrings {
   String get workspaceOccupied;
   String get workspaceEmpty;
   String get workspaceActive;
+
+  /// Spoken label of the mark a bar shows while Stay awake keeps the idle
+  /// timeout from suspending the system.
+  String get stayAwakeOn;
 }
 
 /// Makes explicitly supplied services available below one composed component.
