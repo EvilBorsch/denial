@@ -11,6 +11,8 @@ import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 import 'package:denial_flutter_sdk/tokens.dart';
 
+import '../../state/bypass_charging.dart';
+
 /// iOS-style rounded battery capsule with a level fill, charge nub, and an
 /// optional centered charging bolt.
 class _BatteryCapsule extends StatelessWidget {
@@ -251,8 +253,35 @@ class StayAwakeMark extends ConsumerWidget {
   }
 }
 
-/// The compact status cluster (stay awake · signal · wifi · battery) shared
-/// by the status bar and the shade header.
+/// The status bar's mark while Bypass charging holds the battery's charging
+/// off and a connected charger powers the system ([BypassChargingState.on]);
+/// nothing while it is off or where no battery offers it.
+class BypassChargingMark extends ConsumerWidget {
+  const BypassChargingMark({super.key, this.color, this.scale = 1});
+
+  final Color? color;
+  final double scale;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final on = ref.watch(
+      bypassChargingProvider.select((bypass) => bypass.available && bypass.on),
+    );
+    if (!on) return const SizedBox.shrink();
+    return Padding(
+      padding: EdgeInsetsDirectional.only(end: 9 * scale),
+      child: Icon(
+        Icons.power_rounded,
+        size: 18 * scale,
+        color: color ?? context.shellColors.textPrimary,
+        semanticLabel: context.l10n.quickSettingsBypassChargingOn,
+      ),
+    );
+  }
+}
+
+/// The compact status cluster (stay awake · bypass charging · signal · wifi
+/// · battery) shared by the status bar and the shade header.
 class StatusCluster extends StatelessWidget {
   const StatusCluster({
     super.key,
@@ -271,6 +300,7 @@ class StatusCluster extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         StayAwakeMark(color: color, scale: scale),
+        BypassChargingMark(color: color, scale: scale),
         MobileConnectivityMarks(color: color, scale: scale),
         SizedBox(width: 12 * scale),
         BatteryMark(

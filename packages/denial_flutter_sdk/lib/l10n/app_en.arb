@@ -1901,6 +1901,10 @@
   "@quickSettingsBypassCharging": {
     "description": "Quick Settings tile, shown only where the battery offers it, that holds battery charging off while it is on, so that a connected charger powers the device directly in place of charging the battery."
   },
+  "quickSettingsBypassChargingOn": "Bypass charging is on",
+  "@quickSettingsBypassChargingOn": {
+    "description": "Spoken label of the mark shown in the status bar while Bypass charging is on."
+  },
   "quickSettingsScreenRecording": "Screen recording",
   "@quickSettingsScreenRecording": {
     "description": "Quick Settings tile that starts a screen recording, and stops it when tapped again."

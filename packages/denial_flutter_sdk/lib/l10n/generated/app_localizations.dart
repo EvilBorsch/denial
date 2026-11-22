@@ -2396,6 +2396,12 @@ abstract class AppLocalizations {
   /// **'Bypass charging'**
   String get quickSettingsBypassCharging;
 
+  /// Spoken label of the mark shown in the status bar while Bypass charging is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Bypass charging is on'**
+  String get quickSettingsBypassChargingOn;
+
   /// Quick Settings tile that starts a screen recording, and stops it when tapped again.
   ///
   /// In en, this message translates to:
