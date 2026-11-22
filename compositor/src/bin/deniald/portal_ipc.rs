@@ -56,8 +56,9 @@ impl PortalIpcPublisher {
                 return;
             }
             let accent_changed = snapshot.accent_color != current.accent_color;
-            let changed =
-                snapshot.portal_color_scheme != current.portal_color_scheme || accent_changed;
+            let changed = snapshot.portal_color_scheme != current.portal_color_scheme
+                || accent_changed
+                || snapshot.shell != current.shell;
             *current = snapshot;
             (changed, accent_changed)
         };

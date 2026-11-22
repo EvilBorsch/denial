@@ -64,12 +64,14 @@ class _ShellRuntimeBindingsState extends ConsumerState<ShellRuntimeBindings> {
     if (oldWidget.mobilePresentation != widget.mobilePresentation ||
         oldWidget.deskBeside != widget.deskBeside) {
       _schedulePowerSync(ref.read(shellSettingsProvider).power);
+      _schedulePresentationSync();
     }
   }
 
   @override
   void initState() {
     super.initState();
+    _schedulePresentationSync();
     ref.listenManual(
       shellSettingsProvider.select((settings) => settings.layout),
       (_, layout) => _scheduleLayoutSync(layout),
@@ -215,6 +217,21 @@ class _ShellRuntimeBindingsState extends ConsumerState<ShellRuntimeBindings> {
                 ? Duration(seconds: power.screenOffLockDelaySeconds)
                 : null,
           );
+    });
+  }
+
+  /// Tells deniald which shell the built-in screen shows, for apps to follow
+  /// with touch or desktop layouts. A monitor beside the tablet carries the
+  /// desktop shell, where apps go: they follow the desktop then.
+  void _schedulePresentationSync() {
+    scheduleMicrotask(() {
+      if (mounted) {
+        ref
+            .read(denialBridgeProvider)
+            .publishShellPresentation(
+              tablet: widget.mobilePresentation && !widget.deskBeside,
+            );
+      }
     });
   }
 

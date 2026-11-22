@@ -892,6 +892,7 @@ pub struct WireBridge {
     pending_xembed_tray_commands: VecDeque<XEmbedTrayCommand>,
     pending_settings_commands: VecDeque<SettingsCommand>,
     pending_theme_accent: Option<u32>,
+    pending_shell_presentation: Option<denial_core::portal_protocol::DesktopPresentation>,
     pending_plugin_actions: Option<crate::plugin_actions::ActionCatalog>,
     pending_work_area: Option<WorkAreaOptions>,
     next_sequence: u64,
@@ -934,6 +935,7 @@ impl WireBridge {
             pending_xembed_tray_commands: VecDeque::new(),
             pending_settings_commands: VecDeque::new(),
             pending_theme_accent: None,
+            pending_shell_presentation: None,
             pending_plugin_actions: None,
             pending_work_area: None,
             next_sequence: 1,
@@ -995,6 +997,14 @@ impl WireBridge {
 
     pub fn take_theme_accent(&mut self) -> Option<u32> {
         self.pending_theme_accent.take()
+    }
+
+    /// Takes the shell's latest presentation, last writer wins like the
+    /// accent: only where the shell ends up matters to apps.
+    pub fn take_shell_presentation(
+        &mut self,
+    ) -> Option<denial_core::portal_protocol::DesktopPresentation> {
+        self.pending_shell_presentation.take()
     }
 
     /// Takes the latest validated system-bar update. Settings changes are

@@ -227,6 +227,11 @@ class DenialBridge {
   /// Denial clients deliberately cannot author compositor theme state.
   void publishThemeAccent(int argb) => _session.publishThemeAccent(argb);
 
+  /// Tells deniald what the shell presents on the built-in screen, a
+  /// tablet's shell or a desktop's; apps may follow it.
+  void publishShellPresentation({required bool tablet}) =>
+      _session.publishShellPresentation(tablet: tablet);
+
   Future<DenialSettingsDocument> readSettingsDocument() =>
       _settingsDocument.readSettingsDocument();
 

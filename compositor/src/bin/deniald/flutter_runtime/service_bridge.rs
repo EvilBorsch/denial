@@ -121,6 +121,12 @@ impl FlutterRuntime {
         self.wire.take_theme_accent()
     }
 
+    pub fn take_shell_presentation(
+        &mut self,
+    ) -> Option<denial_core::portal_protocol::DesktopPresentation> {
+        self.wire.take_shell_presentation()
+    }
+
     pub fn take_work_area_update(&mut self) -> Option<crate::options::WorkAreaOptions> {
         self.wire.take_work_area_update()
     }

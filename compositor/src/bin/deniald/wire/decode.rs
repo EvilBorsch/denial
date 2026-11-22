@@ -119,6 +119,24 @@ impl WireBridge {
                 self.pending_theme_accent = Some(accent);
                 Ok(None)
             }
+            fb::Payload::ShellPresentation => {
+                if envelope.request_id() != 0 {
+                    return Err(WireError::RequestId);
+                }
+                let presentation = envelope
+                    .payload_as_shell_presentation()
+                    .ok_or(WireError::Payload)?;
+                self.pending_shell_presentation = Some(match presentation.kind() {
+                    fb::ShellPresentationKind::Desktop => {
+                        denial_core::portal_protocol::DesktopPresentation::Desktop
+                    }
+                    fb::ShellPresentationKind::Tablet => {
+                        denial_core::portal_protocol::DesktopPresentation::Tablet
+                    }
+                    _ => return Err(WireError::Enumeration),
+                });
+                Ok(None)
+            }
             fb::Payload::SettingsRequest => {
                 if envelope.request_id() == 0 {
                     return Err(WireError::RequestId);

@@ -13,11 +13,16 @@ usage() {
     cat >&2 <<USAGE
 Usage: $0 build SYSROOT OUT_DIR
        $0 test SYSROOT [cargo test arguments, e.g. -- idle_policy]
+       $0 test-portal SYSROOT [test name filters]
 
-build: cargo build --release of deniald for aarch64; copies it to OUT_DIR and
-       writes OUT_DIR/deniald.txt with its hash, libraries and GLIBC needs.
+build: cargo build --release of deniald and of denial-portal for aarch64
+       (they share the portal protocol, so they are built and installed
+       together); copies them to OUT_DIR and writes OUT_DIR/deniald.txt and
+       OUT_DIR/denial-portal.txt with hashes, libraries and GLIBC needs.
 test:  cargo test of the deniald binary for aarch64, run under
        qemu-aarch64 -L SYSROOT.
+test-portal: cargo test of denial-portal and of the shared library under
+       qemu-aarch64, on a private session bus (dbus-run-session).
 
 EB_WORK (default ~/work-denial-deniald) holds the Cargo target directory,
 EB_JOBS (default 8) the job count. The binary reports eb.g<commit> as its
@@ -67,22 +72,31 @@ case "$MODE" in
             --target "$DENIAL_RUST_TARGET" \
             --features flutter \
             --bin deniald
-        binary="$CARGO_TARGET_DIR/$DENIAL_RUST_TARGET/release/deniald"
-        [[ "$(denial_elf_arch "$binary")" == aarch64 ]]
+        # As the release builds it (tools/denial-pc): no features of its own.
+        cargo build \
+            --locked \
+            --release \
+            --jobs "$JOBS" \
+            --target "$DENIAL_RUST_TARGET" \
+            -p denial-portal
         mkdir -p "$OUT"
-        install -m755 "$binary" "$OUT/deniald"
-        {
-            printf 'build identity: %s\n' "$DENIAL_BUILD_VERSION"
-            printf 'rustc: %s\n' "$(rustc --version)"
-            printf 'sysroot: %s\n' "$SYSROOT"
-            printf 'sha256: %s\n' "$(sha256sum "$OUT/deniald" | cut -d' ' -f1)"
-            printf '\nNEEDED:\n'
-            aarch64-linux-gnu-objdump -p "$OUT/deniald" | awk '$1 == "NEEDED" { print "  " $2 }'
-            printf '\nversioned symbol needs:\n'
-            aarch64-linux-gnu-objdump -T "$OUT/deniald" \
-                | grep -o '(GLIBC_[0-9.]*)\|(GCC_[0-9.]*)' | tr -d '()' | sort -uV | sed 's/^/  /'
-        } > "$OUT/deniald.txt"
-        cat "$OUT/deniald.txt"
+        for name in deniald denial-portal; do
+            binary="$CARGO_TARGET_DIR/$DENIAL_RUST_TARGET/release/$name"
+            [[ "$(denial_elf_arch "$binary")" == aarch64 ]]
+            install -m755 "$binary" "$OUT/$name"
+            {
+                printf 'build identity: %s\n' "$DENIAL_BUILD_VERSION"
+                printf 'rustc: %s\n' "$(rustc --version)"
+                printf 'sysroot: %s\n' "$SYSROOT"
+                printf 'sha256: %s\n' "$(sha256sum "$OUT/$name" | cut -d' ' -f1)"
+                printf '\nNEEDED:\n'
+                aarch64-linux-gnu-objdump -p "$OUT/$name" | awk '$1 == "NEEDED" { print "  " $2 }'
+                printf '\nversioned symbol needs:\n'
+                aarch64-linux-gnu-objdump -T "$OUT/$name" \
+                    | grep -o '(GLIBC_[0-9.]*)\|(GCC_[0-9.]*)' | tr -d '()' | sort -uV | sed 's/^/  /'
+            } > "$OUT/$name.txt"
+            cat "$OUT/$name.txt"
+        done
         ;;
     test)
         command -v qemu-aarch64 >/dev/null || { printf 'qemu-aarch64 is required\n' >&2; exit 1; }
@@ -93,6 +107,23 @@ case "$MODE" in
             --target "$DENIAL_RUST_TARGET" \
             --features flutter \
             --bin deniald \
+            "$@"
+        ;;
+    test-portal)
+        command -v qemu-aarch64 >/dev/null || { printf 'qemu-aarch64 is required\n' >&2; exit 1; }
+        command -v dbus-run-session >/dev/null || { printf 'dbus-run-session is required\n' >&2; exit 1; }
+        export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER="qemu-aarch64 -L $SYSROOT"
+        # The protocol both ends speak (src/portal_protocol.rs).
+        cargo test --locked --jobs "$JOBS" --target "$DENIAL_RUST_TARGET" --lib portal_protocol
+        # Its D-Bus tests serve on the private bus; one at a time, as the
+        # release runs them, since they own the same name.
+        DENIAL_PORTAL_TEST_BUS=1 dbus-run-session -- cargo test \
+            --locked \
+            --jobs "$JOBS" \
+            --target "$DENIAL_RUST_TARGET" \
+            -p denial-portal \
+            -- \
+            --test-threads=1 \
             "$@"
         ;;
     *)

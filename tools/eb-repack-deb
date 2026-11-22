@@ -3,13 +3,15 @@
 # tools/eb-build-shell and, if given, a deniald from tools/eb-build-deniald and
 # a Settings from tools/eb-build-settings: only
 # /usr/lib/denial/flutter/lib/libapp.so, /usr/lib/denial/flutter/data/flutter_assets,
-# /usr/bin/deniald and /usr/lib/denial-apps/settings change. denialctl, the
-# portal, the polkit agent, Settings' Wi-Fi country helper and the conffiles
-# stay the release's, the postinst also gives deniald CAP_SYS_NICE (see
+# /usr/bin/deniald and /usr/lib/denial-apps/settings change, and
+# /usr/bin/denial-portal with EB_PORTAL=path (built with deniald by
+# tools/eb-build-deniald: the two speak one portal protocol, so a portal comes
+# only with its deniald). denialctl, the polkit agent, Settings' Wi-Fi country
+# helper and the conffiles stay the release's, the postinst also gives deniald CAP_SYS_NICE (see
 # below), and the package still depends on the release's
 # denial-flutter-engine (= 0.6.8-1). See docs/EB-BUILD.md.
 #
-# Usage: tools/eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY [DENIALD [SETTINGS]]
+# Usage: [EB_PORTAL=DENIAL_PORTAL] tools/eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY [DENIALD [SETTINGS]]
 #   e.g. tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb1 ~/debs
 #   DENIALD may be '' to keep the release's deniald with a new SETTINGS.
 set -euo pipefail
@@ -20,6 +22,7 @@ VERSION="${2:?$USAGE}"
 OUTPUT="${3:?$USAGE}"
 DENIALD="${4:-}"
 SETTINGS="${5:-}"
+PORTAL="${EB_PORTAL:-}"
 WORK="${EB_WORK:-$HOME/work-denial-shell}"
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tools/lib/denial-architecture.sh
@@ -38,6 +41,11 @@ die() { printf 'eb-repack-deb: %s\n' "$*" >&2; exit 1; }
 if [[ -n "$DENIALD" ]]; then
     [[ -f "$DENIALD" && "$(denial_elf_arch "$DENIALD")" == aarch64 ]] \
         || die "not an aarch64 deniald: $DENIALD"
+fi
+if [[ -n "$PORTAL" ]]; then
+    [[ -n "$DENIALD" ]] || die 'EB_PORTAL needs the deniald built with it'
+    [[ -f "$PORTAL" && "$(denial_elf_arch "$PORTAL")" == aarch64 ]] \
+        || die "not an aarch64 denial-portal: $PORTAL"
 fi
 settings_revision=''
 if [[ -n "$SETTINGS" ]]; then
@@ -80,6 +88,10 @@ if [[ -n "$DENIALD" ]]; then
     install -m755 -- "$DENIALD" "$stage/denial/usr/bin/deniald"
     replaced+=("$DENIALD")
 fi
+if [[ -n "$PORTAL" ]]; then
+    install -m755 -- "$PORTAL" "$stage/denial/usr/bin/denial-portal"
+    replaced+=("$PORTAL")
+fi
 if [[ -n "$SETTINGS" ]]; then
     [[ -f "$stage/denial/usr/lib/denial-apps/settings" ]] \
         || die 'the release package has no /usr/lib/denial-apps/settings'
@@ -114,11 +126,11 @@ PY2
 
 control="$stage/denial/DEBIAN/control"
 python3 -I - "$control" "$VERSION" "$MAINTAINER" "$(git -C "$ROOT" rev-parse HEAD)" \
-    "$glibc_needed" "$DENIALD" "$settings_revision" <<'PY'
+    "$glibc_needed" "$DENIALD" "$settings_revision" "${PORTAL:+portal}" <<'PY'
 import re
 import sys
 import textwrap
-path, version, maintainer, revision, glibc, deniald, settings = sys.argv[1:8]
+path, version, maintainer, revision, glibc, deniald, settings, portal = sys.argv[1:9]
 
 
 def newer(a, b):
@@ -154,13 +166,24 @@ for line in lines:
 out.append(' .')
 if settings:
     parts = 'the Flutter shell (libapp.so, flutter_assets)'
-    parts += ', deniald and Settings' if deniald else ' and Settings'
-    built = 'the shell and deniald' if deniald else 'the shell'
+    if portal:
+        parts += ', deniald, denial-portal and Settings'
+        built = 'the shell, deniald and denial-portal'
+    elif deniald:
+        parts += ', deniald and Settings'
+        built = 'the shell and deniald'
+    else:
+        parts += ' and Settings'
+        built = 'the shell'
     text = ('This build replaces ' + parts + ' of the signed 0.6.8-1 release: '
             + built + ' built from EvilBorsch/denial ' + revision[:12]
             + ', Settings (/usr/lib/denial-apps/settings) from EvilBorsch/denial-apps '
             + settings[:12] + '.')
     out.extend(' ' + line for line in textwrap.wrap(text, 72))
+elif portal:
+    out.append(' This build replaces the Flutter shell (libapp.so, flutter_assets),')
+    out.append(' deniald and denial-portal of the signed 0.6.8-1 release, built from')
+    out.append(' EvilBorsch/denial ' + revision[:12] + '.')
 elif deniald:
     out.append(' This build replaces the Flutter shell (libapp.so, flutter_assets) and')
     out.append(' deniald of the signed 0.6.8-1 release, built from EvilBorsch/denial')

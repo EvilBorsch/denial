@@ -18,19 +18,35 @@ use denial_core::portal_protocol::{
     ClientMessage, DesktopThemeSnapshot, MAX_MESSAGE_BYTES, PORTAL_SOCKET_FILE, ServerMessage,
     decode_server_message, encode_client_message,
 };
-use tracing::info;
+use tracing::{info, warn};
 use zbus::blocking::Connection;
 use zbus::blocking::connection::Builder as ConnectionBuilder;
-use zbus::zvariant::{OwnedValue, Structure};
+use zbus::zvariant::{OwnedValue, Structure, Value};
 
 const SERVICE_NAME: &str = "org.freedesktop.impl.portal.desktop.denial";
-#[cfg(test)]
 const FRONTEND_SERVICE_NAME: &str = "org.freedesktop.portal.Desktop";
+const FRONTEND_INTERFACE_NAME: &str = "org.freedesktop.portal.Settings";
 const OBJECT_PATH: &str = "/org/freedesktop/portal/desktop";
 const INTERFACE_NAME: &str = "org.freedesktop.impl.portal.Settings";
 const APPEARANCE_NAMESPACE: &str = "org.freedesktop.appearance";
 const COLOR_SCHEME_KEY: &str = "color-scheme";
 const ACCENT_COLOR_KEY: &str = "accent-color";
+/// Denial's own namespace: what the shell presents, for apps to follow.
+/// See docs/APPS_FOLLOW_MODE.md.
+const SHELL_NAMESPACE: &str = "org.denialwm.shell";
+/// "tablet" or "desktop".
+const PRESENTATION_KEY: &str = "presentation";
+/// A keyboard to type on is attached, such as a keyboard cover.
+const KEYBOARD_ATTACHED_KEY: &str = "keyboard-attached";
+/// Apps should show their touch layouts.
+const TABLET_MODE_KEY: &str = "tablet-mode";
+/// GTK reads its text scale from here through the portal; Denial gives it
+/// only while apps follow the shell and a scale is set for its presentation.
+const INTERFACE_NAMESPACE: &str = "org.gnome.desktop.interface";
+const TEXT_SCALING_KEY: &str = "text-scaling-factor";
+/// Asking the frontend what another backend says after Denial lets go of a
+/// key is quick; a stuck frontend must not stall theme updates for long.
+const FRONTEND_CALL_TIMEOUT: Duration = Duration::from_secs(3);
 /// The Polkit dialog bundle, which also draws Access requests.
 const DEFAULT_DIALOG_BUNDLE: &str = "/usr/lib/denial/polkit";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
@@ -61,38 +77,17 @@ enum SettingsError {
 impl SettingsInterface {
     #[zbus(name = "Read", out_args("value"))]
     fn read(&self, namespace: &str, key: &str) -> Result<OwnedValue, SettingsError> {
-        if namespace == APPEARANCE_NAMESPACE {
-            let snapshot = self.snapshot();
-            match key {
-                COLOR_SCHEME_KEY => return Ok(OwnedValue::from(snapshot.portal_color_scheme)),
-                ACCENT_COLOR_KEY => return Ok(accent_color_value(snapshot.accent_color)),
-                _ => {}
-            }
-        }
-        Err(SettingsError::NotFound(format!(
-            "unknown setting {namespace}/{key}"
-        )))
+        settings_values(self.snapshot())
+            .remove(namespace)
+            .and_then(|mut values| values.remove(key))
+            .ok_or_else(|| SettingsError::NotFound(format!("unknown setting {namespace}/{key}")))
     }
 
     #[zbus(name = "ReadAll", out_args("value"))]
     fn read_all(&self, namespaces: Vec<String>) -> SettingsValues {
-        if !namespace_matches(&namespaces, APPEARANCE_NAMESPACE) {
-            return HashMap::new();
-        }
-        let snapshot = self.snapshot();
-        HashMap::from([(
-            APPEARANCE_NAMESPACE.to_owned(),
-            HashMap::from([
-                (
-                    COLOR_SCHEME_KEY.to_owned(),
-                    OwnedValue::from(snapshot.portal_color_scheme),
-                ),
-                (
-                    ACCENT_COLOR_KEY.to_owned(),
-                    accent_color_value(snapshot.accent_color),
-                ),
-            ]),
-        )])
+        let mut values = settings_values(self.snapshot());
+        values.retain(|namespace, _| namespace_matches(&namespaces, namespace));
+        values
     }
 
     #[zbus(property, name = "version")]
@@ -123,6 +118,54 @@ fn accent_color_value(accent: denial_core::portal_protocol::DesktopAccentColor) 
         .expect("an owned f64 accent structure is always representable")
 }
 
+fn string_value(value: &str) -> OwnedValue {
+    OwnedValue::try_from(Value::from(value)).expect("a string carries no file descriptor")
+}
+
+/// Every setting Denial serves for `snapshot`, by namespace.
+fn settings_values(snapshot: DesktopThemeSnapshot) -> SettingsValues {
+    let shell = snapshot.shell;
+    let mut values = HashMap::from([
+        (
+            APPEARANCE_NAMESPACE.to_owned(),
+            HashMap::from([
+                (
+                    COLOR_SCHEME_KEY.to_owned(),
+                    OwnedValue::from(snapshot.portal_color_scheme),
+                ),
+                (
+                    ACCENT_COLOR_KEY.to_owned(),
+                    accent_color_value(snapshot.accent_color),
+                ),
+            ]),
+        ),
+        (
+            SHELL_NAMESPACE.to_owned(),
+            HashMap::from([
+                (
+                    PRESENTATION_KEY.to_owned(),
+                    string_value(shell.presentation.portal_name()),
+                ),
+                (
+                    KEYBOARD_ATTACHED_KEY.to_owned(),
+                    OwnedValue::from(shell.keyboard_attached),
+                ),
+                (
+                    TABLET_MODE_KEY.to_owned(),
+                    OwnedValue::from(shell.tablet_mode),
+                ),
+            ]),
+        ),
+    ]);
+    if let Some(factor) = shell.text_scaling_factor() {
+        values.insert(
+            INTERFACE_NAMESPACE.to_owned(),
+            HashMap::from([(TEXT_SCALING_KEY.to_owned(), OwnedValue::from(factor))]),
+        );
+    }
+    values
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -136,6 +179,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let (socket, initial) = connect_to_compositor(CONNECT_TIMEOUT)?;
     let cache = Arc::new(RwLock::new(Cache { snapshot: initial }));
     let connection = ConnectionBuilder::session()?
+        .method_timeout(FRONTEND_CALL_TIMEOUT)
         .name(SERVICE_NAME)?
         .serve_at(
             OBJECT_PATH,
@@ -150,6 +194,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         revision = initial.revision,
         color_scheme = initial.portal_color_scheme,
         accent = format_args!("#{:06x}", initial.accent_color.srgb24()),
+        presentation = initial.shell.presentation.portal_name(),
+        tablet_mode = initial.shell.tablet_mode,
         "Denial Settings portal backend ready"
     );
 
@@ -193,39 +239,101 @@ fn receive_updates(
             .into());
         };
         let changed = apply_snapshot(cache, snapshot);
-        if changed.color_scheme {
+        let emit = |namespace: &str, key: &str, value: OwnedValue| {
             connection.emit_signal(
                 None::<&str>,
                 OBJECT_PATH,
                 INTERFACE_NAME,
                 "SettingChanged",
-                &(
-                    APPEARANCE_NAMESPACE,
-                    COLOR_SCHEME_KEY,
-                    OwnedValue::from(snapshot.portal_color_scheme),
-                ),
+                &(namespace, key, value),
+            )
+        };
+        if changed.color_scheme {
+            emit(
+                APPEARANCE_NAMESPACE,
+                COLOR_SCHEME_KEY,
+                OwnedValue::from(snapshot.portal_color_scheme),
             )?;
         }
         if changed.accent_color {
-            connection.emit_signal(
-                None::<&str>,
-                OBJECT_PATH,
-                INTERFACE_NAME,
-                "SettingChanged",
-                &(
-                    APPEARANCE_NAMESPACE,
-                    ACCENT_COLOR_KEY,
-                    accent_color_value(snapshot.accent_color),
-                ),
+            emit(
+                APPEARANCE_NAMESPACE,
+                ACCENT_COLOR_KEY,
+                accent_color_value(snapshot.accent_color),
             )?;
         }
+        let shell = snapshot.shell;
+        if changed.presentation {
+            emit(
+                SHELL_NAMESPACE,
+                PRESENTATION_KEY,
+                string_value(shell.presentation.portal_name()),
+            )?;
+        }
+        if changed.keyboard_attached {
+            emit(
+                SHELL_NAMESPACE,
+                KEYBOARD_ATTACHED_KEY,
+                OwnedValue::from(shell.keyboard_attached),
+            )?;
+        }
+        if changed.tablet_mode {
+            emit(
+                SHELL_NAMESPACE,
+                TABLET_MODE_KEY,
+                OwnedValue::from(shell.tablet_mode),
+            )?;
+        }
+        if changed.text_scaling {
+            let value = match shell.text_scaling_factor() {
+                Some(factor) => Some(OwnedValue::from(factor)),
+                // Denial no longer gives the text scale: running apps go
+                // back to what the next backend says (GTK's: the user's
+                // GSettings), which the frontend now answers.
+                None => match read_from_frontend(connection, INTERFACE_NAMESPACE, TEXT_SCALING_KEY)
+                {
+                    Ok(value) => Some(value),
+                    Err(error) => {
+                        warn!(%error, "could not read the desktop's own text scale; running apps keep the last one until they restart");
+                        None
+                    }
+                },
+            };
+            info!(text_scaling_factor = ?shell.text_scaling_factor(), "apps text scale");
+            if let Some(value) = value {
+                emit(INTERFACE_NAMESPACE, TEXT_SCALING_KEY, value)?;
+            }
+        }
     }
+}
+
+/// One setting as the portal frontend answers it from all backends.
+fn read_from_frontend(
+    connection: &Connection,
+    namespace: &str,
+    key: &str,
+) -> zbus::Result<OwnedValue> {
+    connection
+        .call_method(
+            Some(FRONTEND_SERVICE_NAME),
+            OBJECT_PATH,
+            Some(FRONTEND_INTERFACE_NAME),
+            "ReadOne",
+            &(namespace, key),
+        )?
+        .body()
+        .deserialize::<OwnedValue>()
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 struct ChangedSettings {
     color_scheme: bool,
     accent_color: bool,
+    presentation: bool,
+    keyboard_attached: bool,
+    tablet_mode: bool,
+    /// Denial gives another text scale, or no longer gives one.
+    text_scaling: bool,
 }
 
 fn apply_snapshot(cache: &RwLock<Cache>, snapshot: DesktopThemeSnapshot) -> ChangedSettings {
@@ -235,9 +343,14 @@ fn apply_snapshot(cache: &RwLock<Cache>, snapshot: DesktopThemeSnapshot) -> Chan
     if snapshot.revision < cached.snapshot.revision {
         return ChangedSettings::default();
     }
+    let (shell, previous) = (snapshot.shell, cached.snapshot.shell);
     let changed = ChangedSettings {
         color_scheme: snapshot.portal_color_scheme != cached.snapshot.portal_color_scheme,
         accent_color: snapshot.accent_color != cached.snapshot.accent_color,
+        presentation: shell.presentation != previous.presentation,
+        keyboard_attached: shell.keyboard_attached != previous.keyboard_attached,
+        tablet_mode: shell.tablet_mode != previous.tablet_mode,
+        text_scaling: shell.text_scaling_milli != previous.text_scaling_milli,
     };
     cached.snapshot = snapshot;
     changed
@@ -459,7 +572,9 @@ fn default_socket_path() -> Result<PathBuf, Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use denial_core::portal_protocol::{DesktopAccentColor, DesktopColorSchemePreference};
+    use denial_core::portal_protocol::{
+        DesktopAccentColor, DesktopColorSchemePreference, DesktopPresentation, DesktopShellState,
+    };
     use std::fs;
     use std::process::{Child, Command, Stdio};
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -522,7 +637,7 @@ mod tests {
             ),
             ChangedSettings {
                 color_scheme: true,
-                accent_color: false,
+                ..ChangedSettings::default()
             }
         );
         assert_eq!(
@@ -532,8 +647,8 @@ mod tests {
                     .with_accent(DesktopAccentColor::new(0x12, 0x34, 0x56))
             ),
             ChangedSettings {
-                color_scheme: false,
                 accent_color: true,
+                ..ChangedSettings::default()
             }
         );
         assert_eq!(
@@ -544,6 +659,115 @@ mod tests {
                 .portal_color_scheme,
             0
         );
+    }
+
+    fn followed(shell: DesktopShellState) -> DesktopThemeSnapshot {
+        DesktopThemeSnapshot::new(20, DesktopColorSchemePreference::PreferDark).with_shell(shell)
+    }
+
+    const TABLET: DesktopShellState = DesktopShellState {
+        presentation: DesktopPresentation::Tablet,
+        keyboard_attached: false,
+        tablet_mode: true,
+        text_scaling_milli: Some(1250),
+    };
+
+    #[test]
+    fn shell_changes_signal_only_the_keys_that_changed() {
+        let cache = RwLock::new(Cache {
+            snapshot: followed(DesktopShellState::default()),
+        });
+        assert_eq!(
+            apply_snapshot(&cache, followed(TABLET)),
+            ChangedSettings {
+                presentation: true,
+                tablet_mode: true,
+                text_scaling: true,
+                ..ChangedSettings::default()
+            }
+        );
+        let keyboard = DesktopShellState {
+            keyboard_attached: true,
+            ..TABLET
+        };
+        assert_eq!(
+            apply_snapshot(&cache, followed(keyboard)),
+            ChangedSettings {
+                keyboard_attached: true,
+                ..ChangedSettings::default()
+            }
+        );
+        // Apps stop following: touch layouts and the text scale go, the
+        // presentation stays.
+        let off = DesktopShellState {
+            tablet_mode: false,
+            text_scaling_milli: None,
+            ..keyboard
+        };
+        assert_eq!(
+            apply_snapshot(&cache, followed(off)),
+            ChangedSettings {
+                tablet_mode: true,
+                text_scaling: true,
+                ..ChangedSettings::default()
+            }
+        );
+        assert_eq!(
+            apply_snapshot(&cache, followed(off)),
+            ChangedSettings::default()
+        );
+    }
+
+    #[test]
+    fn the_text_scale_is_served_only_while_denial_gives_one() {
+        let values = settings_values(followed(TABLET));
+        let shell = &values[SHELL_NAMESPACE];
+        assert_eq!(<&str>::try_from(&shell[PRESENTATION_KEY]), Ok("tablet"));
+        assert_eq!(bool::try_from(&shell[TABLET_MODE_KEY]), Ok(true));
+        assert_eq!(bool::try_from(&shell[KEYBOARD_ATTACHED_KEY]), Ok(false));
+        assert_eq!(
+            f64::try_from(&values[INTERFACE_NAMESPACE][TEXT_SCALING_KEY]),
+            Ok(1.25)
+        );
+
+        let values = settings_values(followed(DesktopShellState::default()));
+        assert_eq!(
+            <&str>::try_from(&values[SHELL_NAMESPACE][PRESENTATION_KEY]),
+            Ok("desktop")
+        );
+        assert!(!values.contains_key(INTERFACE_NAMESPACE));
+
+        // GTK reads org.gnome.* and the appearance namespace at start.
+        let interface = SettingsInterface {
+            cache: Arc::new(RwLock::new(Cache {
+                snapshot: followed(TABLET),
+            })),
+        };
+        let mut namespaces = interface
+            .read_all(vec![
+                "org.gnome.*".to_owned(),
+                APPEARANCE_NAMESPACE.to_owned(),
+            ])
+            .into_keys()
+            .collect::<Vec<_>>();
+        namespaces.sort();
+        assert_eq!(namespaces, [APPEARANCE_NAMESPACE, INTERFACE_NAMESPACE]);
+        assert_eq!(
+            interface
+                .read_all(vec![SHELL_NAMESPACE.to_owned()])
+                .into_keys()
+                .collect::<Vec<_>>(),
+            [SHELL_NAMESPACE]
+        );
+        // Other GNOME keys stay with the next backend.
+        assert!(matches!(
+            interface.read(INTERFACE_NAMESPACE, "font-name"),
+            Err(SettingsError::NotFound(_))
+        ));
+        assert!(matches!(
+            interface.read(SHELL_NAMESPACE, TABLET_MODE_KEY),
+            Ok(value) if bool::try_from(&value) == Ok(true)
+        ));
     }
 
     #[test]
@@ -604,6 +828,30 @@ mod tests {
                 .expect("read interface version"),
             1
         );
+        let error = proxy
+            .read(INTERFACE_NAMESPACE, TEXT_SCALING_KEY)
+            .expect_err("no text scale while apps do not follow a tablet's shell");
+        assert!(matches!(error, zbus::Error::MethodError(..)));
+        {
+            let mut cached = cache
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            cached.snapshot = cached.snapshot.with_shell(TABLET);
+        }
+        let presentation = proxy
+            .read(SHELL_NAMESPACE, PRESENTATION_KEY)
+            .expect("read the shell's presentation");
+        assert_eq!(<&str>::try_from(&presentation), Ok("tablet"));
+        let scale = proxy
+            .read(INTERFACE_NAMESPACE, TEXT_SCALING_KEY)
+            .expect("read the text scale apps follow");
+        assert_eq!(f64::try_from(&scale), Ok(1.25));
+        {
+            let mut cached = cache
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            cached.snapshot = cached.snapshot.with_shell(DesktopShellState::default());
+        }
 
         server
             .emit_signal(
