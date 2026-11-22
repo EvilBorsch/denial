@@ -15,6 +15,8 @@ export 'src/localization/denial_localizations.dart'
         localizedLongDate,
         localizedMonth,
         localizedShortDate,
+        localizedShortMonth,
+        localizedShortWeekday,
         localizedThermalSensor,
         localizedTime,
         localizedWeekday,

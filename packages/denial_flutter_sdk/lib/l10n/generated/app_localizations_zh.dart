@@ -5251,4 +5251,61 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get mobilePowerTapToRestartDenial => '再次点按以重启 Denial。打开的应用会关闭。';
+
+  @override
+  String get weekdayShortMonday => '星期一';
+
+  @override
+  String get weekdayShortTuesday => '星期二';
+
+  @override
+  String get weekdayShortWednesday => '星期三';
+
+  @override
+  String get weekdayShortThursday => '星期四';
+
+  @override
+  String get weekdayShortFriday => '星期五';
+
+  @override
+  String get weekdayShortSaturday => '星期六';
+
+  @override
+  String get weekdayShortSunday => '星期日';
+
+  @override
+  String get monthShortJanuary => '一月';
+
+  @override
+  String get monthShortFebruary => '二月';
+
+  @override
+  String get monthShortMarch => '三月';
+
+  @override
+  String get monthShortApril => '四月';
+
+  @override
+  String get monthShortMay => '五月';
+
+  @override
+  String get monthShortJune => '六月';
+
+  @override
+  String get monthShortJuly => '七月';
+
+  @override
+  String get monthShortAugust => '八月';
+
+  @override
+  String get monthShortSeptember => '九月';
+
+  @override
+  String get monthShortOctober => '十月';
+
+  @override
+  String get monthShortNovember => '十一月';
+
+  @override
+  String get monthShortDecember => '十二月';
 }
