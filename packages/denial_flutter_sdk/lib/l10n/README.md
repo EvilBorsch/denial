@@ -9,6 +9,7 @@ To add a locale:
 1. Copy `app_en.arb` to `app_<locale>.arb` and update `@@locale`.
 2. Translate message values while preserving every message key and placeholder.
 3. Run `flutter gen-l10n` in `packages/denial_flutter_sdk`, or build through `tools/denial-pc bundle`.
+   Export the new `AppLocalizations<Locale>` class from `lib/localization.dart`.
 4. Add or update widget tests for copy length, semantics, and minimum-window
    layout in that locale.
 
@@ -21,6 +22,19 @@ The Settings language page persists an optional `ShellLocalePreference`.
 to apply; explicit preferences update the shell immediately. Add a preference
 and its self-named selector label only when a new locale should be selectable
 independently of the system locale.
+
+`tool/check_l10n.py` compares every catalog with the template: the same
+placeholders and plural arguments in each message, every plural category of
+the language, no message the template lacks. `--complete <locale>` also
+fails on messages left untranslated:
+
+```sh
+packages/denial_flutter_sdk/tool/check_l10n.py --complete ru
+```
+
+`app_ru.arb` is the Russian catalog, complete. Months are in the genitive,
+as a date with a day writes them ("22 ноября"); `weekdayShort*` and
+`monthShort*` are the forms of a short date ("Вс, 22 нояб.").
 
 `app_zh.arb` is the Simplified Chinese base catalog. A future Traditional
 Chinese translation should use `app_zh_Hant.arb`; Flutter will select that
