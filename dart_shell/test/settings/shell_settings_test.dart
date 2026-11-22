@@ -109,6 +109,27 @@ void main() {
     expect(settings.toJson()['version'], ShellSettings.schemaVersion);
   });
 
+  test('each language preference persists by name and names its locale', () {
+    for (final (preference, name, locale) in const [
+      (ShellLocalePreference.system, 'system', null),
+      (ShellLocalePreference.english, 'english', Locale('en')),
+      (
+        ShellLocalePreference.simplifiedChinese,
+        'simplifiedChinese',
+        Locale('zh'),
+      ),
+      (ShellLocalePreference.russian, 'russian', Locale('ru')),
+    ]) {
+      final settings = ShellSettings.fromJson(<String, dynamic>{
+        'localization': <String, dynamic>{'locale': name},
+      });
+      expect(settings.localization.locale, preference);
+      expect(settings.localization.localeOverride, locale);
+      final written = settings.toJson()['localization']! as Map;
+      expect(written['locale'], name);
+    }
+  });
+
   test('power button action persists and produces a typed patch', () {
     const previous = ShellSettings(
       power: ShellPowerSettings(powerButtonAction: PowerButtonAction.dpms),

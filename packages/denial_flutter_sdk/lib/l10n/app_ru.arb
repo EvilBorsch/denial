@@ -3189,6 +3189,10 @@
   "@settingsLanguageSimplifiedChinese": {
     "description": "Self-name for the Simplified Chinese language option."
   },
+  "settingsLanguageRussian": "Русский",
+  "@settingsLanguageRussian": {
+    "description": "Self-name for the Russian language option."
+  },
   "settingsLanguageSystemDefault": "Как в системе",
   "@settingsLanguageSystemDefault": {
     "description": "Language option that follows the operating system locale."

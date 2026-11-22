@@ -188,11 +188,15 @@ class _FirstUserSetupState extends ConsumerState<_FirstUserSetup> {
     if (!_settingUsername) _usernameTyped = _username.text.isNotEmpty;
   }
 
-  SetupLanguage _currentLanguage(BuildContext context) =>
-      _language ??
-      (Localizations.localeOf(context).languageCode == 'zh'
-          ? SetupLanguage.simplifiedChinese
-          : SetupLanguage.english);
+  /// The choice made here, or before one the language the shell shows.
+  SetupLanguage _currentLanguage(BuildContext context) {
+    final shown = Localizations.localeOf(context).languageCode;
+    return _language ??
+        SetupLanguage.values.firstWhere(
+          (language) => language.code == shown,
+          orElse: () => SetupLanguage.english,
+        );
+  }
 
   void _chooseLanguage(SetupLanguage language) {
     setState(() => _language = language);
@@ -201,6 +205,7 @@ class _FirstUserSetupState extends ConsumerState<_FirstUserSetup> {
         SetupLanguage.english => ShellLocalePreference.english,
         SetupLanguage.simplifiedChinese =>
           ShellLocalePreference.simplifiedChinese,
+        SetupLanguage.russian => ShellLocalePreference.russian,
       },
     );
   }
@@ -685,8 +690,14 @@ class _FirstUserSetupState extends ConsumerState<_FirstUserSetup> {
                   _ChoiceRow(
                     label: l10n.settingsLanguageSimplifiedChinese,
                     selected: language == SetupLanguage.simplifiedChinese,
+                    divider: true,
                     onTap: () =>
                         _chooseLanguage(SetupLanguage.simplifiedChinese),
+                  ),
+                  _ChoiceRow(
+                    label: l10n.settingsLanguageRussian,
+                    selected: language == SetupLanguage.russian,
+                    onTap: () => _chooseLanguage(SetupLanguage.russian),
                   ),
                 ],
               ),

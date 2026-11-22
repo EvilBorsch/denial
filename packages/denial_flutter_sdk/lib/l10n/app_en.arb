@@ -3163,6 +3163,10 @@
   "@settingsLanguageSimplifiedChinese": {
     "description": "Self-name for the Simplified Chinese language option."
   },
+  "settingsLanguageRussian": "Русский",
+  "@settingsLanguageRussian": {
+    "description": "Self-name for the Russian language option."
+  },
   "settingsLanguageSystemDefault": "System default",
   "@settingsLanguageSystemDefault": {
     "description": "Language option that follows the operating system locale."

@@ -670,6 +670,7 @@
   "settingsLanguageSection": "语言",
   "settingsLanguageSelectorSemantics": "Denial 界面语言",
   "settingsLanguageSimplifiedChinese": "简体中文",
+  "settingsLanguageRussian": "Русский",
   "settingsLanguageSystemDefault": "跟随系统",
   "settingsLanguageTitle": "选择 Denial 使用的语言。",
   "settingsKeyboardSection": "输入",

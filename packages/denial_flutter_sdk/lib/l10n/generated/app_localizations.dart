@@ -4165,6 +4165,12 @@ abstract class AppLocalizations {
   /// **'简体中文'**
   String get settingsLanguageSimplifiedChinese;
 
+  /// Self-name for the Russian language option.
+  ///
+  /// In en, this message translates to:
+  /// **'Русский'**
+  String get settingsLanguageRussian;
+
   /// Language option that follows the operating system locale.
   ///
   /// In en, this message translates to:
