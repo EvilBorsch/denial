@@ -1229,6 +1229,11 @@ fn default_shortcut_file() -> ShortcutFile {
         ("Super+VolumeDown", ShortcutAction::BrightnessDown),
         ("Super+Space", ShortcutAction::NextKeyboardLayout),
         ("Super+Shift+Space", ShortcutAction::PreviousKeyboardLayout),
+        // EvilBorsch distribution: the layout switch Russian keyboard users
+        // know from other systems, next to Super+Space. Only new shortcut
+        // files get it; existing ones keep what their owner configured.
+        ("Alt+Space", ShortcutAction::NextKeyboardLayout),
+        ("Alt+Shift+Space", ShortcutAction::PreviousKeyboardLayout),
     ];
     ShortcutFile {
         version: SHORTCUT_SCHEMA_VERSION,
