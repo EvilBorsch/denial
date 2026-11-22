@@ -574,6 +574,29 @@ fn decode_keyboard_command(command: fb::KeyboardCommand<'_>) -> Result<KeyboardC
                 text: command.text().expect("validated replacement").to_owned(),
             })
         }
+        fb::KeyboardCommandKind::SelectLayout => {
+            if command.flags() != 0
+                || command.text().is_some()
+                || command.key().is_some()
+                || command.replaced().is_some()
+            {
+                return Err(WireError::Payload);
+            }
+            Ok(KeyboardCommand::SelectLayout {
+                layout: command.layout(),
+            })
+        }
+        fb::KeyboardCommandKind::TypingLayouts => {
+            if command.flags() != 0
+                || command.key().is_some()
+                || command.replaced().is_some()
+                || command.layout() != 0
+            {
+                return Err(WireError::Payload);
+            }
+            decode_typing_layouts(command.text().unwrap_or_default())
+                .map(KeyboardCommand::TypingLayouts)
+        }
         fb::KeyboardCommandKind::Key => {
             let key = command.key();
             validate_required_string(key)?;
@@ -595,6 +618,30 @@ fn decode_keyboard_command(command: fb::KeyboardCommand<'_>) -> Result<KeyboardC
         }
         _ => Err(WireError::Enumeration),
     }
+}
+
+/// XKB layout names, comma-separated: distinct, each of the characters XKB
+/// names are made of, and no more than a keymap holds.
+fn decode_typing_layouts(text: &str) -> Result<Vec<String>, WireError> {
+    if text.is_empty() {
+        return Ok(Vec::new());
+    }
+    let layouts = text.split(',').map(str::to_owned).collect::<Vec<_>>();
+    if layouts.len() > MAX_TYPING_LAYOUTS {
+        return Err(WireError::Count);
+    }
+    for (index, layout) in layouts.iter().enumerate() {
+        if layout.is_empty()
+            || layout.len() > MAX_TYPING_LAYOUT_NAME_BYTES
+            || !layout
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'+' | b'-'))
+            || layouts[..index].contains(layout)
+        {
+            return Err(WireError::Payload);
+        }
+    }
+    Ok(layouts)
 }
 
 fn decode_text_prediction_request(

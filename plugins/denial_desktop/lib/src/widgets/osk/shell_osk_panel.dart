@@ -1,11 +1,14 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show listEquals, mapEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 
 import 'package:denial_flutter_sdk/localization.dart';
+import 'package:denial_flutter_sdk/models.dart'
+    show DenialKeyboardConfiguration;
 import 'package:denial_flutter_sdk/platform.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 import 'package:denial_flutter_sdk/tokens.dart';
@@ -92,6 +95,125 @@ class ShellOskWordRequest {
   final bool manualCapital;
 }
 
+/// A letter page of the software keyboard.
+enum ShellOskLanguage {
+  english('us', 'EN', 'English', 'ABC'),
+  russian('ru', 'RU', 'Русский', 'АБВ');
+
+  const ShellOskLanguage(
+    this.xkbLayout,
+    this.keyLabel,
+    this.ownName,
+    this.lettersLabel,
+  );
+
+  /// The XKB layout the page is made for.
+  final String xkbLayout;
+
+  /// The language key that switches to this page shows this.
+  final String keyLabel;
+
+  /// The language's name in itself, as a language list shows it.
+  final String ownName;
+
+  /// The key that goes back from the numbers to this page shows this.
+  final String lettersLabel;
+}
+
+/// The letter pages the software keyboard offers, and the configured keymap
+/// layouts each of them types with.
+///
+/// Russian joins English when the keyboard configuration has a Russian
+/// layout or the shell speaks Russian. A page with configured layouts
+/// shares the active one with hardware keyboards: the language key selects
+/// it, and Super+Space turns the page. A page without any, Russian beside
+/// an English-only configuration, is the software keyboard's own; the
+/// compositor keeps a keymap layout for it all the same.
+@immutable
+class ShellOskLanguages {
+  const ShellOskLanguages._(this.offered, this.layouts, this.activeLayout);
+
+  /// English alone: the keyboard as it always was.
+  static const englishOnly = ShellOskLanguages._(
+    [ShellOskLanguage.english],
+    {},
+    0,
+  );
+
+  /// The pages for [configuration], null until it is read, and
+  /// [shellLanguage], the language code of the shell's locale.
+  factory ShellOskLanguages.of(
+    DenialKeyboardConfiguration? configuration, {
+    required String shellLanguage,
+  }) {
+    final layouts = configuration?.layouts ?? const [];
+    final russian = [
+      for (var index = 0; index < layouts.length; index++)
+        if (layouts[index].layout == ShellOskLanguage.russian.xkbLayout) index,
+    ];
+    if (russian.isEmpty && shellLanguage != 'ru') return englishOnly;
+    return ShellOskLanguages._(
+      const [ShellOskLanguage.english, ShellOskLanguage.russian],
+      {
+        // Any other layout types Latin letters as far as it has them; the
+        // compositor finds the rest in its added US layout.
+        ShellOskLanguage.english: [
+          for (var index = 0; index < layouts.length; index++)
+            if (!russian.contains(index)) index,
+        ],
+        ShellOskLanguage.russian: russian,
+      },
+      configuration?.activeLayout ?? 0,
+    );
+  }
+
+  /// The pages in the order the language key steps through them.
+  final List<ShellOskLanguage> offered;
+
+  /// Indexes into the configuration's layouts, by the page that types with
+  /// them, in configuration order.
+  final Map<ShellOskLanguage, List<int>> layouts;
+
+  /// The configured layout the keymap has active.
+  final int activeLayout;
+
+  /// The keyboard has a language key.
+  bool get switches => offered.length > 1;
+
+  /// The page whose layouts include the active one.
+  ShellOskLanguage? get activeLanguage {
+    for (final language in offered) {
+      if (layouts[language]?.contains(activeLayout) ?? false) return language;
+    }
+    return null;
+  }
+
+  /// The XKB layouts the compositor keeps in its keymap for the pages; none
+  /// for English alone, whose keymap stays the configured one.
+  List<String> get typingLayouts => switches
+      ? [for (final language in offered) language.xkbLayout]
+      : const [];
+
+  @override
+  bool operator ==(Object other) =>
+      other is ShellOskLanguages &&
+      listEquals(other.offered, offered) &&
+      mapEquals(
+        other.layouts.map((key, value) => MapEntry(key, value.join(','))),
+        layouts.map((key, value) => MapEntry(key, value.join(','))),
+      ) &&
+      other.activeLayout == activeLayout;
+
+  @override
+  int get hashCode => Object.hash(
+    Object.hashAll(offered),
+    Object.hashAll([
+      for (final language in offered) layouts[language]?.join(','),
+    ]),
+    activeLayout,
+  );
+}
+
 /// The software keyboard's keys.
 ///
 /// One recognizer takes every touch on the panel and maps it to the key
@@ -107,6 +229,11 @@ class ShellOskWordRequest {
 /// panel, and in a row above the keys of a portrait one while [shortcuts];
 /// a key at the strip's right end shows and hides that row. Ctrl and Alt
 /// hold for the next key; Backspace and the arrows repeat while held.
+///
+/// When [languages] offers Russian, a language key beside the numbers key
+/// turns the letters between QWERTY and ЙЦУКЕН, and shows the page it turns
+/// to: «RU» or «EN». A long press types ё on е and ъ on ь. The numbers and
+/// symbols are the same for both; suggestions are for English only.
 class ShellOskPanel extends StatefulWidget {
   const ShellOskPanel({
     super.key,
@@ -117,6 +244,9 @@ class ShellOskPanel extends StatefulWidget {
     this.onPredict,
     this.shortcuts = false,
     this.onShortcutsChanged,
+    this.languages = ShellOskLanguages.englishOnly,
+    this.onSelectLayout,
+    this.onTypingLayouts,
   });
 
   final ValueChanged<ShellOskKeyIntent>? onKey;
@@ -135,6 +265,17 @@ class ShellOskPanel extends StatefulWidget {
   /// A portrait panel shows its row of shortcut keys.
   final bool shortcuts;
   final ValueChanged<bool>? onShortcutsChanged;
+
+  /// The letter pages and the keymap layouts they type with.
+  final ShellOskLanguages languages;
+
+  /// The language key turned to a page with configured layouts: make this
+  /// one, an index into the configuration's layouts, the active one.
+  final ValueChanged<int>? onSelectLayout;
+
+  /// The XKB layouts the pages are made for, whenever they change; see
+  /// [ShellOskLanguages.typingLayouts].
+  final ValueChanged<List<String>>? onTypingLayouts;
 
   @override
   State<ShellOskPanel> createState() => _ShellOskPanelState();
@@ -197,6 +338,15 @@ const _accents = <String, Map<String, List<String>>>{
   },
 };
 
+/// Letters a long press offers on a page whatever the suggestions'
+/// languages: those ЙЦУКЕН has no key of its own for.
+const _pageAccents = <ShellOskLanguage, Map<String, List<String>>>{
+  ShellOskLanguage.russian: {
+    'е': ['ё'],
+    'ь': ['ъ'],
+  },
+};
+
 /// Every row but the bottom one is this much taller than it.
 const _tallRow = 1.067;
 
@@ -216,6 +366,12 @@ class _ShellOskPanelState extends State<ShellOskPanel> {
   bool _visible = true;
 
   _OskLayer _layer = _OskLayer.letters;
+
+  /// The letter page, kept from one editor to the next.
+  ShellOskLanguage _language = ShellOskLanguage.english;
+
+  /// The configured layout each page last typed with.
+  final _pageLayouts = <ShellOskLanguage, int>{};
   _Shift _shift = _Shift.off;
 
   /// Shift was set by automatic capitals, which may also clear it.
@@ -257,11 +413,15 @@ class _ShellOskPanelState extends State<ShellOskPanel> {
     super.initState();
     _inputSubscription = widget.textInputStates?.listen(_handleInput);
     _listenPredictions();
+    _adoptLanguages(null);
   }
 
   @override
   void didUpdateWidget(ShellOskPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.languages != widget.languages) {
+      _adoptLanguages(oldWidget.languages);
+    }
     if (oldWidget.textInputStates != widget.textInputStates) {
       unawaited(_inputSubscription?.cancel());
       _inputSubscription = widget.textInputStates?.listen(_handleInput);
@@ -270,6 +430,48 @@ class _ShellOskPanelState extends State<ShellOskPanel> {
       unawaited(_predictionSubscription?.cancel());
       _listenPredictions();
     }
+  }
+
+  /// Follows a switch of the active keymap layout, by the language key or
+  /// on a hardware keyboard, to its page; a page of the keyboard's own
+  /// stays until the language key turns it.
+  void _adoptLanguages(ShellOskLanguages? previous) {
+    final languages = widget.languages;
+    if (previous == null ||
+        !listEquals(previous.typingLayouts, languages.typingLayouts)) {
+      widget.onTypingLayouts?.call(languages.typingLayouts);
+    }
+    final active = languages.activeLanguage;
+    if (active != null) _pageLayouts[active] = languages.activeLayout;
+    final switched =
+        previous == null ||
+        previous.activeLayout != languages.activeLayout ||
+        previous.activeLanguage != active ||
+        !listEquals(previous.offered, languages.offered);
+    if (active != null && switched) {
+      _language = active;
+    } else if (!languages.offered.contains(_language)) {
+      _language = languages.offered.first;
+    }
+  }
+
+  /// The language key: turns the letters to [target] and selects the
+  /// layout that page last typed with, when it has configured layouts.
+  void _switchLanguage(ShellOskLanguage target) {
+    final layouts = widget.languages.layouts[target] ?? const <int>[];
+    if (layouts.isNotEmpty) {
+      final last = _pageLayouts[target];
+      widget.onSelectLayout?.call(
+        last != null && layouts.contains(last) ? last : layouts.first,
+      );
+    }
+    _update(() {
+      _language = target;
+      // The suggestions belong to the page.
+      _requestedWord = null;
+      _prediction = null;
+      _strip.value = const [];
+    });
   }
 
   void _listenPredictions() {
@@ -438,10 +640,14 @@ class _ShellOskPanelState extends State<ShellOskPanel> {
     return _typed.substring(start);
   }
 
-  /// Suggestions suit the editor.
+  /// Suggestions suit the editor. The predictor knows English keys only:
+  /// a Russian word would be corrected into an English one.
   bool get _predicts {
     final input = _input;
-    if (widget.onPredict == null || input == null || !input.active) {
+    if (widget.onPredict == null ||
+        input == null ||
+        !input.active ||
+        _language != ShellOskLanguage.english) {
       return false;
     }
     if (input.legacy ||
@@ -554,6 +760,7 @@ class _ShellOskPanelState extends State<ShellOskPanel> {
   List<String> _accentsFor(_OskKeySpec spec) {
     if (!spec.isLetter) return const [];
     return {
+      ...?_pageAccents[_language]?[spec.value],
       for (final language in _languages) ...?_accents[language]?[spec.value],
     }.toList(growable: false);
   }
@@ -708,17 +915,24 @@ class _ShellOskPanelState extends State<ShellOskPanel> {
   /// the keys look different.
   /// A correction survives only until the next action.
   void _update(VoidCallback change) {
-    final before = (_layer, _shift, _ctrlArmed, _altArmed);
+    final before = (_layer, _language, _shift, _ctrlArmed, _altArmed);
     final undo = _undo;
     change();
     if (identical(_undo, undo)) _undo = null;
     _updateAutoShift();
     _wordChanged();
-    if ((_layer, _shift, _ctrlArmed, _altArmed) != before) setState(() {});
+    if ((_layer, _language, _shift, _ctrlArmed, _altArmed) != before) {
+      setState(() {});
+    }
   }
 
   void _commit(_OskKeySpec spec, {_Touch? touch}) {
     final control = spec.control;
+    final language = spec.language;
+    if (language != null) {
+      _switchLanguage(language);
+      return;
+    }
     if (control != null) {
       _handleControl(control);
       return;
@@ -802,6 +1016,9 @@ class _ShellOskPanelState extends State<ShellOskPanel> {
         _sendCursorKey(_modifiedKey('Left'));
       case _OskControl.arrowRight:
         _sendCursorKey(_modifiedKey('Right'));
+      case _OskControl.language:
+        // The key names its page; _commit turns to it.
+        break;
     }
   }
 
@@ -907,7 +1124,11 @@ class _ShellOskPanelState extends State<ShellOskPanel> {
   // Layout.
 
   List<_OskRowData> get _rows => switch (_layer) {
-    _OskLayer.letters => _letterRows,
+    _OskLayer.letters when !widget.languages.switches => _letterRows,
+    _OskLayer.letters => switch (_language) {
+      ShellOskLanguage.english => _englishLetterRows,
+      ShellOskLanguage.russian => _russianLetterRows,
+    },
     _OskLayer.numbers => _numberRows,
     _OskLayer.symbols => _extraSymbolRows,
   };
@@ -1001,6 +1222,10 @@ class _ShellOskPanelState extends State<ShellOskPanel> {
                               rect: key.rect,
                               child: _OskKeyCap(
                                 spec: key.spec,
+                                // English alone keeps its localized label.
+                                lettersLabel: widget.languages.switches
+                                    ? _language.lettersLabel
+                                    : null,
                                 shift: _shift,
                                 ctrlArmed: _ctrlArmed,
                                 altArmed: _altArmed,
@@ -1369,6 +1594,7 @@ class _OskGeometry {
 class _OskKeyCap extends StatelessWidget {
   const _OskKeyCap({
     required this.spec,
+    required this.lettersLabel,
     required this.shift,
     required this.ctrlArmed,
     required this.altArmed,
@@ -1378,6 +1604,10 @@ class _OskKeyCap extends StatelessWidget {
   });
 
   final _OskKeySpec spec;
+
+  /// The letters key's label for the page it returns to, when there are
+  /// pages to tell apart.
+  final String? lettersLabel;
   final _Shift shift;
   final bool ctrlArmed;
   final bool altArmed;
@@ -1425,7 +1655,11 @@ class _OskKeyCap extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: spec.semanticLabel(shift: shift, l10n: context.l10n),
+      label: spec.semanticLabel(
+        shift: shift,
+        lettersLabel: lettersLabel,
+        l10n: context.l10n,
+      ),
       onTap: onActivate,
       child: DecoratedBox(
         decoration: BoxDecoration(
@@ -1443,6 +1677,7 @@ class _OskKeyCap extends StatelessWidget {
                   label: spec.labelText(
                     capital: capital,
                     ctrlArmed: ctrlArmed && ctrlOnSymbols,
+                    lettersLabel: lettersLabel,
                     l10n: context.l10n,
                   ),
                   color: foreground,
@@ -1734,6 +1969,7 @@ enum _OskControl {
   arrowDown,
   arrowLeft,
   arrowRight,
+  language,
 }
 
 class _OskRowData {
@@ -1744,25 +1980,41 @@ class _OskRowData {
 }
 
 class _OskKeySpec {
-  const _OskKeySpec.text(this.value, {this.flex = 10})
+  const _OskKeySpec.text(this.value, {this.latin, this.flex = 10})
     : control = null,
-      icon = null;
+      icon = null,
+      language = null;
 
   const _OskKeySpec.control(this.control, {this.icon, this.flex = 14})
-    : value = null;
+    : value = null,
+      latin = null,
+      language = null;
+
+  /// The language key, which turns the letters to [language].
+  const _OskKeySpec.language(ShellOskLanguage this.language)
+    : control = _OskControl.language,
+      value = null,
+      latin = null,
+      icon = null,
+      flex = 10;
 
   final String? value;
+
+  /// What the key of a QWERTY keyboard in the same place types: the key a
+  /// shortcut with Ctrl or Alt names, as on a hardware keyboard.
+  final String? latin;
   final _OskControl? control;
   final IconData? icon;
   final int flex;
+  final ShellOskLanguage? language;
 
+  /// A small letter, of any alphabet.
   bool get isLetter {
     final text = value;
-    if (text == null || text.length != 1) {
+    if (text == null || text.runes.length != 1) {
       return false;
     }
-    final code = text.codeUnitAt(0);
-    return code >= 97 && code <= 122;
+    return text.toUpperCase() != text;
   }
 
   bool get showsPopup => control == null;
@@ -1802,6 +2054,7 @@ class _OskKeySpec {
     required bool capital,
     required bool ctrlArmed,
     required AppLocalizations l10n,
+    String? lettersLabel,
   }) {
     if (control == _OskControl.symbols && ctrlArmed) {
       return l10n.oskControlKey;
@@ -1813,7 +2066,7 @@ class _OskKeySpec {
       return l10n.oskMoreSymbolsKey;
     }
     if (control == _OskControl.letters) {
-      return l10n.oskLettersKey;
+      return lettersLabel ?? l10n.oskLettersKey;
     }
     switch (control) {
       case _OskControl.escape:
@@ -1824,6 +2077,8 @@ class _OskKeySpec {
         return l10n.oskControlKey;
       case _OskControl.alt:
         return l10n.oskAltKey;
+      case _OskControl.language:
+        return language!.keyLabel;
       default:
         break;
     }
@@ -1833,6 +2088,7 @@ class _OskKeySpec {
   String semanticLabel({
     required _Shift shift,
     required AppLocalizations l10n,
+    String? lettersLabel,
   }) {
     return switch (control) {
       _OskControl.shift =>
@@ -1851,9 +2107,11 @@ class _OskKeySpec {
       _OskControl.arrowDown => l10n.oskArrowDown,
       _OskControl.arrowLeft => l10n.oskArrowLeft,
       _OskControl.arrowRight => l10n.oskArrowRight,
+      _OskControl.language => language!.ownName,
       null => labelText(
         capital: shift != _Shift.off,
         ctrlArmed: false,
+        lettersLabel: lettersLabel,
         l10n: l10n,
       ),
     };
@@ -1876,11 +2134,14 @@ class _OskKeySpec {
       };
     }
 
-    final text = value;
+    // A letter of another alphabet names the QWERTY key in its place:
+    // Ctrl+С copies, as on a hardware keyboard.
+    final latin = this.latin;
+    final text = latin ?? value;
     if (text == null || text.isEmpty) {
       return null;
     }
-    if (isLetter) {
+    if (latin == null ? isLetter : latin.toUpperCase() != latin) {
       // A capital is the letter with Shift.
       return capital ? text.toUpperCase() : text;
     }
@@ -1896,7 +2157,7 @@ class _OskKeySpec {
       ':' => 'colon',
       '[' => 'bracketleft',
       ']' => 'bracketright',
-      _ => capital ? outputText(capital: true) : text,
+      _ => capital && latin == null ? outputText(capital: true) : text,
     };
   }
 
@@ -1916,49 +2177,56 @@ class _OskKeySpec {
   }
 }
 
+const _qwertyTop = _OskRowData([
+  _OskKeySpec.text('q'),
+  _OskKeySpec.text('w'),
+  _OskKeySpec.text('e'),
+  _OskKeySpec.text('r'),
+  _OskKeySpec.text('t'),
+  _OskKeySpec.text('y'),
+  _OskKeySpec.text('u'),
+  _OskKeySpec.text('i'),
+  _OskKeySpec.text('o'),
+  _OskKeySpec.text('p'),
+]);
+
+const _qwertyMiddle = _OskRowData([
+  _OskKeySpec.text('a'),
+  _OskKeySpec.text('s'),
+  _OskKeySpec.text('d'),
+  _OskKeySpec.text('f'),
+  _OskKeySpec.text('g'),
+  _OskKeySpec.text('h'),
+  _OskKeySpec.text('j'),
+  _OskKeySpec.text('k'),
+  _OskKeySpec.text('l'),
+], sideInset: 28);
+
+const _qwertyBottom = _OskRowData([
+  _OskKeySpec.control(
+    _OskControl.shift,
+    icon: Icons.keyboard_arrow_up_rounded,
+    flex: 15,
+  ),
+  _OskKeySpec.text('z'),
+  _OskKeySpec.text('x'),
+  _OskKeySpec.text('c'),
+  _OskKeySpec.text('v'),
+  _OskKeySpec.text('b'),
+  _OskKeySpec.text('n'),
+  _OskKeySpec.text('m'),
+  _OskKeySpec.control(
+    _OskControl.backspace,
+    icon: Icons.backspace_rounded,
+    flex: 15,
+  ),
+]);
+
+/// The letters while English is the only page.
 const _letterRows = [
-  _OskRowData([
-    _OskKeySpec.text('q'),
-    _OskKeySpec.text('w'),
-    _OskKeySpec.text('e'),
-    _OskKeySpec.text('r'),
-    _OskKeySpec.text('t'),
-    _OskKeySpec.text('y'),
-    _OskKeySpec.text('u'),
-    _OskKeySpec.text('i'),
-    _OskKeySpec.text('o'),
-    _OskKeySpec.text('p'),
-  ]),
-  _OskRowData([
-    _OskKeySpec.text('a'),
-    _OskKeySpec.text('s'),
-    _OskKeySpec.text('d'),
-    _OskKeySpec.text('f'),
-    _OskKeySpec.text('g'),
-    _OskKeySpec.text('h'),
-    _OskKeySpec.text('j'),
-    _OskKeySpec.text('k'),
-    _OskKeySpec.text('l'),
-  ], sideInset: 28),
-  _OskRowData([
-    _OskKeySpec.control(
-      _OskControl.shift,
-      icon: Icons.keyboard_arrow_up_rounded,
-      flex: 15,
-    ),
-    _OskKeySpec.text('z'),
-    _OskKeySpec.text('x'),
-    _OskKeySpec.text('c'),
-    _OskKeySpec.text('v'),
-    _OskKeySpec.text('b'),
-    _OskKeySpec.text('n'),
-    _OskKeySpec.text('m'),
-    _OskKeySpec.control(
-      _OskControl.backspace,
-      icon: Icons.backspace_rounded,
-      flex: 15,
-    ),
-  ]),
+  _qwertyTop,
+  _qwertyMiddle,
+  _qwertyBottom,
   _OskRowData([
     _OskKeySpec.control(_OskControl.symbols, flex: 17),
     _OskKeySpec.text(',', flex: 10),
@@ -1974,6 +2242,86 @@ const _letterRows = [
       flex: 17,
     ),
   ]),
+];
+
+/// The space row of a page beside another: the language key, showing the
+/// page it turns to, takes a key's width from the space bar.
+_OskRowData _spaceRowTurningTo(ShellOskLanguage language) => _OskRowData([
+  const _OskKeySpec.control(_OskControl.symbols, flex: 17),
+  _OskKeySpec.language(language),
+  const _OskKeySpec.text(',', flex: 10),
+  const _OskKeySpec.control(
+    _OskControl.space,
+    icon: Icons.space_bar_rounded,
+    flex: 36,
+  ),
+  const _OskKeySpec.text('.', flex: 10),
+  const _OskKeySpec.control(
+    _OskControl.enter,
+    icon: Icons.keyboard_return_rounded,
+    flex: 17,
+  ),
+]);
+
+final _englishLetterRows = [
+  _qwertyTop,
+  _qwertyMiddle,
+  _qwertyBottom,
+  _spaceRowTurningTo(ShellOskLanguage.russian),
+];
+
+/// ЙЦУКЕН as phones lay it out: eleven keys a row, ё on е and ъ on ь by a
+/// long press. Each letter knows the QWERTY key in its place.
+final _russianLetterRows = [
+  const _OskRowData([
+    _OskKeySpec.text('й', latin: 'q'),
+    _OskKeySpec.text('ц', latin: 'w'),
+    _OskKeySpec.text('у', latin: 'e'),
+    _OskKeySpec.text('к', latin: 'r'),
+    _OskKeySpec.text('е', latin: 't'),
+    _OskKeySpec.text('н', latin: 'y'),
+    _OskKeySpec.text('г', latin: 'u'),
+    _OskKeySpec.text('ш', latin: 'i'),
+    _OskKeySpec.text('щ', latin: 'o'),
+    _OskKeySpec.text('з', latin: 'p'),
+    _OskKeySpec.text('х', latin: '['),
+  ]),
+  const _OskRowData([
+    _OskKeySpec.text('ф', latin: 'a'),
+    _OskKeySpec.text('ы', latin: 's'),
+    _OskKeySpec.text('в', latin: 'd'),
+    _OskKeySpec.text('а', latin: 'f'),
+    _OskKeySpec.text('п', latin: 'g'),
+    _OskKeySpec.text('р', latin: 'h'),
+    _OskKeySpec.text('о', latin: 'j'),
+    _OskKeySpec.text('л', latin: 'k'),
+    _OskKeySpec.text('д', latin: 'l'),
+    _OskKeySpec.text('ж', latin: ';'),
+    _OskKeySpec.text('э', latin: "'"),
+  ]),
+  // Shift and Backspace a letter wide keep the eleven columns.
+  const _OskRowData([
+    _OskKeySpec.control(
+      _OskControl.shift,
+      icon: Icons.keyboard_arrow_up_rounded,
+      flex: 10,
+    ),
+    _OskKeySpec.text('я', latin: 'z'),
+    _OskKeySpec.text('ч', latin: 'x'),
+    _OskKeySpec.text('с', latin: 'c'),
+    _OskKeySpec.text('м', latin: 'v'),
+    _OskKeySpec.text('и', latin: 'b'),
+    _OskKeySpec.text('т', latin: 'n'),
+    _OskKeySpec.text('ь', latin: 'm'),
+    _OskKeySpec.text('б', latin: ','),
+    _OskKeySpec.text('ю', latin: '.'),
+    _OskKeySpec.control(
+      _OskControl.backspace,
+      icon: Icons.backspace_rounded,
+      flex: 10,
+    ),
+  ]),
+  _spaceRowTurningTo(ShellOskLanguage.english),
 ];
 
 const _numberRows = [

@@ -96,6 +96,9 @@ const KEYBOARD_PHASE_MASK: u32 = KEYBOARD_PRESSED | KEYBOARD_RELEASED;
 const KEYBOARD_FLAGS_MASK: u32 = KEYBOARD_CTRL | KEYBOARD_PHASE_MASK;
 const MAX_KEYBOARD_PANEL_HEIGHT: u32 = 16_384;
 const MAX_KEYBOARD_PANEL_DURATION_MS: u32 = 10_000;
+/// XKB, and an X server, give a keymap at most four layouts.
+const MAX_TYPING_LAYOUTS: usize = 4;
+const MAX_TYPING_LAYOUT_NAME_BYTES: usize = 64;
 /// Longest word the keyboard asks suggestions for, in characters.
 const MAX_PREDICTION_WORD_CHARS: usize = 64;
 const MAX_PREDICTION_SUGGESTIONS: usize = 16;
@@ -227,6 +230,12 @@ pub enum KeyboardCommand {
         replaced: String,
         text: String,
     },
+    /// Makes `layout`, an index into the keyboard layouts, the active one.
+    SelectLayout {
+        layout: u32,
+    },
+    /// The XKB layouts the software keyboard's letter pages are made for.
+    TypingLayouts(Vec<String>),
 }
 
 /// Pointer settings the shell edits, and whether a device of each kind exists.

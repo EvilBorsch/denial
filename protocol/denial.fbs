@@ -118,7 +118,15 @@ enum KeyboardCommandKind : ubyte {
   PanelMotion = 3,
   // Replaces `replaced`, the text just before the cursor, with `text`: an
   // autocorrection or a picked suggestion.
-  Replace = 4
+  Replace = 4,
+  // Makes `layout`, an index into the keyboard configuration's layouts, the
+  // active keymap layout: the software keyboard's language key.
+  SelectLayout = 5,
+  // The XKB layouts the software keyboard's letter pages are made for,
+  // comma-separated in `text`; none when `text` is absent. The keymap keeps
+  // a layout of each name the configuration lacks, after the configured
+  // ones, which only the software keyboard types with.
+  TypingLayouts = 6
 }
 
 enum SettingsRequestKind : ubyte {
@@ -655,6 +663,8 @@ table KeyboardCommand {
   panel_duration_ms:uint;
   // Replace only: the text that `text` replaces.
   replaced:string;
+  // SelectLayout only: the layout to activate.
+  layout:uint;
 }
 
 // The word the software keyboard is typing, for suggestions. touch_x and

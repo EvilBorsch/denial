@@ -616,6 +616,14 @@ pub(super) struct WaylandFrontend {
     flutter_keyboard_keys: HashSet<u32>,
     #[cfg(feature = "flutter")]
     shell_keyboard_keys: HashSet<u32>,
+    /// A shell-keyboard key holds another keymap layout for its stroke.
+    #[cfg(feature = "flutter")]
+    shell_keyboard_borrows_layout: bool,
+    /// The XKB layouts the shell keyboard's letter pages are made for. The
+    /// keymap has a layout of each name, after the configured ones when the
+    /// configuration lacks it.
+    #[cfg(feature = "flutter")]
+    shell_typing_layouts: Vec<String>,
     #[cfg(feature = "flutter")]
     flutter_compose: Option<xkb::compose::State>,
     #[cfg(feature = "flutter")]
