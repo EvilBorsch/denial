@@ -45,6 +45,18 @@ final class BridgeInputClient {
     _context.sendWire(_context.codec.encodeKeyboardReplace(replaced, text));
   }
 
+  void selectKeyboardLayout(int layout) {
+    if (layout < 0 || layout > 0xffffffff) {
+      return;
+    }
+
+    _context.sendWire(_context.codec.encodeKeyboardLayoutSelection(layout));
+  }
+
+  void setKeyboardTypingLayouts(List<String> layouts) {
+    _context.sendWire(_context.codec.encodeKeyboardTypingLayouts(layouts));
+  }
+
   void requestTextPrediction({
     required int serial,
     required String word,

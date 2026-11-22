@@ -381,6 +381,37 @@ void main() {
     expect(command.flags, 0);
   });
 
+  test('a keyboard layout selection carries only the layout', () {
+    final codec = DenialWireCodec();
+    final envelope = Envelope(codec.encodeKeyboardLayoutSelection(1));
+    final command = envelope.payload as KeyboardCommand;
+    expect(command.kind, KeyboardCommandKind.SelectLayout);
+    expect(command.layout, 1);
+    expect(command.flags, 0);
+    expect(command.text, isNull);
+    expect(command.key, isNull);
+    expect(command.replaced, isNull);
+  });
+
+  test('the keyboard typing layouts travel as one XKB list', () {
+    final codec = DenialWireCodec();
+    var command =
+        Envelope(codec.encodeKeyboardTypingLayouts(const ['us', 'ru'])).payload
+            as KeyboardCommand;
+    expect(command.kind, KeyboardCommandKind.TypingLayouts);
+    expect(command.text, 'us,ru');
+    expect(command.layout, 0);
+    expect(command.flags, 0);
+    expect(command.key, isNull);
+    expect(command.replaced, isNull);
+
+    command =
+        Envelope(codec.encodeKeyboardTypingLayouts(const [])).payload
+            as KeyboardCommand;
+    expect(command.kind, KeyboardCommandKind.TypingLayouts);
+    expect(command.text, isNull);
+  });
+
   test('word suggestions cross the bridge both ways', () {
     final codec = DenialWireCodec();
     final request = Envelope(

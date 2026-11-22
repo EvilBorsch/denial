@@ -436,6 +436,18 @@ class DenialBridge {
   void sendKeyboardReplace(String replaced, String text) =>
       _input.sendKeyboardReplace(replaced, text);
 
+  /// Makes [layout], an index into [DenialKeyboardConfiguration.layouts],
+  /// the active keymap layout, as Super+Space does; the change arrives on
+  /// [keyboardConfigurations].
+  void selectKeyboardLayout(int layout) => _input.selectKeyboardLayout(layout);
+
+  /// Tells the compositor the XKB layouts the software keyboard's letter
+  /// pages are made for, such as `us` and `ru`. Its keymap keeps a layout of
+  /// each name the configuration lacks, after the configured ones, which
+  /// only the software keyboard types with; none when [layouts] is empty.
+  void setKeyboardTypingLayouts(List<String> layouts) =>
+      _input.setKeyboardTypingLayouts(layouts);
+
   /// Asks for suggestions for [word]; only the newest request is answered,
   /// on [textPredictions].
   void requestTextPrediction({

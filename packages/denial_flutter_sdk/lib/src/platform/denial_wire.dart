@@ -392,6 +392,30 @@ class DenialWireCodec {
     );
   }
 
+  /// Makes [layout], an index into the keyboard configuration's layouts,
+  /// the active keymap layout.
+  Uint8List encodeKeyboardLayoutSelection(int layout) {
+    return _encodeEnvelope(
+      generated.PayloadTypeId.KeyboardCommand,
+      generated.KeyboardCommandObjectBuilder(
+        kind: generated.KeyboardCommandKind.SelectLayout,
+        layout: layout,
+      ),
+    );
+  }
+
+  /// [layouts], XKB layout names, are the ones the software keyboard's
+  /// letter pages are made for; the keymap keeps a layout of each.
+  Uint8List encodeKeyboardTypingLayouts(List<String> layouts) {
+    return _encodeEnvelope(
+      generated.PayloadTypeId.KeyboardCommand,
+      generated.KeyboardCommandObjectBuilder(
+        kind: generated.KeyboardCommandKind.TypingLayouts,
+        text: layouts.isEmpty ? null : layouts.join(','),
+      ),
+    );
+  }
+
   /// [touchX] and [touchY] hold one offset per character of [word], in key
   /// pitches from the key's center (NaN when unknown), or are both empty.
   Uint8List encodeTextPredictionRequest({
