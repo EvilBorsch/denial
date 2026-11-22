@@ -2,6 +2,7 @@ import 'package:denial_flutter_sdk/controls.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:denial_flutter_sdk/settings.dart';
 import 'package:denial_flutter_sdk/state.dart';
 import 'package:denial_flutter_sdk/system_services.dart';
 
@@ -223,8 +224,35 @@ class SignalGlyph extends StatelessWidget {
   }
 }
 
-/// The compact status cluster (signal · wifi · battery) shared by the status
-/// bar and the shade header.
+/// The status bar's mark while Stay awake keeps the idle timeout from
+/// suspending the system ([ShellPowerSettings.stayAwake]); nothing while it
+/// is off.
+class StayAwakeMark extends ConsumerWidget {
+  const StayAwakeMark({super.key, this.color, this.scale = 1});
+
+  final Color? color;
+  final double scale;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final stayAwake = ref.watch(
+      shellSettingsProvider.select((settings) => settings.power.stayAwake),
+    );
+    if (!stayAwake) return const SizedBox.shrink();
+    return Padding(
+      padding: EdgeInsetsDirectional.only(end: 9 * scale),
+      child: Icon(
+        Icons.coffee_rounded,
+        size: 18 * scale,
+        color: color ?? context.shellColors.textPrimary,
+        semanticLabel: context.l10n.quickSettingsStayAwakeOn,
+      ),
+    );
+  }
+}
+
+/// The compact status cluster (stay awake · signal · wifi · battery) shared
+/// by the status bar and the shade header.
 class StatusCluster extends StatelessWidget {
   const StatusCluster({
     super.key,
@@ -242,6 +270,7 @@ class StatusCluster extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        StayAwakeMark(color: color, scale: scale),
         MobileConnectivityMarks(color: color, scale: scale),
         SizedBox(width: 12 * scale),
         BatteryMark(

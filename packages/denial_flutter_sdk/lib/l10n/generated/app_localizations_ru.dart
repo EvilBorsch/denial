@@ -1347,6 +1347,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get quickSettingsStayAwake => 'Не засыпать';
 
   @override
+  String get quickSettingsStayAwakeOn => 'Режим «Не засыпать» включён';
+
+  @override
   String get quickSettingsScreenRecording => 'Запись экрана';
 
   @override

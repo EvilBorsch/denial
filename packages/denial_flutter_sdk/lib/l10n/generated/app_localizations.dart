@@ -2384,6 +2384,12 @@ abstract class AppLocalizations {
   /// **'Stay awake'**
   String get quickSettingsStayAwake;
 
+  /// Spoken label of the status bar mark shown while the Stay awake tile is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Stay awake is on'**
+  String get quickSettingsStayAwakeOn;
+
   /// Quick Settings tile that starts a screen recording, and stops it when tapped again.
   ///
   /// In en, this message translates to:

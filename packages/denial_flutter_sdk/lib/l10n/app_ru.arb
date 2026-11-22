@@ -1919,6 +1919,10 @@
   "@quickSettingsStayAwake": {
     "description": "Quick Settings tile that keeps the idle timeout from suspending the system while it is on. The screen still turns off and locks, and closing the lid still suspends."
   },
+  "quickSettingsStayAwakeOn": "Режим «Не засыпать» включён",
+  "@quickSettingsStayAwakeOn": {
+    "description": "Spoken label of the status bar mark shown while the Stay awake tile is on."
+  },
   "quickSettingsScreenRecording": "Запись экрана",
   "@quickSettingsScreenRecording": {
     "description": "Quick Settings tile that starts a screen recording, and stops it when tapped again."

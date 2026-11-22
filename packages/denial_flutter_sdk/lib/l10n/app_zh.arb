@@ -380,6 +380,7 @@
   "powerWattsDecimal": "{watts} W",
   "quickSettingsAutoRotate": "自动旋转",
   "quickSettingsStayAwake": "保持唤醒",
+  "quickSettingsStayAwakeOn": "保持唤醒已开启",
   "quickSettingsScreenRecording": "屏幕录制",
   "quickSettingsRecording": "正在录制",
   "quickSettingsBalanced": "均衡",
