@@ -954,15 +954,17 @@ impl flatbuffers::SimpleToVerifyInSlice for ShellActionKind {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_KEYBOARD_COMMAND_KIND: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_KEYBOARD_COMMAND_KIND: u8 = 4;
+pub const ENUM_MAX_KEYBOARD_COMMAND_KIND: u8 = 6;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_KEYBOARD_COMMAND_KIND: [KeyboardCommandKind; 5] = [
+pub const ENUM_VALUES_KEYBOARD_COMMAND_KIND: [KeyboardCommandKind; 7] = [
   KeyboardCommandKind::Text,
   KeyboardCommandKind::Key,
   KeyboardCommandKind::DismissPanel,
   KeyboardCommandKind::PanelMotion,
   KeyboardCommandKind::Replace,
+  KeyboardCommandKind::SelectLayout,
+  KeyboardCommandKind::TypingLayouts,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -975,15 +977,19 @@ impl KeyboardCommandKind {
   pub const DismissPanel: Self = Self(2);
   pub const PanelMotion: Self = Self(3);
   pub const Replace: Self = Self(4);
+  pub const SelectLayout: Self = Self(5);
+  pub const TypingLayouts: Self = Self(6);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 4;
+  pub const ENUM_MAX: u8 = 6;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::Text,
     Self::Key,
     Self::DismissPanel,
     Self::PanelMotion,
     Self::Replace,
+    Self::SelectLayout,
+    Self::TypingLayouts,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -993,6 +999,8 @@ impl KeyboardCommandKind {
       Self::DismissPanel => Some("DismissPanel"),
       Self::PanelMotion => Some("PanelMotion"),
       Self::Replace => Some("Replace"),
+      Self::SelectLayout => Some("SelectLayout"),
+      Self::TypingLayouts => Some("TypingLayouts"),
       _ => None,
     }
   }
@@ -7586,6 +7594,7 @@ impl<'a> KeyboardCommand<'a> {
   pub const VT_PANEL_HEIGHT: flatbuffers::VOffsetT = 14;
   pub const VT_PANEL_DURATION_MS: flatbuffers::VOffsetT = 16;
   pub const VT_REPLACED: flatbuffers::VOffsetT = 18;
+  pub const VT_LAYOUT: flatbuffers::VOffsetT = 20;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -7598,6 +7607,7 @@ impl<'a> KeyboardCommand<'a> {
   ) -> flatbuffers::WIPOffset<KeyboardCommand<'bldr>> {
     let mut builder = KeyboardCommandBuilder::new(_fbb);
     builder.add_activation_serial(args.activation_serial);
+    builder.add_layout(args.layout);
     if let Some(x) = args.replaced { builder.add_replaced(x); }
     builder.add_panel_duration_ms(args.panel_duration_ms);
     builder.add_panel_height(args.panel_height);
@@ -7665,6 +7675,13 @@ impl<'a> KeyboardCommand<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<&str>>(KeyboardCommand::VT_REPLACED, None)}
   }
+  #[inline]
+  pub fn layout(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(KeyboardCommand::VT_LAYOUT, Some(0)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for KeyboardCommand<'_> {
@@ -7682,6 +7699,7 @@ impl flatbuffers::Verifiable for KeyboardCommand<'_> {
      .visit_field::<u32>("panel_height", Self::VT_PANEL_HEIGHT, false)?
      .visit_field::<u32>("panel_duration_ms", Self::VT_PANEL_DURATION_MS, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<&str>>("replaced", Self::VT_REPLACED, false)?
+     .visit_field::<u32>("layout", Self::VT_LAYOUT, false)?
      .finish();
     Ok(())
   }
@@ -7695,6 +7713,7 @@ pub struct KeyboardCommandArgs<'a> {
     pub panel_height: u32,
     pub panel_duration_ms: u32,
     pub replaced: Option<flatbuffers::WIPOffset<&'a str>>,
+    pub layout: u32,
 }
 impl<'a> Default for KeyboardCommandArgs<'a> {
   #[inline]
@@ -7708,6 +7727,7 @@ impl<'a> Default for KeyboardCommandArgs<'a> {
       panel_height: 0,
       panel_duration_ms: 0,
       replaced: None,
+      layout: 0,
     }
   }
 }
@@ -7750,6 +7770,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> KeyboardCommandBuilder<'a, 'b, 
     self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(KeyboardCommand::VT_REPLACED, replaced);
   }
   #[inline]
+  pub fn add_layout(&mut self, layout: u32) {
+    self.fbb_.push_slot::<u32>(KeyboardCommand::VT_LAYOUT, layout, 0);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> KeyboardCommandBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     KeyboardCommandBuilder {
@@ -7775,6 +7799,7 @@ impl core::fmt::Debug for KeyboardCommand<'_> {
       ds.field("panel_height", &self.panel_height());
       ds.field("panel_duration_ms", &self.panel_duration_ms());
       ds.field("replaced", &self.replaced());
+      ds.field("layout", &self.layout());
       ds.finish()
   }
 }

@@ -398,7 +398,9 @@ enum KeyboardCommandKind {
   Key(1),
   DismissPanel(2),
   PanelMotion(3),
-  Replace(4);
+  Replace(4),
+  SelectLayout(5),
+  TypingLayouts(6);
 
   final int value;
   const KeyboardCommandKind(this.value);
@@ -410,6 +412,8 @@ enum KeyboardCommandKind {
       case 2: return KeyboardCommandKind.DismissPanel;
       case 3: return KeyboardCommandKind.PanelMotion;
       case 4: return KeyboardCommandKind.Replace;
+      case 5: return KeyboardCommandKind.SelectLayout;
+      case 6: return KeyboardCommandKind.TypingLayouts;
       default: throw StateError('Invalid value $value for bit flag enum');
     }
   }
@@ -418,7 +422,7 @@ enum KeyboardCommandKind {
       value == null ? null : KeyboardCommandKind.fromValue(value);
 
   static const int minValue = 0;
-  static const int maxValue = 4;
+  static const int maxValue = 6;
   static const fb.Reader<KeyboardCommandKind> reader = _KeyboardCommandKindReader();
 }
 
@@ -4012,10 +4016,11 @@ class KeyboardCommand {
   int get panelHeight => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 14, 0);
   int get panelDurationMs => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 16, 0);
   String? get replaced => const fb.StringReader().vTableGetNullable(_bc, _bcOffset, 18);
+  int get layout => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 20, 0);
 
   @override
   String toString() {
-    return 'KeyboardCommand{kind: ${kind}, text: ${text}, key: ${key}, flags: ${flags}, activationSerial: ${activationSerial}, panelHeight: ${panelHeight}, panelDurationMs: ${panelDurationMs}, replaced: ${replaced}}';
+    return 'KeyboardCommand{kind: ${kind}, text: ${text}, key: ${key}, flags: ${flags}, activationSerial: ${activationSerial}, panelHeight: ${panelHeight}, panelDurationMs: ${panelDurationMs}, replaced: ${replaced}, layout: ${layout}}';
   }
 }
 
@@ -4033,7 +4038,7 @@ class KeyboardCommandBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(8);
+    fbBuilder.startTable(9);
   }
 
   int addKind(KeyboardCommandKind? kind) {
@@ -4068,6 +4073,10 @@ class KeyboardCommandBuilder {
     fbBuilder.addOffset(7, offset);
     return fbBuilder.offset;
   }
+  int addLayout(int? layout) {
+    fbBuilder.addUint32(8, layout);
+    return fbBuilder.offset;
+  }
 
   int finish() {
     return fbBuilder.endTable();
@@ -4083,6 +4092,7 @@ class KeyboardCommandObjectBuilder extends fb.ObjectBuilder {
   final int? _panelHeight;
   final int? _panelDurationMs;
   final String? _replaced;
+  final int? _layout;
 
   KeyboardCommandObjectBuilder({
     KeyboardCommandKind? kind,
@@ -4093,6 +4103,7 @@ class KeyboardCommandObjectBuilder extends fb.ObjectBuilder {
     int? panelHeight,
     int? panelDurationMs,
     String? replaced,
+    int? layout,
   })
       : _kind = kind,
         _text = text,
@@ -4101,7 +4112,8 @@ class KeyboardCommandObjectBuilder extends fb.ObjectBuilder {
         _activationSerial = activationSerial,
         _panelHeight = panelHeight,
         _panelDurationMs = panelDurationMs,
-        _replaced = replaced;
+        _replaced = replaced,
+        _layout = layout;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -4112,7 +4124,7 @@ class KeyboardCommandObjectBuilder extends fb.ObjectBuilder {
         : fbBuilder.writeString(_key!);
     final int? replacedOffset = _replaced == null ? null
         : fbBuilder.writeString(_replaced!);
-    fbBuilder.startTable(8);
+    fbBuilder.startTable(9);
     fbBuilder.addUint8(0, _kind?.value);
     fbBuilder.addOffset(1, textOffset);
     fbBuilder.addOffset(2, keyOffset);
@@ -4121,6 +4133,7 @@ class KeyboardCommandObjectBuilder extends fb.ObjectBuilder {
     fbBuilder.addUint32(5, _panelHeight);
     fbBuilder.addUint32(6, _panelDurationMs);
     fbBuilder.addOffset(7, replacedOffset);
+    fbBuilder.addUint32(8, _layout);
     return fbBuilder.endTable();
   }
 
