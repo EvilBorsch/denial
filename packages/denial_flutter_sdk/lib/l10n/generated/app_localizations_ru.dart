@@ -1344,6 +1344,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String get quickSettingsAutoRotate => 'Автоповорот';
 
   @override
+  String get quickSettingsStayAwake => 'Не засыпать';
+
+  @override
   String get quickSettingsScreenRecording => 'Запись экрана';
 
   @override

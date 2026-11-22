@@ -1286,6 +1286,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get quickSettingsAutoRotate => '自动旋转';
 
   @override
+  String get quickSettingsStayAwake => '保持唤醒';
+
+  @override
   String get quickSettingsScreenRecording => '屏幕录制';
 
   @override

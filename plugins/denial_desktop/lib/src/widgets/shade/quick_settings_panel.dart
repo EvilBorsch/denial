@@ -39,6 +39,7 @@ import 'package:denial_flutter_sdk/effects.dart';
 import '../liquid/water_reveal.dart';
 import 'liquid_range_bar.dart';
 import 'quick_settings_tiles.dart';
+import 'stay_awake_tile.dart';
 
 import 'mobile_notification_history.dart';
 import 'shade_backdrop_scene.dart';
@@ -788,6 +789,9 @@ class _QuickSettingsTilesSection extends ConsumerWidget {
           busy: rotationLock.busy,
           onTap: () => ref.read(rotationLockProvider.notifier).toggle(),
         ),
+      // Beside Auto-rotate: the same column whether or not the screen
+      // recording tile follows.
+      stayAwakeQuickTile(ref, l10n),
       if (recording.available)
         QuickTile(
           icon: recording.recording

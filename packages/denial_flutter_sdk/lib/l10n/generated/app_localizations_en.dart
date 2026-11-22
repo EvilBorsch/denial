@@ -1331,6 +1331,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get quickSettingsAutoRotate => 'Auto-rotate';
 
   @override
+  String get quickSettingsStayAwake => 'Stay awake';
+
+  @override
   String get quickSettingsScreenRecording => 'Screen recording';
 
   @override
