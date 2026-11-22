@@ -222,8 +222,10 @@ They run under qemu-aarch64 with the root; `--release` shares the build's
 dependencies. On the release's commit 42 pass, 14 are ignored (they need a
 phone or the network) and one fails here,
 `cursor_theme::tests::cursor_zip_converts_to_denial_manifest`, whose fixture
-runs `bsdtar`, under qemu-user. `denial-look`, the apps' shared look and
-words, is plain Rust; its tests run on the host:
+runs `bsdtar`, under qemu-user. denial-apps' `eb/wifi-join` adds nine
+(`wifi::nm::join_tests`, `words_ru::tests`): 51 pass, the same one fails.
+`denial-look`, the apps' shared look and words, is plain Rust; its tests run
+on the host:
 
 ```sh
 cd ~/androidlinux/components/denial-apps/apps/settings
@@ -266,6 +268,23 @@ scripts are the release's, except that the postinst gives `deniald`
 `cap_sys_nice` (the package depends on `libcap2-bin` for `setcap`). It
 installs over 0.6.8-1 and earlier `+ebN` builds with the release's engine
 package, `denial-flutter-engine (= 0.6.8-1)`.
+
+A fifth argument, a `settings` from `tools/eb-build-settings`, replaces
+`/usr/lib/denial-apps/settings` and nothing else of Settings: the Wi-Fi
+country helper, the polkit action, the launcher entries and
+`/usr/share/denial/settings/SOURCE_LOCK.json` (which still names the release's
+commits) stay the release's. `''` as the fourth argument keeps the release's
+`deniald`:
+
+```sh
+tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb11 ~/debs \
+    ~/work-denial-deniald/out/deniald ~/work-denial-settings/out/settings
+```
+
+The tool reads the denial-apps commit from `settings.txt` beside the binary,
+refuses one built with uncommitted changes or not the binary `settings.txt`
+describes, and names the commit in the package description. Its glibc check
+covers Settings as it does `deniald`.
 
 ## Shell tests
 
