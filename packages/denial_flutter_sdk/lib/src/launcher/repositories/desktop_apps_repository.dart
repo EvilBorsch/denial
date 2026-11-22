@@ -232,7 +232,7 @@ class DesktopAppsRepository {
     final icon = fields['Icon']?.trim();
     final iconPath = icon == null || icon.isEmpty
         ? null
-        : iconCache.putIfAbsent(icon, () => resolveIconPath(icon));
+        : iconCache.putIfAbsent(icon, () => _resolveIconPathOrNull(icon));
     final categories = (fields['Categories'] ?? '')
         .split(';')
         .map((category) => category.trim())
@@ -313,6 +313,18 @@ class DesktopAppsRepository {
   ///
   /// Callers displaying external events should run this filesystem search off
   /// the UI isolate and cache its result.
+  /// [resolveIconPath] for a desktop entry: an icon that cannot be looked
+  /// up leaves the application with the generic icon instead of hiding it.
+  String? _resolveIconPathOrNull(String icon) {
+    try {
+      return resolveIconPath(icon);
+    } on FileSystemException {
+      return null;
+    } on FormatException {
+      return null;
+    }
+  }
+
   String? resolveIconPath(String icon) {
     final requested = icon.trim();
     final directPath = _localIconPath(requested);
@@ -339,7 +351,7 @@ class DesktopAppsRepository {
       }
 
       final iconsDir = Directory(p.join(root, 'icons'));
-      if (!iconsDir.existsSync()) {
+      if (!_directoryExists(iconsDir)) {
         continue;
       }
 
@@ -810,6 +822,18 @@ bool _isSupportedIconPath(String path) {
       lower.endsWith('.jpg') ||
       lower.endsWith('.jpeg') ||
       lower.endsWith('.svg');
+}
+
+/// Whether [directory] exists; false for one the session may not look into.
+/// `existsSync` throws on EACCES, and one unreadable icon root, such as a
+/// root-only /var/lib/flatpak/exports/share, then failed the lookup of every
+/// themed icon.
+bool _directoryExists(Directory directory) {
+  try {
+    return directory.existsSync();
+  } on FileSystemException {
+    return false;
+  }
 }
 
 bool _isSafeIconFile(String path) {
