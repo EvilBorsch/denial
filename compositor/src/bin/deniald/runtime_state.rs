@@ -198,6 +198,9 @@ pub(super) struct RuntimeState {
     pub(super) pending_text_prediction: Option<wire::TextPrediction>,
     #[cfg(feature = "flutter")]
     pub(super) lid: lid_switch::LidSwitch,
+    /// What the cover does while Denial handles the lid switch.
+    #[cfg(feature = "flutter")]
+    pub(super) cover: lid_switch::Cover,
     #[cfg(feature = "flutter")]
     pub(super) output_control_dirty: bool,
     #[cfg(feature = "flutter")]

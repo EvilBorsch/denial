@@ -808,9 +808,10 @@ impl SystemControls {
 
     /// Takes logind's handling of the lid switch while `held`, with a
     /// `handle-lid-switch` block inhibitor: closing the cover then never
-    /// suspends or locks the system. Suspend asked for any other way, such as
-    /// the power menu, is not held off. Letting go is immediate; taking it
-    /// waits for logind.
+    /// suspends or locks the system, and the compositor turns the displays
+    /// off instead ([`crate::lid_switch::Cover`]). Suspend asked for any other
+    /// way, such as the power menu, is not held off. Letting go is immediate;
+    /// taking it waits for logind.
     #[cfg(feature = "flutter")]
     pub(super) fn hold_lid_switch(&self, held: bool) {
         if self.sleep_monitor.want_lid_switch(held) {
@@ -820,6 +821,12 @@ impl SystemControls {
                 info!("handing the lid switch back to logind");
             }
         }
+    }
+
+    /// Whether Denial holds logind's lid switch handling now.
+    #[cfg(feature = "flutter")]
+    pub(super) fn handles_lid_switch(&self) -> bool {
+        self.sleep_monitor.lid_switch_held()
     }
 
     fn adjust_audio(&self, delta: f64) {

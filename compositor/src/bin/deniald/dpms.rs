@@ -161,6 +161,54 @@ pub(super) fn synchronize_wake_key(scanouts: &[Scanout], events: &mut RuntimeSta
     info!(output = %panel.output.name, "wake key requested display wake");
 }
 
+/// While Denial handles the lid switch (Stay awake), the closed cover turns
+/// the displays off and the opened cover lights them again; the session
+/// stays as it was, unlocked if it was. Otherwise logind acts on the cover as
+/// configured.
+#[cfg(feature = "flutter")]
+pub(super) fn synchronize_cover(scanouts: &[Scanout], events: &mut RuntimeState, lid_closed: bool) {
+    let handled = events
+        .system_controls
+        .as_ref()
+        .is_some_and(system_controls::SystemControls::handles_lid_switch);
+    // As logind's default HandleLidSwitchDocked=ignore: another display goes
+    // on showing the desktop, and the display policy already leaves the
+    // panel under the cover off.
+    let docked = scanouts
+        .iter()
+        .any(|scanout| !output_policy::is_internal_panel(&scanout.output.name));
+    match events.cover.update(lid_closed, handled, docked) {
+        None => {}
+        Some(lid_switch::CoverAction::Darken) => {
+            // Queued requests are the effective state until the atomic KMS
+            // gate runs. Blanked as the power button blanks, so that playback
+            // does not light the panel again, but without locking.
+            let outputs = scanouts
+                .iter()
+                .map(|scanout| {
+                    let output = scanout.output.id;
+                    (
+                        output,
+                        events
+                            .output_power_requests
+                            .get(&output)
+                            .copied()
+                            .unwrap_or(scanout.powered)
+                            && !events.ambient_display.refreshing(output),
+                    )
+                })
+                .collect::<Vec<_>>();
+            let requests = events.idle_policy.blank_now(outputs);
+            events.queue_idle_power_requests(requests);
+            info!("the cover closed while Denial handles the lid; turned the display off");
+        }
+        Some(lid_switch::CoverAction::Light) => {
+            events.note_user_activity();
+            info!("the cover opened; turned the display on");
+        }
+    }
+}
+
 #[cfg(feature = "flutter")]
 /// Tells the idle policy whether a desk shares the session with the phone,
 /// and locks if the phone's panel is left dark and alone.
@@ -434,6 +482,10 @@ pub(super) fn synchronize_requested_display_power(
             }
         }
         Some(idle_policy::DisplayPowerRequest::On) => {
+            if events.cover.darkened() {
+                debug!("the closed cover keeps the display off");
+                return;
+            }
             // The idle timer starts again, so the screen stays on for the
             // usual timeout; clients are not told of user activity.
             let requests = events.idle_policy.note_activity(Instant::now());
