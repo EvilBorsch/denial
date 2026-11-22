@@ -2390,6 +2390,18 @@ abstract class AppLocalizations {
   /// **'Stay awake is on'**
   String get quickSettingsStayAwakeOn;
 
+  /// Quick Settings tile, shown only where the battery offers it, that holds battery charging off while it is on, so that a connected charger powers the device directly in place of charging the battery.
+  ///
+  /// In en, this message translates to:
+  /// **'Bypass charging'**
+  String get quickSettingsBypassCharging;
+
+  /// Spoken label of the mark shown in the status bar while Bypass charging is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Bypass charging is on'**
+  String get quickSettingsBypassChargingOn;
+
   /// Quick Settings tile that starts a screen recording, and stops it when tapped again.
   ///
   /// In en, this message translates to:

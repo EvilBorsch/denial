@@ -1350,6 +1350,12 @@ class AppLocalizationsRu extends AppLocalizations {
   String get quickSettingsStayAwakeOn => 'Режим «Не засыпать» включён';
 
   @override
+  String get quickSettingsBypassCharging => 'Обходная зарядка';
+
+  @override
+  String get quickSettingsBypassChargingOn => 'Обходная зарядка включена';
+
+  @override
   String get quickSettingsScreenRecording => 'Запись экрана';
 
   @override
