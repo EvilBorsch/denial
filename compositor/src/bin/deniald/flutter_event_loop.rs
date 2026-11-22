@@ -954,6 +954,7 @@ pub(super) fn run_flutter_event_loop(
         ..RuntimeState::default()
     };
     synchronize_fingerprint_unlock(&events);
+    synchronize_stay_awake(&events);
     if let Err(error) = settings_watch::install(&event_loop.handle(), &settings_path) {
         warn!(%error, path = %settings_path.display(), "could not watch Denial settings for external edits");
     }

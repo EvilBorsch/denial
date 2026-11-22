@@ -360,6 +360,15 @@ struct SleepMonitorShared {
     transitions_pending: AtomicBool,
     delay_inhibitor: Mutex<Option<OwnedFd>>,
     power_key_inhibitor: Mutex<Option<OwnedFd>>,
+    /// logind's `handle-lid-switch` block inhibitor, held while the
+    /// compositor handles the cover itself ([`SystemControls::hold_lid_switch`]).
+    lid_switch_inhibitor: Mutex<Option<OwnedFd>>,
+    /// Whether the compositor wants that inhibitor held.
+    lid_switch_wanted: AtomicBool,
+    /// Whether it is held now; changed only under `lid_switch_inhibitor`.
+    lid_switch_held: AtomicBool,
+    /// Wakes the monitor when `lid_switch_wanted` changes.
+    lid_switch_wake: crate::wakeup::Wakeup,
     /// `LogindBlocks` as last read from logind.
     blocks: AtomicU8,
     stop: AtomicBool,
@@ -374,6 +383,10 @@ impl SleepMonitorShared {
             transitions_pending: AtomicBool::new(false),
             delay_inhibitor: Mutex::default(),
             power_key_inhibitor: Mutex::default(),
+            lid_switch_inhibitor: Mutex::default(),
+            lid_switch_wanted: AtomicBool::new(false),
+            lid_switch_held: AtomicBool::new(false),
+            lid_switch_wake: crate::wakeup::Wakeup::new()?,
             blocks: AtomicU8::new(0),
             stop: AtomicBool::new(false),
             stop_wake: crate::wakeup::Wakeup::new()?,
@@ -459,11 +472,74 @@ impl SleepMonitorShared {
             .take();
     }
 
+    /// Records whether the compositor wants logind's lid switch handling;
+    /// returns whether that changed. Letting go takes effect here and now:
+    /// the inhibitor is a file descriptor, and closing it hands the lid back
+    /// to logind. Taking it is a logind call, left to the monitor.
+    fn want_lid_switch(&self, wanted: bool) -> bool {
+        if self.lid_switch_wanted.swap(wanted, Ordering::AcqRel) == wanted {
+            return false;
+        }
+        if !wanted {
+            self.release_lid_switch_inhibitor();
+        }
+        self.lid_switch_wake.wake();
+        true
+    }
+
+    fn lid_switch_wanted(&self) -> bool {
+        self.lid_switch_wanted.load(Ordering::Acquire)
+    }
+
+    fn lid_switch_held(&self) -> bool {
+        self.lid_switch_held.load(Ordering::Acquire)
+    }
+
+    /// Keeps a lid switch inhibitor logind just handed out, unless the
+    /// compositor stopped wanting it while logind answered or the monitor
+    /// stops: then it is closed at once. Returns whether it was kept; keeping
+    /// it wakes the compositor, whose cover policy follows.
+    fn install_lid_switch_inhibitor(&self, inhibitor: OwnedFd) -> bool {
+        let mut held = self
+            .lid_switch_inhibitor
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Checked under the lock that `release_lid_switch_inhibitor` takes
+        // after `want_lid_switch(false)`, so a release never misses this one.
+        if !self.lid_switch_wanted() || self.stopping() {
+            return false;
+        }
+        *held = Some(inhibitor);
+        self.lid_switch_held.store(true, Ordering::Release);
+        drop(held);
+        crate::loop_wake::wake();
+        true
+    }
+
+    /// Closes the lid switch inhibitor if one is held: logind handles the lid
+    /// again. Returns whether one was held; that wakes the compositor.
+    fn release_lid_switch_inhibitor(&self) -> bool {
+        let released = {
+            let mut held = self
+                .lid_switch_inhibitor
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            self.lid_switch_held.store(false, Ordering::Release);
+            held.take()
+        };
+        let released = released.is_some();
+        if released {
+            crate::loop_wake::wake();
+        }
+        released
+    }
+
     fn request_stop(&self) {
         self.stop.store(true, Ordering::Release);
         self.stop_wake.wake();
         self.release_delay_inhibitor();
         self.release_power_key_inhibitor();
+        self.release_lid_switch_inhibitor();
     }
 
     fn stopping(&self) -> bool {
@@ -730,6 +806,22 @@ impl SystemControls {
         self.sleep_monitor.blocks()
     }
 
+    /// Takes logind's handling of the lid switch while `held`, with a
+    /// `handle-lid-switch` block inhibitor: closing the cover then never
+    /// suspends or locks the system. Suspend asked for any other way, such as
+    /// the power menu, is not held off. Letting go is immediate; taking it
+    /// waits for logind.
+    #[cfg(feature = "flutter")]
+    pub(super) fn hold_lid_switch(&self, held: bool) {
+        if self.sleep_monitor.want_lid_switch(held) {
+            if held {
+                info!("taking logind's lid switch handling");
+            } else {
+                info!("handing the lid switch back to logind");
+            }
+        }
+    }
+
     fn adjust_audio(&self, delta: f64) {
         let _ = self.audio_commands.try_send(AudioCommand::Adjust(delta));
     }
@@ -936,5 +1028,92 @@ mod sleep_readiness_tests {
                 assert_eq!(monitor.take_transition(), None);
             }
         });
+    }
+    /// A stand-in for an inhibitor logind hands out: the test keeps the
+    /// other end and sees it close when Denial lets the inhibitor go.
+    fn inhibitor() -> (OwnedFd, std::os::unix::net::UnixStream) {
+        let (held, logind) = std::os::unix::net::UnixStream::pair().unwrap();
+        logind.set_nonblocking(true).unwrap();
+        (OwnedFd::from(held), logind)
+    }
+
+    fn closed(logind: &std::os::unix::net::UnixStream) -> bool {
+        use std::io::Read;
+        matches!((&*logind).read(&mut [0_u8; 1]), Ok(0))
+    }
+
+    #[test]
+    fn the_lid_switch_is_held_only_while_wanted() {
+        let monitor = SleepMonitorShared::new().unwrap();
+        assert!(!monitor.lid_switch_wanted());
+        // Unwanted: an inhibitor that arrives anyway is closed at once.
+        let (fd, logind) = inhibitor();
+        assert!(!monitor.install_lid_switch_inhibitor(fd));
+        assert!(closed(&logind));
+        assert!(!monitor.lid_switch_held());
+
+        assert!(monitor.want_lid_switch(true));
+        assert!(!monitor.want_lid_switch(true));
+        assert!(!monitor.lid_switch_held());
+        let (fd, logind) = inhibitor();
+        assert!(monitor.install_lid_switch_inhibitor(fd));
+        assert!(monitor.lid_switch_held());
+        assert!(!closed(&logind));
+
+        // Turning the setting off hands the lid back to logind at once.
+        assert!(monitor.want_lid_switch(false));
+        assert!(!monitor.lid_switch_held());
+        assert!(closed(&logind));
+        assert!(!monitor.release_lid_switch_inhibitor());
+    }
+
+    #[test]
+    fn an_inhibitor_logind_grants_after_the_setting_went_off_is_dropped() {
+        let monitor = SleepMonitorShared::new().unwrap();
+        monitor.want_lid_switch(true);
+        // The monitor asked logind; the setting went off before the answer.
+        monitor.want_lid_switch(false);
+        let (fd, logind) = inhibitor();
+        assert!(!monitor.install_lid_switch_inhibitor(fd));
+        assert!(closed(&logind));
+        assert!(!monitor.lid_switch_held());
+    }
+
+    #[test]
+    fn stopping_hands_the_lid_back_to_logind() {
+        let monitor = SleepMonitorShared::new().unwrap();
+        monitor.want_lid_switch(true);
+        let (fd, logind) = inhibitor();
+        assert!(monitor.install_lid_switch_inhibitor(fd));
+        monitor.request_stop();
+        assert!(closed(&logind));
+        assert!(!monitor.lid_switch_held());
+        // Nor is one granted during shutdown kept.
+        let (fd, logind) = inhibitor();
+        assert!(!monitor.install_lid_switch_inhibitor(fd));
+        assert!(closed(&logind));
+    }
+
+    #[test]
+    fn a_change_of_the_wanted_lid_switch_wakes_the_monitor() {
+        let monitor = SleepMonitorShared::new().unwrap();
+        let woken = |monitor: &SleepMonitorShared| {
+            futures_lite::future::block_on(futures_lite::future::or(
+                async {
+                    monitor.lid_switch_wake.wait().await;
+                    true
+                },
+                async { false },
+            ))
+        };
+        assert!(!woken(&monitor));
+        monitor.want_lid_switch(true);
+        assert!(woken(&monitor));
+        assert!(!woken(&monitor));
+        // Asking again for what is already wanted is no change.
+        monitor.want_lid_switch(true);
+        assert!(!woken(&monitor));
+        monitor.want_lid_switch(false);
+        assert!(woken(&monitor));
     }
 }
