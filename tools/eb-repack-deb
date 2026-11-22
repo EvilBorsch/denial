@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
 # Repack Denial's signed denial_0.6.8-1_arm64.deb with a shell bundle from
-# tools/eb-build-shell and, if given, a deniald from tools/eb-build-deniald:
-# only /usr/lib/denial/flutter/lib/libapp.so,
-# /usr/lib/denial/flutter/data/flutter_assets and /usr/bin/deniald change.
-# denialctl, the portal, the polkit agent, Settings and the conffiles stay the
-# release's, the postinst also gives deniald CAP_SYS_NICE (see below), and the
-# package still depends on the release's denial-flutter-engine (= 0.6.8-1).
-# See docs/EB-BUILD.md.
+# tools/eb-build-shell and, if given, a deniald from tools/eb-build-deniald and
+# a Settings from tools/eb-build-settings: only
+# /usr/lib/denial/flutter/lib/libapp.so, /usr/lib/denial/flutter/data/flutter_assets,
+# /usr/bin/deniald and /usr/lib/denial-apps/settings change. denialctl, the
+# portal, the polkit agent, Settings' Wi-Fi country helper and the conffiles
+# stay the release's, the postinst also gives deniald CAP_SYS_NICE (see
+# below), and the package still depends on the release's
+# denial-flutter-engine (= 0.6.8-1). See docs/EB-BUILD.md.
 #
-# Usage: tools/eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY [DENIALD]
+# Usage: tools/eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY [DENIALD [SETTINGS]]
 #   e.g. tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb1 ~/debs
+#   DENIALD may be '' to keep the release's deniald with a new SETTINGS.
 set -euo pipefail
 
-USAGE='usage: eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY [DENIALD]'
+USAGE='usage: eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY [DENIALD [SETTINGS]]'
 BUNDLE="${1:?$USAGE}"
 VERSION="${2:?$USAGE}"
 OUTPUT="${3:?$USAGE}"
 DENIALD="${4:-}"
+SETTINGS="${5:-}"
 WORK="${EB_WORK:-$HOME/work-denial-shell}"
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tools/lib/denial-architecture.sh
@@ -35,6 +38,22 @@ die() { printf 'eb-repack-deb: %s\n' "$*" >&2; exit 1; }
 if [[ -n "$DENIALD" ]]; then
     [[ -f "$DENIALD" && "$(denial_elf_arch "$DENIALD")" == aarch64 ]] \
         || die "not an aarch64 deniald: $DENIALD"
+fi
+settings_revision=''
+if [[ -n "$SETTINGS" ]]; then
+    [[ -f "$SETTINGS" && "$(denial_elf_arch "$SETTINGS")" == aarch64 ]] \
+        || die "not an aarch64 Settings: $SETTINGS"
+    # tools/eb-build-settings writes settings.txt beside it: the package
+    # names the denial-apps commit the binary was built from.
+    report="$(dirname -- "$SETTINGS")/settings.txt"
+    [[ -f "$report" ]] || die "no settings.txt beside $SETTINGS; build it with tools/eb-build-settings"
+    settings_revision="$(sed -n 's/^denial-apps: \([0-9a-f]\{40\}\)$/\1/p' "$report")"
+    [[ -n "$settings_revision" ]] \
+        || die "$report names no denial-apps commit without uncommitted changes"
+    grep -qx "  sha256: $(sha256sum "$SETTINGS" | cut -d' ' -f1)" "$report" \
+        || die "$SETTINGS is not the binary $report describes"
+fi
+if [[ -n "$DENIALD$SETTINGS" ]]; then
     command -v aarch64-linux-gnu-objdump >/dev/null \
         || die 'aarch64-linux-gnu-objdump (binutils-aarch64-linux-gnu) is required'
 fi
@@ -56,11 +75,21 @@ rm -rf -- "$flutter/data/flutter_assets"
 cp -a -- "$BUNDLE/data/flutter_assets" "$flutter/data/flutter_assets"
 chmod -R u=rwX,go=rX -- "$flutter/data/flutter_assets"
 glibc_needed=''
+replaced=()
 if [[ -n "$DENIALD" ]]; then
     install -m755 -- "$DENIALD" "$stage/denial/usr/bin/deniald"
-    # The newest glibc symbol version it needs: built against another root
-    # than the release's, it may need a newer libc than the package names.
-    glibc_needed="$(aarch64-linux-gnu-objdump -T "$DENIALD" \
+    replaced+=("$DENIALD")
+fi
+if [[ -n "$SETTINGS" ]]; then
+    [[ -f "$stage/denial/usr/lib/denial-apps/settings" ]] \
+        || die 'the release package has no /usr/lib/denial-apps/settings'
+    install -m755 -- "$SETTINGS" "$stage/denial/usr/lib/denial-apps/settings"
+    replaced+=("$SETTINGS")
+fi
+if ((${#replaced[@]})); then
+    # The newest glibc symbol version they need: built against another root
+    # than the release's, they may need a newer libc than the package names.
+    glibc_needed="$(aarch64-linux-gnu-objdump -T "${replaced[@]}" \
         | grep -o 'GLIBC_[0-9.]*' | sed 's/^GLIBC_//' | sort -V | tail -1)"
 fi
 
@@ -85,10 +114,11 @@ PY2
 
 control="$stage/denial/DEBIAN/control"
 python3 -I - "$control" "$VERSION" "$MAINTAINER" "$(git -C "$ROOT" rev-parse HEAD)" \
-    "$glibc_needed" <<'PY'
+    "$glibc_needed" "$DENIALD" "$settings_revision" <<'PY'
 import re
 import sys
-path, version, maintainer, revision, glibc = sys.argv[1:6]
+import textwrap
+path, version, maintainer, revision, glibc, deniald, settings = sys.argv[1:8]
 
 
 def newer(a, b):
@@ -122,7 +152,16 @@ for line in lines:
         continue
     out.append(line)
 out.append(' .')
-if glibc:
+if settings:
+    parts = 'the Flutter shell (libapp.so, flutter_assets)'
+    parts += ', deniald and Settings' if deniald else ' and Settings'
+    built = 'the shell and deniald' if deniald else 'the shell'
+    text = ('This build replaces ' + parts + ' of the signed 0.6.8-1 release: '
+            + built + ' built from EvilBorsch/denial ' + revision[:12]
+            + ', Settings (/usr/lib/denial-apps/settings) from EvilBorsch/denial-apps '
+            + settings[:12] + '.')
+    out.extend(' ' + line for line in textwrap.wrap(text, 72))
+elif deniald:
     out.append(' This build replaces the Flutter shell (libapp.so, flutter_assets) and')
     out.append(' deniald of the signed 0.6.8-1 release, built from EvilBorsch/denial')
     out.append(' ' + revision[:12] + '.')

@@ -1,15 +1,18 @@
 # Building Denial 0.6.8 parts for the tablet (EvilBorsch fork)
 
 This fork changes Denial's Flutter shell (`dart_shell`, `plugins/*`,
-`packages/*`) and the compositor `deniald`. The Flutter engine package
-(`denial-flutter-engine` 0.6.8-1, ABI `3.47.5.denial1`), `denialctl`, the
-portal, the polkit agent and Settings stay the signed v0.6.8 release builds.
-A change is installed as a `denial` package made from the release's, in which
-only these differ:
+`packages/*`) and the compositor `deniald`; the fork
+[EvilBorsch/denial-apps](https://github.com/EvilBorsch/denial-apps) changes
+Settings. The Flutter engine package (`denial-flutter-engine` 0.6.8-1, ABI
+`3.47.5.denial1`), `denialctl`, the portal, the polkit agent and Settings'
+Wi-Fi country helper stay the signed v0.6.8 release builds. A change is
+installed as a `denial` package made from the release's, in which only these
+differ:
 
 - `/usr/lib/denial/flutter/lib/libapp.so`, the AOT-compiled shell;
 - `/usr/lib/denial/flutter/data/flutter_assets/`, its assets;
-- `/usr/bin/deniald`, when the change touches the compositor.
+- `/usr/bin/deniald`, when the change touches the compositor;
+- `/usr/lib/denial-apps/settings`, when the change touches Settings.
 
 ## Why no engine build is needed
 
@@ -147,6 +150,88 @@ untouched v0.6.8: the three `cpu_scheduling` kernel tests (utilization clamp
 qemu-user cannot) and the timing-sensitive
 `frame_deadline_source_tests::acquire_callback_removes_queued_deadline_source`.
 
+## Build Settings
+
+Settings and Welcome are one program, `/usr/lib/denial-apps/settings`: the
+GPUI application `apps/settings` of
+[denial-apps](https://github.com/denialwm/denial-apps), built against
+[gpui-touch](https://github.com/denialwm/gpui-touch). `settings/SOURCE_LOCK.json`
+names the commits the release built: denial-apps `17c3912`, gpui-touch
+`c6d8562`. In the fork `EvilBorsch/denial-apps`, `eb/main` is that
+denial-apps commit and changes are on `eb/<topic>` branches; gpui-touch is
+not changed and is built at the locked commit.
+
+denial-apps finds gpui-touch beside itself (`../../../gpui-touch` from
+`apps/settings`), so the two checkouts sit side by side:
+
+```sh
+cd ~/androidlinux/components
+git clone https://github.com/EvilBorsch/denial-apps
+git -C denial-apps remote add upstream https://github.com/denialwm/denial-apps
+git -C denial-apps switch eb/wifi-join          # or the branch to build
+git clone https://github.com/denialwm/gpui-touch
+git -C gpui-touch checkout --detach c6d856299c3206311045e5135abb4dc0455e97d2
+```
+
+Build as the release does (`tools/denial-settings build`: `cargo build
+--release --locked` of `apps/settings` with the toolchain of
+`rust-toolchain.toml`), cross for aarch64 against the root `deniald` uses;
+the one library Settings links, `libxkbcommon`, is in it:
+
+```sh
+cd ~/androidlinux/components/denial    # this fork, any branch with the tool
+EB_JOBS=4 tools/eb-build-settings build ~/work-denial-sysroot \
+    ~/androidlinux/components ~/work-denial-settings/out
+```
+
+About 8 minutes the first time with 4 jobs, 4 to 5 after a change to
+Settings alone. The Cargo target directory is `~/work-denial-settings/target`
+(`EB_WORK`). `out/` gets `settings`, `wifi-country` and `settings.txt`: the
+commits built, the hashes, the libraries each links and the GLIBC versions
+each needs.
+
+### Checked against the release
+
+Built from the untouched release commit (`eb/main`) on 22.11.2026, `settings`
+is not byte-identical to the release's (another root, compiler and build
+paths), but:
+
+- it has the release's size, 30 615 784 bytes, and its strings differ only in
+  build paths (`/srv/denial-builder/cache/…` there, `~/.cargo/…` here) and in
+  the order of merged string data;
+- it links the release's libraries (`libxkbcommon.so.0 libgcc_s.so.1
+  libm.so.6 libc.so.6`) and needs the same GLIBC versions, the newest
+  `GLIBC_2.39`, which the package's `libc6 (>= 2.39)` covers;
+- of its 225 versioned imports 222 are the release's. The other three,
+  `__stack_chk_fail`, `__stack_chk_guard` and `__vsnprintf_chk` (for
+  `vsnprintf`), come from the C parts of `ring` and `wayland-backend`, which
+  Ubuntu's `aarch64-linux-gnu-gcc` compiles with its defaults
+  `-fstack-protector-strong` and `_FORTIFY_SOURCE=3`; Arch Linux ARM's
+  compiler, the release's, has neither by default. The aarch64 dynamic linker
+  exports `__stack_chk_guard`, so the binary also names
+  `ld-linux-aarch64.so.1`.
+
+### Settings' tests
+
+```sh
+EB_JOBS=4 tools/eb-build-settings test ~/work-denial-sysroot \
+    ~/androidlinux/components --bin settings
+```
+
+They run under qemu-aarch64 with the root; `--release` shares the build's
+dependencies. On the release's commit 42 pass, 14 are ignored (they need a
+phone or the network) and one fails here,
+`cursor_theme::tests::cursor_zip_converts_to_denial_manifest`, whose fixture
+runs `bsdtar`, under qemu-user. denial-apps' `eb/wifi-join` adds nine
+(`wifi::nm::join_tests`, `words_ru::tests`): 51 pass, the same one fails.
+`denial-look`, the apps' shared look and words, is plain Rust; its tests run
+on the host:
+
+```sh
+cd ~/androidlinux/components/denial-apps/apps/settings
+CARGO_TARGET_DIR=~/work-denial-settings/target-host cargo test --locked -p denial-look
+```
+
 ## The wire protocol
 
 `protocol/denial.fbs` is compiled into `protocol/generated/{dart,rust}` with
@@ -183,6 +268,23 @@ scripts are the release's, except that the postinst gives `deniald`
 `cap_sys_nice` (the package depends on `libcap2-bin` for `setcap`). It
 installs over 0.6.8-1 and earlier `+ebN` builds with the release's engine
 package, `denial-flutter-engine (= 0.6.8-1)`.
+
+A fifth argument, a `settings` from `tools/eb-build-settings`, replaces
+`/usr/lib/denial-apps/settings` and nothing else of Settings: the Wi-Fi
+country helper, the polkit action, the launcher entries and
+`/usr/share/denial/settings/SOURCE_LOCK.json` (which still names the release's
+commits) stay the release's. `''` as the fourth argument keeps the release's
+`deniald`:
+
+```sh
+tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb11 ~/debs \
+    ~/work-denial-deniald/out/deniald ~/work-denial-settings/out/settings
+```
+
+The tool reads the denial-apps commit from `settings.txt` beside the binary,
+refuses one built with uncommitted changes or not the binary `settings.txt`
+describes, and names the commit in the package description. Its glibc check
+covers Settings as it does `deniald`.
 
 ## Shell tests
 

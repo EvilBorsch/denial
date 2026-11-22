@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# Cross-builds Settings (/usr/lib/denial-apps/settings) and its Wi-Fi country
+# helper for arm64 as the release does (tools/denial-settings build: cargo
+# build --release --locked of denial-apps' apps/settings with Denial's Rust
+# toolchain), from denial-apps and gpui-touch checkouts side by side, against
+# an Ubuntu or Arch Linux ARM root; and runs its tests under qemu-aarch64.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=tools/lib/denial-architecture.sh
+. "$SCRIPT_DIR/lib/denial-architecture.sh"
+
+usage() {
+    cat >&2 <<USAGE
+Usage: $0 build SYSROOT SOURCE_ROOT OUT_DIR
+       $0 test SYSROOT SOURCE_ROOT [cargo test arguments, e.g. -- wifi::nm]
+
+SOURCE_ROOT holds the denial-apps and gpui-touch checkouts to build, as they
+are on disk (denial-apps finds gpui-touch beside itself).
+
+build: tools/denial-settings build for aarch64; copies settings and
+       wifi-country to OUT_DIR and writes OUT_DIR/settings.txt with their
+       hashes, the commits built, the libraries they link and the GLIBC
+       versions they need.
+test:  cargo test --release of Settings for aarch64, run under
+       qemu-aarch64 -L SYSROOT; --release shares the build's dependencies.
+
+EB_WORK (default ~/work-denial-settings) holds the Cargo target directory,
+EB_JOBS (default 4) the job count.
+USAGE
+    exit 2
+}
+
+[[ $# -ge 3 ]] || usage
+MODE="$1"
+SYSROOT="$(realpath -- "$2")"
+SOURCES="$(realpath -- "$3")"
+shift 3
+WORK="${EB_WORK:-$HOME/work-denial-settings}"
+JOBS="${EB_JOBS:-4}"
+TOOLCHAIN="$(sed -n 's/^channel = "\(.*\)"$/\1/p' "$ROOT/rust-toolchain.toml")"
+
+if [[ -f "$HOME/.cargo/env" ]]; then
+    # shellcheck source=/dev/null
+    . "$HOME/.cargo/env"
+fi
+command -v cargo >/dev/null || { printf 'cargo (rustup) is required\n' >&2; exit 1; }
+for checkout in denial-apps gpui-touch; do
+    [[ -f "$SOURCES/$checkout/Cargo.toml" ]] \
+        || { printf 'SOURCE_ROOT holds no %s: %s\n' "$checkout" "$SOURCES" >&2; exit 1; }
+done
+
+commit() {
+    local checkout="$1" head
+    head="$(git -C "$checkout" rev-parse HEAD)"
+    if [[ -n "$(git -C "$checkout" status --porcelain --untracked-files=no)" ]]; then
+        head="$head (with uncommitted changes)"
+    fi
+    printf '%s\n' "$head"
+}
+
+locked_gpui="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1]))["gpui_touch"]["revision"])' "$ROOT/settings/SOURCE_LOCK.json")"
+built_gpui="$(git -C "$SOURCES/gpui-touch" rev-parse HEAD)"
+[[ "$built_gpui" == "$locked_gpui" ]] \
+    || printf 'warning: gpui-touch is at %s, the lock names %s\n' "$built_gpui" "$locked_gpui" >&2
+
+mkdir -p "$WORK/target"
+case "$MODE" in
+    build)
+        [[ $# -eq 1 ]] || usage
+        OUT="$1"
+        DENIAL_TARGET_ARCH=aarch64 \
+        DENIAL_ARM64_SYSROOT="$SYSROOT" \
+        DENIAL_SETTINGS_SOURCE_ROOT="$SOURCES" \
+        DENIAL_SETTINGS_TARGET="$WORK/target" \
+        DENIAL_BUILD_JOBS="$JOBS" \
+            "$ROOT/tools/denial-settings" build
+        release="$WORK/target/aarch64-unknown-linux-gnu/release"
+        mkdir -p "$OUT"
+        install -m755 "$release/settings" "$OUT/settings"
+        install -m755 "$release/wifi-country" "$OUT/wifi-country"
+        {
+            printf 'denial-apps: %s\n' "$(commit "$SOURCES/denial-apps")"
+            printf 'gpui-touch: %s\n' "$(commit "$SOURCES/gpui-touch")"
+            printf 'rustc: %s\n' "$(RUSTUP_TOOLCHAIN="$TOOLCHAIN" rustc --version)"
+            printf 'sysroot: %s\n' "$SYSROOT"
+            for binary in settings wifi-country; do
+                printf '\n%s\n' "$binary"
+                printf '  sha256: %s\n' "$(sha256sum "$OUT/$binary" | cut -d' ' -f1)"
+                printf '  NEEDED:'
+                aarch64-linux-gnu-objdump -p "$OUT/$binary" | awk '$1 == "NEEDED" { printf " %s", $2 }'
+                printf '\n  versions:'
+                aarch64-linux-gnu-objdump -T "$OUT/$binary" \
+                    | grep -o '(GLIBC_[0-9.]*)\|(GCC_[0-9.]*)' | tr -d '()' | sort -uV \
+                    | awk '{ printf " %s", $0 }'
+                printf '\n'
+            done
+        } > "$OUT/settings.txt"
+        cat "$OUT/settings.txt"
+        ;;
+    test)
+        command -v qemu-aarch64 >/dev/null || { printf 'qemu-aarch64 is required\n' >&2; exit 1; }
+        DENIAL_ARM64_SYSROOT="$SYSROOT"
+        export DENIAL_ARM64_SYSROOT
+        denial_arch_configure aarch64
+        denial_cross_configure_rust
+        export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUNNER="qemu-aarch64 -L $SYSROOT"
+        cd -- "$SOURCES/denial-apps/apps/settings"
+        RUSTUP_TOOLCHAIN="$TOOLCHAIN" CARGO_TARGET_DIR="$WORK/target" cargo test \
+            --release \
+            --locked \
+            --jobs "$JOBS" \
+            --target "$DENIAL_RUST_TARGET" \
+            "$@"
+        ;;
+    *)
+        usage
+        ;;
+esac
