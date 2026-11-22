@@ -641,6 +641,7 @@ class ShellPowerSettings {
     this.idleSuspendTimeoutSeconds = 30 * 60,
     this.suspendMode = SuspendMode.deep,
     this.screenOffLockDelaySeconds = 0,
+    this.stayAwake = false,
   });
 
   /// Idle timeouts are whole seconds, from half a minute to two hours.
@@ -667,6 +668,17 @@ class ShellPowerSettings {
   /// locking on or off there, and the idle lock timeout has no say.
   final int screenOffLockDelaySeconds;
 
+  /// Stay awake: the idle timeout does not suspend the system, whatever
+  /// [idleSuspendEnabled] says. The screen still goes dark and the session
+  /// still locks on their timeouts, and nothing else that suspends is held
+  /// off: closing the lid, the power button and the power menu act as
+  /// usual. Switched from the quick settings; [idleSuspendEnabled] stays the
+  /// chosen default for when it is off.
+  final bool stayAwake;
+
+  /// Whether the idle timeout suspends the system.
+  bool get idleSuspendActive => idleSuspendEnabled && !stayAwake;
+
   ShellPowerSettings copyWith({
     PowerButtonAction? powerButtonAction,
     PowerButtonLongPressAction? powerButtonLongPressAction,
@@ -678,6 +690,7 @@ class ShellPowerSettings {
     int? idleSuspendTimeoutSeconds,
     SuspendMode? suspendMode,
     int? screenOffLockDelaySeconds,
+    bool? stayAwake,
   }) {
     return ShellPowerSettings(
       powerButtonAction: powerButtonAction ?? this.powerButtonAction,
@@ -695,6 +708,7 @@ class ShellPowerSettings {
       suspendMode: suspendMode ?? this.suspendMode,
       screenOffLockDelaySeconds:
           screenOffLockDelaySeconds ?? this.screenOffLockDelaySeconds,
+      stayAwake: stayAwake ?? this.stayAwake,
     );
   }
 
@@ -710,7 +724,8 @@ class ShellPowerSettings {
         other.idleSuspendEnabled == idleSuspendEnabled &&
         other.idleSuspendTimeoutSeconds == idleSuspendTimeoutSeconds &&
         other.suspendMode == suspendMode &&
-        other.screenOffLockDelaySeconds == screenOffLockDelaySeconds;
+        other.screenOffLockDelaySeconds == screenOffLockDelaySeconds &&
+        other.stayAwake == stayAwake;
   }
 
   @override
@@ -725,6 +740,7 @@ class ShellPowerSettings {
     idleSuspendTimeoutSeconds,
     suspendMode,
     screenOffLockDelaySeconds,
+    stayAwake,
   );
 }
 
@@ -1417,6 +1433,9 @@ class ShellSettings {
       if (power.screenOffLockDelaySeconds != before.screenOffLockDelaySeconds) {
         section['screenOffLockDelaySeconds'] = power.screenOffLockDelaySeconds;
       }
+      if (power.stayAwake != before.stayAwake) {
+        section['stayAwake'] = power.stayAwake;
+      }
       patch['power'] = section;
     }
 
@@ -1524,6 +1543,7 @@ class ShellSettings {
         'idleSuspendTimeoutSeconds': power.idleSuspendTimeoutSeconds,
         'suspendMode': power.suspendMode.name,
         'screenOffLockDelaySeconds': power.screenOffLockDelaySeconds,
+        'stayAwake': power.stayAwake,
       },
       'notifications': notifications.toJson(),
       'sound': sound.toJson(),
@@ -1942,6 +1962,9 @@ class ShellSettings {
           0,
           ShellPowerSettings.maximumScreenOffLockDelaySeconds,
         ),
+        stayAwake: powerJson['stayAwake'] is bool
+            ? powerJson['stayAwake'] as bool
+            : defaults.power.stayAwake,
       ),
       notifications: ShellNotificationSettings.fromJson(json['notifications']),
       sound: ShellSoundSettings.fromJson(json['sound']),

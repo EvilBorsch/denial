@@ -614,6 +614,12 @@ class ShellSettingsController extends Notifier<ShellSettings> {
     );
   }
 
+  /// Keeps the idle timeout from suspending the system; see
+  /// [ShellPowerSettings.stayAwake].
+  void setStayAwake(bool value) {
+    _update(state.copyWith(power: state.power.copyWith(stayAwake: value)));
+  }
+
   void setSuspendMode(SuspendMode value) {
     _update(state.copyWith(power: state.power.copyWith(suspendMode: value)));
   }

@@ -91,6 +91,7 @@ void main() {
         idleSuspendEnabled: true,
         idleSuspendTimeoutSeconds: 72 * 60,
         suspendMode: SuspendMode.deep,
+        stayAwake: true,
       ),
       applicationEnvironment: ShellApplicationEnvironmentSettings(
         variables: <String, String?>{
@@ -149,6 +150,36 @@ void main() {
     });
   });
 
+  test('stay awake persists, patches alone and keeps the idle suspend', () {
+    const previous = ShellSettings(
+      power: ShellPowerSettings(idleSuspendEnabled: true),
+    );
+    final next = previous.copyWith(
+      power: previous.power.copyWith(stayAwake: true),
+    );
+
+    // Absent in documents written before it existed: off.
+    expect(
+      ShellSettings.fromJson(<String, dynamic>{}).power.stayAwake,
+      isFalse,
+    );
+    expect(previous.toJson()['power'], containsPair('stayAwake', false));
+    expect(ShellSettings.fromJson(next.toJson()).power.stayAwake, isTrue);
+    expect(next.differenceFrom(previous), <String, Object?>{
+      'power': <String, Object?>{'stayAwake': true},
+    });
+    // The owner's idle suspend choice is untouched; only its effect pauses.
+    expect(next.power.idleSuspendEnabled, isTrue);
+    expect(previous.power.idleSuspendActive, isTrue);
+    expect(next.power.idleSuspendActive, isFalse);
+    expect(next.power.copyWith(stayAwake: false).idleSuspendActive, isTrue);
+    expect(
+      const ShellPowerSettings(stayAwake: false).idleSuspendActive,
+      isFalse,
+      reason: 'idle suspend stays off when the owner turned it off',
+    );
+  });
+
   test('malformed settings fail safe and bounded values are clamped', () {
     final settings = ShellSettings.fromJson(<String, dynamic>{
       'version': 999,
@@ -178,6 +209,7 @@ void main() {
         'idleDpmsTimeoutSeconds': 90000,
         'idleSuspendEnabled': 'sometimes',
         'idleSuspendTimeoutSeconds': 2,
+        'stayAwake': 'sometimes',
       },
     });
 
@@ -205,6 +237,7 @@ void main() {
     expect(settings.power.idleDpmsTimeoutSeconds, 7200);
     expect(settings.power.idleSuspendEnabled, isFalse);
     expect(settings.power.idleSuspendTimeoutSeconds, 7200);
+    expect(settings.power.stayAwake, isFalse);
   });
 
   test('idle timeout ordering is repaired without shortening display off', () {

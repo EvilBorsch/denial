@@ -205,7 +205,9 @@ class _ShellRuntimeBindingsState extends ConsumerState<ShellRuntimeBindings> {
             lockTimeout: Duration(seconds: power.idleLockTimeoutSeconds),
             dpmsEnabled: power.idleDpmsEnabled,
             dpmsTimeout: Duration(seconds: power.idleDpmsTimeoutSeconds),
-            suspendEnabled: power.idleSuspendEnabled,
+            // Stay awake holds off only this timeout; the screen still
+            // goes dark and locks, and closing the lid still suspends.
+            suspendEnabled: power.idleSuspendActive,
             suspendTimeout: Duration(seconds: power.idleSuspendTimeoutSeconds),
             suspendMode: power.suspendMode,
             lockAfterScreenOff:
