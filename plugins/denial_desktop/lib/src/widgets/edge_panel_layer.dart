@@ -746,6 +746,12 @@ class _EdgePanelContent extends ConsumerWidget {
     );
     final controller = ref.read(referenceShellProvider.notifier);
     final theme = ShellTheme.of(context);
+    final languages = ShellOskLanguages.of(
+      ref.watch(
+        keyboardConfigurationProvider.select((state) => state.configuration),
+      ),
+      shellLanguage: Localizations.maybeLocaleOf(context)?.languageCode ?? '',
+    );
     // The keys sit beside the clipped glass, not in it: key popups rise
     // above the panel's top edge.
     return Stack(
@@ -786,6 +792,9 @@ class _EdgePanelContent extends ConsumerWidget {
                 touchY: word.touchY,
                 manualCapital: word.manualCapital,
               ),
+              languages: languages,
+              onSelectLayout: bridge.selectKeyboardLayout,
+              onTypingLayouts: bridge.setKeyboardTypingLayouts,
             ),
           ),
         ),
