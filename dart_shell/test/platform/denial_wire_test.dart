@@ -297,6 +297,19 @@ void main() {
     expect(theme.accentSrgb, 0x123456);
   });
 
+  test('shell presentation is one notice with the tablet or desktop kind', () {
+    final codec = DenialWireCodec();
+    for (final (tablet, kind) in [
+      (true, ShellPresentationKind.Tablet),
+      (false, ShellPresentationKind.Desktop),
+    ]) {
+      final envelope = Envelope(codec.encodeShellPresentation(tablet: tablet));
+      expect(envelope.payloadType, PayloadTypeId.ShellPresentation);
+      expect(envelope.requestId, 0);
+      expect((envelope.payload as ShellPresentation).kind, kind);
+    }
+  });
+
   test('overview layout drops use a distinct configure flag', () {
     final bytes = DenialWireCodec().encodeWindowRequest(
       WindowRequestKind.ConfigureWindow,

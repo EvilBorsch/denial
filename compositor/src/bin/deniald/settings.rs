@@ -20,7 +20,10 @@ use serde_json::{Map, Value};
 use smithay::input::keyboard::xkb;
 use tracing::warn;
 
-use denial_core::portal_protocol::{DesktopColorSchemePreference, DesktopThemeSnapshot};
+use denial_core::portal_protocol::{
+    DesktopColorSchemePreference, DesktopPresentation, DesktopShellState, DesktopThemeSnapshot,
+    TEXT_SCALING_MILLI,
+};
 use denial_core::topology::OutputTransform;
 
 use super::window_layout::WindowLayoutKind;
@@ -856,6 +859,12 @@ impl SettingsManager {
         parse_apps_scale(&self.document).unwrap_or(1.0)
     }
 
+    /// Whether and how apps follow the shell's tablet or desktop
+    /// presentation: `apps.followMode` and the text scale for each.
+    pub(super) fn apps_follow(&self) -> AppsFollow {
+        parse_apps_follow(&self.document).unwrap_or_default()
+    }
+
     pub(super) fn keyboard_resize_step(&self) -> super::keyboard_resize::ResizeStep {
         parse_keyboard_resize_step(&self.document).unwrap_or_default()
     }
@@ -995,6 +1004,7 @@ impl SettingsManager {
         let allow_client_cursor_surfaces = parse_allow_client_cursor_surfaces(&incoming)?;
         parse_cursor_size(&incoming)?;
         parse_apps_scale(&incoming)?;
+        parse_apps_follow(&incoming)?;
         parse_window_layout_kind(&incoming)?;
         parse_keyboard_resize_step(&incoming)?;
         parse_scrolling_layout_wheel_settings(&incoming)?;
@@ -1503,6 +1513,7 @@ fn parse_document(bytes: &[u8]) -> Result<ParsedSettingsDocument, SettingsError>
     };
     set_cursor_size(&mut document, cursor_size)?;
     parse_apps_scale(&document)?;
+    parse_apps_follow(&document)?;
     let had_window_layout = document
         .get("layout")
         .and_then(Value::as_object)
@@ -1824,6 +1835,98 @@ fn parse_apps_scale(document: &Map<String, Value>) -> Result<f64, SettingsError>
                 "apps.scale must be a number from {} to {}",
                 APPS_SCALE.start(),
                 APPS_SCALE.end()
+            ))
+        })
+}
+
+/// Whether apps follow the shell's tablet or desktop presentation, and the
+/// text scale they get in each. The shell publishes its presentation through
+/// the Settings portal (org.denialwm.shell); adapters such as Firefox's show
+/// their touch layouts while `tablet-mode` is on there.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct AppsFollow {
+    /// `apps.followMode`, on unless switched off.
+    pub(super) enabled: bool,
+    /// `apps.tabletTextScale`: GTK's text-scaling-factor in tablet
+    /// presentation, in thousandths, or None to keep the desktop setting.
+    pub(super) tablet_text_scaling_milli: Option<u16>,
+    /// `apps.desktopTextScale`, the same in desktop presentation.
+    pub(super) desktop_text_scaling_milli: Option<u16>,
+}
+
+impl Default for AppsFollow {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            tablet_text_scaling_milli: None,
+            desktop_text_scaling_milli: None,
+        }
+    }
+}
+
+impl AppsFollow {
+    /// What the portal tells apps while the shell shows `presentation`.
+    pub(super) fn shell_state(
+        self,
+        presentation: DesktopPresentation,
+        keyboard_attached: bool,
+    ) -> DesktopShellState {
+        let text_scaling_milli = match presentation {
+            _ if !self.enabled => None,
+            DesktopPresentation::Tablet => self.tablet_text_scaling_milli,
+            DesktopPresentation::Desktop => self.desktop_text_scaling_milli,
+        };
+        DesktopShellState {
+            presentation,
+            keyboard_attached,
+            tablet_mode: self.enabled && presentation == DesktopPresentation::Tablet,
+            text_scaling_milli,
+        }
+    }
+}
+
+/// The presentation a shell starts in, until it reports its own.
+pub(super) fn startup_presentation() -> DesktopPresentation {
+    if denial_core::environment::mobile_shell_profile() {
+        DesktopPresentation::Tablet
+    } else {
+        DesktopPresentation::Desktop
+    }
+}
+
+fn parse_apps_follow(document: &Map<String, Value>) -> Result<AppsFollow, SettingsError> {
+    let Some(apps) = document.get("apps").and_then(Value::as_object) else {
+        return Ok(AppsFollow::default());
+    };
+    let enabled = match apps.get("followMode") {
+        None => true,
+        Some(value) => value.as_bool().ok_or_else(|| {
+            SettingsError::Document("apps.followMode must be true or false".to_owned())
+        })?,
+    };
+    Ok(AppsFollow {
+        enabled,
+        tablet_text_scaling_milli: parse_text_scale(apps, "tabletTextScale")?,
+        desktop_text_scaling_milli: parse_text_scale(apps, "desktopTextScale")?,
+    })
+}
+
+/// An optional text scale: absent or null keeps the desktop's own setting.
+fn parse_text_scale(apps: &Map<String, Value>, key: &str) -> Result<Option<u16>, SettingsError> {
+    let Some(value) = apps.get(key).filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    let milli = TEXT_SCALING_MILLI;
+    value
+        .as_f64()
+        .map(|scale| (scale * 1000.0).round())
+        .filter(|scale| (f64::from(*milli.start())..=f64::from(*milli.end())).contains(scale))
+        .map(|scale| Some(scale as u16))
+        .ok_or_else(|| {
+            SettingsError::Document(format!(
+                "apps.{key} must be a number from {} to {}",
+                f64::from(*milli.start()) / 1000.0,
+                f64::from(*milli.end()) / 1000.0
             ))
         })
 }

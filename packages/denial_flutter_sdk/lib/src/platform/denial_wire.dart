@@ -162,6 +162,18 @@ class DenialWireCodec {
     );
   }
 
+  /// What the shell presents on the built-in screen, for apps to follow.
+  Uint8List encodeShellPresentation({required bool tablet}) {
+    return _encodeEnvelope(
+      generated.PayloadTypeId.ShellPresentation,
+      generated.ShellPresentationObjectBuilder(
+        kind: tablet
+            ? generated.ShellPresentationKind.Tablet
+            : generated.ShellPresentationKind.Desktop,
+      ),
+    );
+  }
+
   Uint8List? encodeInputLayout(InputLayoutSnapshot snapshot) {
     if (snapshot.shellRegions.length > denialWireMaxRegions ||
         snapshot.softwareKeyboardRegions.length > denialWireMaxRegions ||

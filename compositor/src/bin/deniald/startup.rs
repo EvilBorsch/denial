@@ -179,10 +179,16 @@ pub(super) fn run(options: Options) -> Result<(), Box<dyn Error>> {
 
     #[cfg(feature = "flutter")]
     let portal_ipc_server = if options.flutter_bundle.is_some() && options.wayland {
-        let initial = settings
+        let settings = settings
             .as_ref()
-            .expect("Wayland settings were loaded before portal IPC startup")
-            .theme_snapshot();
+            .expect("Wayland settings were loaded before portal IPC startup");
+        // No keyboard is known before libinput starts; the shell reports
+        // its presentation once it runs.
+        let initial = settings.theme_snapshot().with_shell(
+            settings
+                .apps_follow()
+                .shell_state(super::settings::startup_presentation(), false),
+        );
         Some(PortalIpcServer::start(initial)?)
     } else {
         None

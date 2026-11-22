@@ -2710,6 +2710,91 @@ impl flatbuffers::SimpleToVerifyInSlice for ShortcutTarget {}
 pub struct ShortcutTargetUnionTableOffset {}
 
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_SHELL_PRESENTATION_KIND: u8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_SHELL_PRESENTATION_KIND: u8 = 1;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_SHELL_PRESENTATION_KIND: [ShellPresentationKind; 2] = [
+  ShellPresentationKind::Desktop,
+  ShellPresentationKind::Tablet,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct ShellPresentationKind(pub u8);
+#[allow(non_upper_case_globals)]
+impl ShellPresentationKind {
+  pub const Desktop: Self = Self(0);
+  pub const Tablet: Self = Self(1);
+
+  pub const ENUM_MIN: u8 = 0;
+  pub const ENUM_MAX: u8 = 1;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::Desktop,
+    Self::Tablet,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::Desktop => Some("Desktop"),
+      Self::Tablet => Some("Tablet"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for ShellPresentationKind {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for ShellPresentationKind {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = unsafe { flatbuffers::read_scalar_at::<u8>(buf, loc) };
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for ShellPresentationKind {
+    type Output = ShellPresentationKind;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        unsafe { flatbuffers::emplace_scalar::<u8>(dst, self.0); }
+    }
+}
+
+impl flatbuffers::EndianScalar for ShellPresentationKind {
+  type Scalar = u8;
+  #[inline]
+  fn to_little_endian(self) -> u8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: u8) -> Self {
+    let b = u8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for ShellPresentationKind {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    u8::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for ShellPresentationKind {}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_PET_REQUEST_KIND: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MAX_PET_REQUEST_KIND: u8 = 1;
@@ -2797,10 +2882,10 @@ impl flatbuffers::SimpleToVerifyInSlice for PetRequestKind {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_PAYLOAD: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_PAYLOAD: u8 = 24;
+pub const ENUM_MAX_PAYLOAD: u8 = 25;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_PAYLOAD: [Payload; 25] = [
+pub const ENUM_VALUES_PAYLOAD: [Payload; 26] = [
   Payload::NONE,
   Payload::InputLayout,
   Payload::WindowSnapshot,
@@ -2826,6 +2911,7 @@ pub const ENUM_VALUES_PAYLOAD: [Payload; 25] = [
   Payload::PetRequest,
   Payload::TextPredictionRequest,
   Payload::TextPrediction,
+  Payload::ShellPresentation,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -2858,9 +2944,10 @@ impl Payload {
   pub const PetRequest: Self = Self(22);
   pub const TextPredictionRequest: Self = Self(23);
   pub const TextPrediction: Self = Self(24);
+  pub const ShellPresentation: Self = Self(25);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 24;
+  pub const ENUM_MAX: u8 = 25;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::NONE,
     Self::InputLayout,
@@ -2887,6 +2974,7 @@ impl Payload {
     Self::PetRequest,
     Self::TextPredictionRequest,
     Self::TextPrediction,
+    Self::ShellPresentation,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -2916,6 +3004,7 @@ impl Payload {
       Self::PetRequest => Some("PetRequest"),
       Self::TextPredictionRequest => Some("TextPredictionRequest"),
       Self::TextPrediction => Some("TextPrediction"),
+      Self::ShellPresentation => Some("ShellPresentation"),
       _ => None,
     }
   }
@@ -12256,6 +12345,103 @@ impl core::fmt::Debug for ThemeState<'_> {
       ds.finish()
   }
 }
+pub enum ShellPresentationOffset {}
+#[derive(Copy, Clone, PartialEq)]
+
+pub struct ShellPresentation<'a> {
+  pub _tab: flatbuffers::Table<'a>,
+}
+
+impl<'a> flatbuffers::Follow<'a> for ShellPresentation<'a> {
+  type Inner = ShellPresentation<'a>;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    Self { _tab: unsafe { flatbuffers::Table::new(buf, loc) } }
+  }
+}
+
+impl<'a> ShellPresentation<'a> {
+  pub const VT_KIND: flatbuffers::VOffsetT = 4;
+
+  #[inline]
+  pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
+    ShellPresentation { _tab: table }
+  }
+  #[allow(unused_mut)]
+  pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
+    _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
+    args: &'args ShellPresentationArgs
+  ) -> flatbuffers::WIPOffset<ShellPresentation<'bldr>> {
+    let mut builder = ShellPresentationBuilder::new(_fbb);
+    builder.add_kind(args.kind);
+    builder.finish()
+  }
+
+
+  #[inline]
+  pub fn kind(&self) -> ShellPresentationKind {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<ShellPresentationKind>(ShellPresentation::VT_KIND, Some(ShellPresentationKind::Desktop)).unwrap()}
+  }
+}
+
+impl flatbuffers::Verifiable for ShellPresentation<'_> {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    v.visit_table(pos)?
+     .visit_field::<ShellPresentationKind>("kind", Self::VT_KIND, false)?
+     .finish();
+    Ok(())
+  }
+}
+pub struct ShellPresentationArgs {
+    pub kind: ShellPresentationKind,
+}
+impl<'a> Default for ShellPresentationArgs {
+  #[inline]
+  fn default() -> Self {
+    ShellPresentationArgs {
+      kind: ShellPresentationKind::Desktop,
+    }
+  }
+}
+
+pub struct ShellPresentationBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+  fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
+  start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
+}
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ShellPresentationBuilder<'a, 'b, A> {
+  #[inline]
+  pub fn add_kind(&mut self, kind: ShellPresentationKind) {
+    self.fbb_.push_slot::<ShellPresentationKind>(ShellPresentation::VT_KIND, kind, ShellPresentationKind::Desktop);
+  }
+  #[inline]
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ShellPresentationBuilder<'a, 'b, A> {
+    let start = _fbb.start_table();
+    ShellPresentationBuilder {
+      fbb_: _fbb,
+      start_: start,
+    }
+  }
+  #[inline]
+  pub fn finish(self) -> flatbuffers::WIPOffset<ShellPresentation<'a>> {
+    let o = self.fbb_.end_table(self.start_);
+    flatbuffers::WIPOffset::new(o.value())
+  }
+}
+
+impl core::fmt::Debug for ShellPresentation<'_> {
+  fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+    let mut ds = f.debug_struct("ShellPresentation");
+      ds.field("kind", &self.kind());
+      ds.finish()
+  }
+}
 pub enum PluginActionCatalogOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
@@ -13136,6 +13322,21 @@ impl<'a> Envelope<'a> {
     }
   }
 
+  #[inline]
+  #[allow(non_snake_case)]
+  pub fn payload_as_shell_presentation(&self) -> Option<ShellPresentation<'a>> {
+    if self.payload_type() == Payload::ShellPresentation {
+      self.payload().map(|t| {
+       // Safety:
+       // Created from a valid Table for this object
+       // Which contains a valid union in this slot
+       unsafe { ShellPresentation::init_from_table(t) }
+     })
+    } else {
+      None
+    }
+  }
+
 }
 
 impl flatbuffers::Verifiable for Envelope<'_> {
@@ -13174,6 +13375,7 @@ impl flatbuffers::Verifiable for Envelope<'_> {
           Payload::PetRequest => v.verify_union_variant::<flatbuffers::ForwardsUOffset<PetRequest>>("Payload::PetRequest", pos),
           Payload::TextPredictionRequest => v.verify_union_variant::<flatbuffers::ForwardsUOffset<TextPredictionRequest>>("Payload::TextPredictionRequest", pos),
           Payload::TextPrediction => v.verify_union_variant::<flatbuffers::ForwardsUOffset<TextPrediction>>("Payload::TextPrediction", pos),
+          Payload::ShellPresentation => v.verify_union_variant::<flatbuffers::ForwardsUOffset<ShellPresentation>>("Payload::ShellPresentation", pos),
           _ => Ok(()),
         }
      })?
@@ -13412,6 +13614,13 @@ impl core::fmt::Debug for Envelope<'_> {
         },
         Payload::TextPrediction => {
           if let Some(x) = self.payload_as_text_prediction() {
+            ds.field("payload", &x)
+          } else {
+            ds.field("payload", &"InvalidFlatbuffer: Union discriminant does not match value.")
+          }
+        },
+        Payload::ShellPresentation => {
+          if let Some(x) = self.payload_as_shell_presentation() {
             ds.field("payload", &x)
           } else {
             ds.field("payload", &"InvalidFlatbuffer: Union discriminant does not match value.")

@@ -947,6 +947,7 @@ pub(super) fn run_flutter_event_loop(
             .map_or_else(DesktopAccentColor::default, |snapshot| {
                 snapshot.accent_color
             }),
+        shell_presentation: settings::startup_presentation(),
         authentication,
         flutter_active: true,
         flutter_input: flutter_runtime::InputQueue::new(swapchain.desktop_size()),

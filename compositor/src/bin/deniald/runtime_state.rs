@@ -176,6 +176,10 @@ pub(super) struct RuntimeState {
     pub(super) published_settings_document_revision: Option<u64>,
     #[cfg(feature = "flutter")]
     pub(super) resolved_theme_accent: DesktopAccentColor,
+    /// What the shell presents on the built-in screen, as it last reported:
+    /// apps may follow it through the portal (org.denialwm.shell).
+    #[cfg(feature = "flutter")]
+    pub(super) shell_presentation: DesktopPresentation,
     #[cfg(feature = "flutter")]
     pub(super) pending_notification_events: VecDeque<notification_server::NotificationEvent>,
     /// The call notifications that stand, with the desktop entry each names:

@@ -1055,3 +1055,100 @@ fn mobile_default_document_seeds_the_mobile_appearance() {
     assert!(desktop.get("apps").is_none());
     parse_document(serde_json::to_string(&mobile).unwrap().as_bytes()).unwrap();
 }
+
+#[test]
+fn apps_follow_the_shell_by_default_and_validate_their_text_scales() {
+    let temporary = TemporaryDirectory::new("settings-apps-follow");
+    let mut manager = SettingsManager::load_path(temporary.settings_path()).unwrap();
+    assert_eq!(manager.apps_follow(), AppsFollow::default());
+    assert!(manager.apps_follow().enabled);
+    let with_apps = |apps: Value| {
+        shell_document(serde_json::json!({
+            "appearance": {"colorSchemePreference": "preferDark"},
+            "apps": apps
+        }))
+    };
+    for (apps, key) in [
+        (serde_json::json!({"followMode": "yes"}), "apps.followMode"),
+        (
+            serde_json::json!({"tabletTextScale": 0.4}),
+            "apps.tabletTextScale",
+        ),
+        (
+            serde_json::json!({"desktopTextScale": 3.5}),
+            "apps.desktopTextScale",
+        ),
+        (
+            serde_json::json!({"tabletTextScale": "big"}),
+            "apps.tabletTextScale",
+        ),
+    ] {
+        assert!(matches!(
+            manager.prepare_shell_update(manager.revision(), &with_apps(apps)),
+            Err(SettingsError::Document(message)) if message.starts_with(key)
+        ));
+    }
+    let document = with_apps(serde_json::json!({
+        "scale": 1.25,
+        "followMode": false,
+        "tabletTextScale": 1.15,
+        "desktopTextScale": null
+    }));
+    let update = manager
+        .prepare_shell_update(manager.revision(), &document)
+        .unwrap();
+    manager.commit(update).unwrap();
+    assert_eq!(
+        manager.apps_follow(),
+        AppsFollow {
+            enabled: false,
+            tablet_text_scaling_milli: Some(1150),
+            desktop_text_scaling_milli: None,
+        }
+    );
+    assert_eq!(manager.apps_scale(), 1.25);
+}
+
+#[test]
+fn apps_follow_only_a_tablets_shell_and_only_while_switched_on() {
+    let follow = AppsFollow {
+        enabled: true,
+        tablet_text_scaling_milli: Some(1150),
+        desktop_text_scaling_milli: None,
+    };
+    assert_eq!(
+        follow.shell_state(DesktopPresentation::Tablet, false),
+        DesktopShellState {
+            presentation: DesktopPresentation::Tablet,
+            keyboard_attached: false,
+            tablet_mode: true,
+            text_scaling_milli: Some(1150),
+        }
+    );
+    // Desktop presentation: no touch layouts, and with no desktop text
+    // scale set the desktop's own setting stands.
+    assert_eq!(
+        follow.shell_state(DesktopPresentation::Desktop, true),
+        DesktopShellState {
+            presentation: DesktopPresentation::Desktop,
+            keyboard_attached: true,
+            tablet_mode: false,
+            text_scaling_milli: None,
+        }
+    );
+    // Switched off: the presentation and keyboard are still published, but
+    // apps are told nothing to follow.
+    let off = AppsFollow {
+        enabled: false,
+        ..follow
+    };
+    assert_eq!(
+        off.shell_state(DesktopPresentation::Tablet, true),
+        DesktopShellState {
+            presentation: DesktopPresentation::Tablet,
+            keyboard_attached: true,
+            tablet_mode: false,
+            text_scaling_milli: None,
+        }
+    );
+}

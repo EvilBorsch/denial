@@ -7,10 +7,18 @@
 use std::fmt;
 
 pub const PORTAL_SOCKET_FILE: &str = "portal.sock";
-pub const PROTOCOL_VERSION: u16 = 2;
+/// 3: the snapshot carries the shell's state for apps (org.denialwm.shell)
+/// and the text scale apps follow with it.
+pub const PROTOCOL_VERSION: u16 = 3;
 const MAGIC: [u8; 8] = *b"DENIALP\0";
 const HEADER_BYTES: usize = 16;
-const SNAPSHOT_PAYLOAD_BYTES: usize = 20;
+const SNAPSHOT_PAYLOAD_BYTES: usize = 24;
+const SHELL_FLAG_KEYBOARD_ATTACHED: u8 = 1 << 0;
+const SHELL_FLAG_TABLET_MODE: u8 = 1 << 1;
+const SHELL_FLAGS: u8 = SHELL_FLAG_KEYBOARD_ATTACHED | SHELL_FLAG_TABLET_MODE;
+/// The text scales apps may be given, in thousandths: GNOME's
+/// org.gnome.desktop.interface text-scaling-factor from 0.5 to 3.
+pub const TEXT_SCALING_MILLI: std::ops::RangeInclusive<u16> = 500..=3000;
 pub const MAX_MESSAGE_BYTES: usize = HEADER_BYTES + SNAPSHOT_PAYLOAD_BYTES;
 const KIND_HELLO: u16 = 1;
 const KIND_THEME_SNAPSHOT: u16 = 2;
@@ -140,6 +148,63 @@ impl Default for DesktopAccentColor {
     }
 }
 
+/// What the shell presents on the built-in screen.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[repr(u8)]
+pub enum DesktopPresentation {
+    /// A desktop's shell, or the tablet with a monitor beside it.
+    #[default]
+    Desktop = 0,
+    /// A tablet's shell: the mobile profile, or the Desktop mode tile off.
+    Tablet = 1,
+}
+
+impl DesktopPresentation {
+    /// The value of org.denialwm.shell `presentation`.
+    pub const fn portal_name(self) -> &'static str {
+        match self {
+            Self::Desktop => "desktop",
+            Self::Tablet => "tablet",
+        }
+    }
+}
+
+impl TryFrom<u8> for DesktopPresentation {
+    type Error = ProtocolError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Desktop),
+            1 => Ok(Self::Tablet),
+            _ => Err(ProtocolError::InvalidPresentation(value)),
+        }
+    }
+}
+
+/// The shell's state as apps may follow it: the portal's org.denialwm.shell
+/// namespace, and the text scale apps get in the current presentation.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct DesktopShellState {
+    pub presentation: DesktopPresentation,
+    /// A keyboard to type on is attached, such as a keyboard cover.
+    pub keyboard_attached: bool,
+    /// Apps should show their touch layouts: the shell is a tablet's and the
+    /// user lets apps follow it (`apps.followMode`).
+    pub tablet_mode: bool,
+    /// org.gnome.desktop.interface text-scaling-factor for apps, in
+    /// thousandths, while apps follow the shell and one is set for this
+    /// presentation; otherwise the desktop's own setting stands.
+    pub text_scaling_milli: Option<u16>,
+}
+
+impl DesktopShellState {
+    /// The text scale as the portal's double.
+    pub fn text_scaling_factor(self) -> Option<f64> {
+        self.text_scaling_milli
+            .map(|milli| f64::from(milli) / 1000.0)
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct DesktopThemeSnapshot {
     pub revision: u64,
@@ -147,6 +212,7 @@ pub struct DesktopThemeSnapshot {
     pub effective_brightness: DesktopThemeBrightness,
     pub portal_color_scheme: u32,
     pub accent_color: DesktopAccentColor,
+    pub shell: DesktopShellState,
 }
 
 impl DesktopThemeSnapshot {
@@ -157,11 +223,22 @@ impl DesktopThemeSnapshot {
             effective_brightness: configured_preference.effective_brightness(),
             portal_color_scheme: configured_preference.portal_value(),
             accent_color: DesktopAccentColor::DENIAL_DEFAULT,
+            shell: DesktopShellState {
+                presentation: DesktopPresentation::Desktop,
+                keyboard_attached: false,
+                tablet_mode: false,
+                text_scaling_milli: None,
+            },
         }
     }
 
     pub const fn with_accent(mut self, accent_color: DesktopAccentColor) -> Self {
         self.accent_color = accent_color;
+        self
+    }
+
+    pub const fn with_shell(mut self, shell: DesktopShellState) -> Self {
+        self.shell = shell;
         self
     }
 }
@@ -205,6 +282,18 @@ pub fn encode_server_message(message: ServerMessage) -> [u8; MAX_MESSAGE_BYTES] 
             bytes[HEADER_BYTES + 14] = snapshot.accent_color.red;
             bytes[HEADER_BYTES + 15] = snapshot.accent_color.green;
             bytes[HEADER_BYTES + 16] = snapshot.accent_color.blue;
+            let shell = snapshot.shell;
+            bytes[HEADER_BYTES + 17] = shell.presentation as u8;
+            let mut flags = 0;
+            if shell.keyboard_attached {
+                flags |= SHELL_FLAG_KEYBOARD_ATTACHED;
+            }
+            if shell.tablet_mode {
+                flags |= SHELL_FLAG_TABLET_MODE;
+            }
+            bytes[HEADER_BYTES + 18] = flags;
+            bytes[HEADER_BYTES + 20..HEADER_BYTES + 22]
+                .copy_from_slice(&shell.text_scaling_milli.unwrap_or(0).to_le_bytes());
             bytes
         }
     }
@@ -234,14 +323,45 @@ pub fn decode_server_message(bytes: &[u8]) -> Result<ServerMessage, ProtocolErro
             .expect("validated portal value width"),
     );
     let accent_color = DesktopAccentColor::new(payload[14], payload[15], payload[16]);
-    let expected =
-        DesktopThemeSnapshot::new(revision, configured_preference).with_accent(accent_color);
+    let shell = decode_shell_state(payload)?;
+    let expected = DesktopThemeSnapshot::new(revision, configured_preference)
+        .with_accent(accent_color)
+        .with_shell(shell);
     if effective_brightness != expected.effective_brightness
         || portal_color_scheme != expected.portal_color_scheme
     {
         return Err(ProtocolError::InconsistentSnapshot);
     }
     Ok(ServerMessage::ThemeSnapshot(expected))
+}
+
+fn decode_shell_state(payload: &[u8]) -> Result<DesktopShellState, ProtocolError> {
+    let presentation = DesktopPresentation::try_from(payload[17])?;
+    let flags = payload[18];
+    if flags & !SHELL_FLAGS != 0 || payload[19] != 0 || payload[22..24] != [0, 0] {
+        return Err(ProtocolError::InvalidShellState);
+    }
+    let tablet_mode = flags & SHELL_FLAG_TABLET_MODE != 0;
+    // Apps follow a tablet's shell only.
+    if tablet_mode && presentation != DesktopPresentation::Tablet {
+        return Err(ProtocolError::InconsistentSnapshot);
+    }
+    let milli = u16::from_le_bytes(
+        payload[20..22]
+            .try_into()
+            .expect("validated text scale width"),
+    );
+    let text_scaling_milli = match milli {
+        0 => None,
+        milli if TEXT_SCALING_MILLI.contains(&milli) => Some(milli),
+        milli => return Err(ProtocolError::InvalidTextScaling(milli)),
+    };
+    Ok(DesktopShellState {
+        presentation,
+        keyboard_attached: flags & SHELL_FLAG_KEYBOARD_ATTACHED != 0,
+        tablet_mode,
+        text_scaling_milli,
+    })
 }
 
 fn encode_header(kind: u16, payload_bytes: usize) -> [u8; HEADER_BYTES] {
@@ -292,6 +412,9 @@ pub enum ProtocolError {
     InvalidRevision,
     InvalidPreference(u8),
     InvalidBrightness(u8),
+    InvalidPresentation(u8),
+    InvalidShellState,
+    InvalidTextScaling(u16),
     InconsistentSnapshot,
 }
 
@@ -318,6 +441,13 @@ impl fmt::Display for ProtocolError {
             Self::InvalidBrightness(value) => {
                 write!(formatter, "invalid desktop brightness {value}")
             }
+            Self::InvalidPresentation(value) => {
+                write!(formatter, "invalid shell presentation {value}")
+            }
+            Self::InvalidShellState => formatter.write_str("invalid shell state flags"),
+            Self::InvalidTextScaling(value) => {
+                write!(formatter, "invalid text scale {value}/1000")
+            }
             Self::InconsistentSnapshot => {
                 formatter.write_str("portal snapshot derived values are inconsistent")
             }
@@ -326,3 +456,94 @@ impl fmt::Display for ProtocolError {
 }
 
 impl std::error::Error for ProtocolError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn snapshot() -> DesktopThemeSnapshot {
+        DesktopThemeSnapshot::new(7, DesktopColorSchemePreference::PreferDark)
+            .with_accent(DesktopAccentColor::new(0x12, 0x34, 0x56))
+    }
+
+    fn round_trip(snapshot: DesktopThemeSnapshot) -> Result<ServerMessage, ProtocolError> {
+        decode_server_message(&encode_server_message(ServerMessage::ThemeSnapshot(
+            snapshot,
+        )))
+    }
+
+    #[test]
+    fn snapshots_carry_the_shell_state_both_ways() {
+        let plain = snapshot();
+        assert_eq!(round_trip(plain), Ok(ServerMessage::ThemeSnapshot(plain)));
+        for shell in [
+            DesktopShellState {
+                presentation: DesktopPresentation::Tablet,
+                keyboard_attached: false,
+                tablet_mode: true,
+                text_scaling_milli: Some(1150),
+            },
+            DesktopShellState {
+                presentation: DesktopPresentation::Tablet,
+                keyboard_attached: true,
+                tablet_mode: false,
+                text_scaling_milli: None,
+            },
+            DesktopShellState {
+                presentation: DesktopPresentation::Desktop,
+                keyboard_attached: true,
+                tablet_mode: false,
+                text_scaling_milli: Some(*TEXT_SCALING_MILLI.start()),
+            },
+        ] {
+            let followed = plain.with_shell(shell);
+            assert_eq!(
+                round_trip(followed),
+                Ok(ServerMessage::ThemeSnapshot(followed))
+            );
+        }
+        let scaled = DesktopShellState {
+            text_scaling_milli: Some(1250),
+            ..DesktopShellState::default()
+        };
+        assert_eq!(scaled.text_scaling_factor(), Some(1.25));
+        assert_eq!(DesktopShellState::default().text_scaling_factor(), None);
+    }
+
+    #[test]
+    fn malformed_shell_state_is_rejected() {
+        let bytes = encode_server_message(ServerMessage::ThemeSnapshot(snapshot()));
+        let corrupt = |offset: usize, value: u8| {
+            let mut bytes = bytes;
+            bytes[HEADER_BYTES + offset] = value;
+            decode_server_message(&bytes)
+        };
+        assert_eq!(corrupt(17, 2), Err(ProtocolError::InvalidPresentation(2)));
+        assert_eq!(corrupt(18, 4), Err(ProtocolError::InvalidShellState));
+        assert_eq!(corrupt(19, 1), Err(ProtocolError::InvalidShellState));
+        assert_eq!(corrupt(23, 1), Err(ProtocolError::InvalidShellState));
+        // Touch layouts while the shell is a desktop's cannot be published.
+        assert_eq!(
+            corrupt(18, SHELL_FLAG_TABLET_MODE),
+            Err(ProtocolError::InconsistentSnapshot)
+        );
+        let mut scale = bytes;
+        for milli in [499u16, 3001] {
+            scale[HEADER_BYTES + 20..HEADER_BYTES + 22].copy_from_slice(&milli.to_le_bytes());
+            assert_eq!(
+                decode_server_message(&scale),
+                Err(ProtocolError::InvalidTextScaling(milli))
+            );
+        }
+    }
+
+    #[test]
+    fn a_peer_of_the_previous_protocol_is_refused() {
+        let mut bytes = encode_server_message(ServerMessage::ThemeSnapshot(snapshot()));
+        bytes[8..10].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(
+            decode_server_message(&bytes),
+            Err(ProtocolError::UnsupportedVersion(2))
+        );
+    }
+}
