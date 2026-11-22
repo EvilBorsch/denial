@@ -1292,6 +1292,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get quickSettingsStayAwakeOn => '保持唤醒已开启';
 
   @override
+  String get quickSettingsBypassCharging => '旁路充电';
+
+  @override
   String get quickSettingsScreenRecording => '屏幕录制';
 
   @override
