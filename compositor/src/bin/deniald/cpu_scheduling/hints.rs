@@ -1237,6 +1237,46 @@ mod tests {
     }
 
     #[test]
+    fn an_application_refocused_during_input_gets_its_frame_floor() {
+        let domain = sched_getaffinity(Pid::from_raw(std::process::id() as i32)).unwrap();
+        let mut little = CpuSet::new();
+        little.set(
+            (0..CpuSet::MAX_CPU)
+                .find(|&cpu| domain.is_set(cpu))
+                .unwrap(),
+        );
+        let mut worker = Worker::new(Config::from_lookup(|key| {
+            (key == "DENIAL_CPU_HINTS_PIN").then(|| "0".to_owned())
+        }));
+        worker.topology = Some(Topology {
+            domain,
+            little: Some((little, 222)),
+        });
+        let app = App::start();
+        worker.focus(Some(app.root.pid));
+        worker.focus(None);
+        demote_pending(&mut worker);
+        let demoted = get_attr(app.root.pid).unwrap();
+        // Without utilization clamping in the kernel (EOPNOTSUPP, as in
+        // WSL) nothing was capped, and a floor is applied only to ordinary
+        // threads: either way there is nothing to test.
+        if demoted.sched_util_max != 222 || demoted.sched_policy != libc::SCHED_OTHER as u32 {
+            return;
+        }
+
+        // The user returns to the application while interacting. The floor
+        // (223) is above the background cap (222), which the kernel refuses
+        // until the cap is lifted.
+        worker.interaction_started();
+        worker.focus(Some(app.root.pid));
+        let focused = get_attr(app.root.pid).unwrap();
+        assert_eq!(
+            (focused.sched_util_min, focused.sched_util_max),
+            (223, UTIL_MAX)
+        );
+    }
+
+    #[test]
     fn clamps_another_thread_without_changing_its_policy() {
         use std::sync::mpsc::channel;
         let (tid_sender, tid_receiver) = channel();
