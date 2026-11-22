@@ -24,6 +24,26 @@ abstract final class QuickSettingsGridMetrics {
   static const double minimumWidth = capsule * 4 + gutter * 3;
 }
 
+/// Where each footer tile sits below the grid, as (row, column) counted from
+/// the first footer row: rows of four columns, a square tile taking one and
+/// a wide one two. A tile that does not fit in what is left of a row starts
+/// the next one.
+List<(int, int)> quickSettingsFooterCells(Iterable<QuickTile> tiles) {
+  final cells = <(int, int)>[];
+  var row = 0;
+  var column = 0;
+  for (final tile in tiles) {
+    final span = tile.wide ? 2 : 1;
+    if (column + span > 4) {
+      row += 1;
+      column = 0;
+    }
+    cells.add((row, column));
+    column += span;
+  }
+  return cells;
+}
+
 /// The grid of quick-settings tiles. Purely presentational: every value and
 /// callback is supplied by the panel.
 class QuickSettingsTiles extends StatelessWidget {
@@ -59,8 +79,9 @@ class QuickSettingsTiles extends StatelessWidget {
   final Widget? volumeControl;
   final Animation<double>? expansionProgress;
 
-  /// A row below the grid, aligned with its columns: a square tile takes
-  /// one column and a wide one two, four columns at most.
+  /// Rows below the grid, aligned with its columns: a square tile takes one
+  /// column and a wide one two, four columns to a row
+  /// ([quickSettingsFooterCells]).
   final List<QuickTile> footerTiles;
 
   /// How much taller than the reference the tiles are; their labels and the
@@ -89,11 +110,6 @@ class QuickSettingsTiles extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    assert(
-      footerTiles.fold(0, (columns, tile) => columns + (tile.wide ? 2 : 1)) <=
-          4,
-      'the footer row has four columns',
-    );
     final l10n = context.l10n;
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -126,19 +142,23 @@ class QuickSettingsTiles extends StatelessWidget {
         final pitch = column + gutter;
         final wide = column * 2 + gutter;
         final tall = capsule * 2 + gutter;
-        final footerTop = row * 3 + gutter;
         final silentColumn = profile == null ? 2 : 3;
-        final footerHeight = footerTiles.any((tile) => !tile.wide)
-            ? row
-            : capsule;
-        final footerColumns = <int>[];
-        var footerColumn = 0;
-        for (final tile in footerTiles) {
-          footerColumns.add(footerColumn);
-          footerColumn += tile.wide ? 2 : 1;
+        final footerCells = quickSettingsFooterCells(footerTiles);
+        final footerRows = footerCells.isEmpty ? 0 : footerCells.last.$1 + 1;
+        // A row with a square tile is as tall as the grid's labelled row;
+        // one of wide capsules only, a capsule. Rows keep a gutter apart.
+        final footerTops = <double>[];
+        var footerBottom = row * 3;
+        for (var footerRow = 0; footerRow < footerRows; footerRow += 1) {
+          final top = footerBottom + gutter;
+          final square = footerTiles.indexed.any(
+            (entry) => footerCells[entry.$1].$1 == footerRow && !entry.$2.wide,
+          );
+          footerTops.add(top);
+          footerBottom = top + (square ? row : capsule);
         }
         return SizedBox(
-          height: footerTiles.isEmpty ? row * 3 : footerTop + footerHeight,
+          height: footerBottom,
           child: Stack(
             children: [
               Positioned(
@@ -252,14 +272,14 @@ class QuickSettingsTiles extends StatelessWidget {
               ),
               for (final (index, tile) in footerTiles.indexed)
                 Positioned(
-                  left: pitch * footerColumns[index],
-                  top: footerTop,
+                  left: pitch * footerCells[index].$2,
+                  top: footerTops[footerCells[index].$1],
                   width: tile.wide ? wide : column,
                   height: tile.wide ? capsule : row,
                   child: reveal(
                     7 + index,
                     tile,
-                    cell: (3, footerColumns[index]),
+                    cell: (3 + footerCells[index].$1, footerCells[index].$2),
                   ),
                 ),
             ],
