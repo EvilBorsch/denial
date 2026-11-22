@@ -28,6 +28,7 @@ class _DesktopSystemBarContent extends ConsumerWidget {
   const _DesktopSystemBarContent({
     required this.monitorId,
     required this.side,
+    required this.stayAwake,
     required this.onOpenPowerSettings,
     required this.onOpenDashboard,
   });
@@ -38,6 +39,7 @@ class _DesktopSystemBarContent extends ConsumerWidget {
 
   final int monitorId;
   final PanelEdge side;
+  final bool stayAwake;
   final VoidCallback onOpenPowerSettings;
   final VoidCallback onOpenDashboard;
 
@@ -92,7 +94,11 @@ class _DesktopSystemBarContent extends ConsumerWidget {
           _SystemBarEntrance(
             key: const ValueKey('system-bar-media'),
             index:
-                (cpuVisible ? 1 : 0) + gpuCount + (batteryVisible ? 1 : 0) + 1,
+                (cpuVisible ? 1 : 0) +
+                gpuCount +
+                (batteryVisible ? 1 : 0) +
+                (stayAwake ? 1 : 0) +
+                1,
             horizontal: horizontal,
             child: Padding(
               padding: horizontal
@@ -102,6 +108,19 @@ class _DesktopSystemBarContent extends ConsumerWidget {
                 accent: accent,
                 child: _MediaStatusProviderModule(accent: accent, side: side),
               ),
+            ),
+          ),
+        if (stayAwake)
+          _SystemBarEntrance(
+            key: const ValueKey('system-bar-stay-awake'),
+            index:
+                (cpuVisible ? 1 : 0) + gpuCount + (batteryVisible ? 1 : 0) + 1,
+            horizontal: horizontal,
+            child: Padding(
+              padding: horizontal
+                  ? const EdgeInsets.only(right: _cardGap)
+                  : const EdgeInsets.only(bottom: _cardGap),
+              child: _StayAwakeCard(accent: accent, horizontal: horizontal),
             ),
           ),
         if (batteryVisible)
@@ -220,11 +239,16 @@ class DesktopSystemBar extends StatelessWidget {
     required this.monitorId,
     required this.side,
     required this.services,
+    this.stayAwake = false,
     super.key,
   });
   final int monitorId;
   final PanelEdge side;
   final ShellServices services;
+
+  /// Whether Stay awake keeps the idle timeout from suspending the system
+  /// (`power.stayAwake`): the bar shows a mark while it is on.
+  final bool stayAwake;
 
   @override
   Widget build(BuildContext context) => ShellServicesScope(
@@ -232,8 +256,32 @@ class DesktopSystemBar extends StatelessWidget {
     child: _DesktopSystemBarContent(
       monitorId: monitorId,
       side: side,
+      stayAwake: stayAwake,
       onOpenPowerSettings: services.openPowerSettings,
       onOpenDashboard: services.openDashboard,
+    ),
+  );
+}
+
+/// The mark shown while Stay awake is on: a cup, like the phone status
+/// bar's, on a card of its own beside the battery.
+class _StayAwakeCard extends StatelessWidget {
+  const _StayAwakeCard({required this.accent, required this.horizontal});
+
+  final WallpaperAccent accent;
+  final bool horizontal;
+
+  @override
+  Widget build(BuildContext context) => _SystemBarCard(
+    accent: accent,
+    padding: horizontal
+        ? const EdgeInsets.symmetric(horizontal: 10)
+        : const EdgeInsets.symmetric(vertical: 10),
+    child: Icon(
+      Icons.coffee_rounded,
+      size: 16,
+      color: context.shellColors.textPrimary,
+      semanticLabel: context.pluginStrings.stayAwakeOn,
     ),
   );
 }

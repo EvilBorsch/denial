@@ -2378,6 +2378,18 @@ abstract class AppLocalizations {
   /// **'Auto-rotate'**
   String get quickSettingsAutoRotate;
 
+  /// Quick Settings tile that keeps the idle timeout from suspending the system while it is on. The screen still turns off and locks, and closing the lid still suspends.
+  ///
+  /// In en, this message translates to:
+  /// **'Stay awake'**
+  String get quickSettingsStayAwake;
+
+  /// Spoken label of the mark shown in the status bar, and in the desktop system bar, while Stay awake is on.
+  ///
+  /// In en, this message translates to:
+  /// **'Stay awake is on'**
+  String get quickSettingsStayAwakeOn;
+
   /// Quick Settings tile that starts a screen recording, and stops it when tapped again.
   ///
   /// In en, this message translates to:

@@ -1915,6 +1915,14 @@
   "@quickSettingsAutoRotate": {
     "description": "Quick Settings toggle that is on while the screen follows the orientation sensor."
   },
+  "quickSettingsStayAwake": "Не засыпать",
+  "@quickSettingsStayAwake": {
+    "description": "Quick Settings tile that keeps the idle timeout from suspending the system while it is on. The screen still turns off and locks, and closing the lid still suspends."
+  },
+  "quickSettingsStayAwakeOn": "Режим «Не засыпать» включён",
+  "@quickSettingsStayAwakeOn": {
+    "description": "Spoken label of the mark shown in the status bar, and in the desktop system bar, while Stay awake is on."
+  },
   "quickSettingsScreenRecording": "Запись экрана",
   "@quickSettingsScreenRecording": {
     "description": "Quick Settings tile that starts a screen recording, and stops it when tapped again."

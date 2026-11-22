@@ -505,4 +505,6 @@ final class _Strings implements ShellStrings {
   String get workspaceEmpty => context.l10n.workspaceEmpty;
   @override
   String get workspaceActive => context.l10n.workspaceActive;
+  @override
+  String get stayAwakeOn => context.l10n.quickSettingsStayAwakeOn;
 }
