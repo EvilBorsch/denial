@@ -334,7 +334,8 @@ $F/bin/flutter test --local-engine-src-path=$W/test-view \
 On v0.6.8 this passes 188 tests and fails 12 that need Denial's engine
 (`left_app_test`, `session_power_test`, one of `phone_desk_test`, two of
 `mobile_connectivity_marks_test`); `eb/lockscreen-keyboard` passes 193 and
-`eb/compositor-inhibit-keyboard` 196, with the same 12 failing.
+`eb/compositor-inhibit-keyboard` 196, with the same 12 failing; `eb/mode-follow`
+223 with the same 12 failing, and `packages/denial_flutter_sdk` all 111.
 
 ## Another Denial release
 
