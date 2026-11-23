@@ -1,9 +1,11 @@
 import 'package:denial_desktop/src/state/app_deck.dart';
 import 'package:denial_desktop/src/widgets/overview/app_deck_layer.dart';
+import 'package:denial_desktop/src/widgets/overview/overview_card_label.dart';
 import 'package:denial_flutter_sdk/applications.dart';
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/models.dart';
 import 'package:denial_flutter_sdk/platform.dart' show DenialBridge;
+import 'package:denial_flutter_sdk/rendering.dart' show WindowPose;
 import 'package:denial_flutter_sdk/glass_configuration.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 import 'package:denial_flutter_sdk/state.dart' show denialBridgeProvider;
@@ -186,5 +188,80 @@ void main() {
     await tester.pump();
     // Held and let go, it is a tap, as before.
     expect(shown.calls, ['open 3']);
+  });
+
+  group('a card covered by the newer one beside it', () {
+    const card = Rect.fromLTWH(100, 200, 400, 300);
+
+    test('keeps its whole label row without a card over it', () {
+      expect(
+        uncoveredLabelWidth(
+          card: card,
+          cover: null,
+          labelWidth: 400,
+          ltr: true,
+        ),
+        400,
+      );
+      // The newer card lies on the other side, or past the row's end.
+      for (final rect in [
+        const Rect.fromLTWH(-350, 200, 400, 300),
+        const Rect.fromLTWH(520, 200, 400, 300),
+      ]) {
+        expect(
+          uncoveredLabelWidth(
+            card: card,
+            cover: WindowPose(rect, 20),
+            labelWidth: 400,
+            ltr: true,
+          ),
+          400,
+        );
+      }
+    });
+
+    test('keeps its buttons to the part of the row left uncovered', () {
+      // Overlapped from x = 440: the row ends a gap before it.
+      expect(
+        uncoveredLabelWidth(
+          card: card,
+          cover: const WindowPose(Rect.fromLTWH(440, 200, 400, 300), 20),
+          labelWidth: 400,
+          ltr: true,
+        ),
+        340 - OverviewCardLabel.gap,
+      );
+      // Mostly covered: hardly any of the row shows.
+      expect(
+        uncoveredLabelWidth(
+          card: card,
+          cover: const WindowPose(Rect.fromLTWH(110, 200, 400, 300), 20),
+          labelWidth: 400,
+          ltr: true,
+        ),
+        0,
+      );
+    });
+
+    test('mirrors right to left, and ignores a hidden card', () {
+      expect(
+        uncoveredLabelWidth(
+          card: card,
+          cover: const WindowPose(Rect.fromLTWH(-200, 200, 400, 300), 20),
+          labelWidth: 400,
+          ltr: false,
+        ),
+        300 - OverviewCardLabel.gap,
+      );
+      expect(
+        uncoveredLabelWidth(
+          card: card,
+          cover: WindowPose.hidden,
+          labelWidth: 400,
+          ltr: true,
+        ),
+        400,
+      );
+    });
   });
 }

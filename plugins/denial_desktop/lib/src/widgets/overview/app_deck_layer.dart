@@ -452,7 +452,7 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
                       ),
                     ),
                   ),
-                  for (final id in _drawn)
+                  for (final (index, id) in _drawn.indexed)
                     if ((_windows[id], _poses[id]) case (
                       final window?,
                       final pose?,
@@ -462,6 +462,9 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
                         window: window,
                         over: widget.windowsOver[id] ?? const <DenialWindow>[],
                         pose: pose,
+                        coveredBy: index + 1 < _drawn.length
+                            ? _poses[_drawn[index + 1]]
+                            : null,
                         labelWidth: geometry.card.width,
                         labelOpacity: _labelOpacity,
                         appWindowCount: _appWindows[id]?.length ?? 1,
@@ -496,6 +499,7 @@ class _DeckCard extends StatefulWidget {
     required this.window,
     required this.over,
     required this.pose,
+    this.coveredBy,
     required this.labelWidth,
     required this.labelOpacity,
     this.appWindowCount = 1,
@@ -514,6 +518,11 @@ class _DeckCard extends StatefulWidget {
   /// Windows opened over the app, such as its dialog, drawn over it.
   final List<DenialWindow> over;
   final ValueListenable<WindowPose> pose;
+
+  /// The pose of the card drawn over this one, the newer app beside it: in
+  /// landscape Recents it overlaps this card and its label row, so this
+  /// card's buttons keep to the part of the row left uncovered.
+  final ValueListenable<WindowPose>? coveredBy;
   final double labelWidth;
 
   /// The app's icon and name above the card; none without it.
@@ -825,31 +834,54 @@ class _DeckCardState extends State<_DeckCard>
             child: CompositedTranslation(
               translation: _pose.label,
               devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: 0,
-                    top: 0,
-                    width: widget.labelWidth,
-                    height: OverviewCardLabel.height,
-                    child: FadeTransition(
-                      opacity: labelOpacity,
-                      child: Align(
-                        alignment: AlignmentDirectional.centerEnd,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            for (final (index, button) in buttons.indexed) ...[
-                              if (index > 0)
-                                const SizedBox(width: OverviewCardLabel.gap),
-                              button,
-                            ],
-                          ],
+              child: ListenableBuilder(
+                listenable: Listenable.merge([_pose, ?widget.coveredBy]),
+                builder: (context, row) {
+                  final visible = uncoveredLabelWidth(
+                    card: _pose.value.rect,
+                    cover: widget.coveredBy?.value,
+                    labelWidth: widget.labelWidth,
+                    ltr: Directionality.of(context) == TextDirection.ltr,
+                  );
+                  // Too little of the row shows: the buttons would sit
+                  // beside another app's label.
+                  final shown =
+                      visible >=
+                      OverviewCardLabel.iconSize +
+                          OverviewCardLabel.gap +
+                          buttonsWidth;
+                  return Stack(
+                    children: [
+                      Positioned(
+                        left: 0,
+                        top: 0,
+                        width: visible,
+                        height: OverviewCardLabel.height,
+                        child: Visibility(
+                          visible: shown,
+                          maintainState: true,
+                          child: row!,
                         ),
                       ),
+                    ],
+                  );
+                },
+                child: FadeTransition(
+                  opacity: labelOpacity,
+                  child: Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final (index, button) in buttons.indexed) ...[
+                          if (index > 0)
+                            const SizedBox(width: OverviewCardLabel.gap),
+                          button,
+                        ],
+                      ],
                     ),
                   ),
-                ],
+                ),
               ),
             ),
           ),
@@ -1156,4 +1188,26 @@ class _MoveToDeskButton extends StatelessWidget {
       ),
     );
   }
+}
+
+/// How much of a recents card's label row, [labelWidth] wide from the
+/// card's leading edge, is not under the card drawn over it ([cover]): the
+/// newer card beside it overlaps it in landscape. The whole row without a
+/// cover, or with one that does not reach into the row.
+@visibleForTesting
+double uncoveredLabelWidth({
+  required Rect card,
+  required WindowPose? cover,
+  required double labelWidth,
+  required bool ltr,
+}) {
+  final over = cover?.rect;
+  if (over == null || over.isEmpty || (cover?.opacity ?? 0) <= 0) {
+    return labelWidth;
+  }
+  final start = ltr ? card.left : card.right;
+  final reach = ltr ? over.left - start : start - over.right;
+  final behind = ltr ? over.right > start : over.left < start;
+  if (!behind) return labelWidth;
+  return (reach - OverviewCardLabel.gap).clamp(0.0, labelWidth);
 }
