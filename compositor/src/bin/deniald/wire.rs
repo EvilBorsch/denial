@@ -249,6 +249,30 @@ pub struct InputDeviceSettings<'a> {
     pub has_keyboard: bool,
 }
 
+/// The touchpad preferences the shell's wire protocol carries. The pointer
+/// speed, acceleration and click method are set through the control socket
+/// (Settings), so a shell request leaves them as they are.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShellTouchpadConfiguration {
+    pub tap_to_click_enabled: bool,
+    pub natural_scroll_enabled: bool,
+    pub scroll_speed_factor: f64,
+    pub scrolling_layout_swipe_speed_factor: f64,
+}
+
+impl ShellTouchpadConfiguration {
+    /// `current` with the shell's preferences in place of its own.
+    pub fn applied_to(self, current: &TouchpadSettings) -> TouchpadSettings {
+        TouchpadSettings {
+            tap_to_click_enabled: self.tap_to_click_enabled,
+            natural_scroll_enabled: self.natural_scroll_enabled,
+            scroll_speed_factor: self.scroll_speed_factor,
+            scrolling_layout_swipe_speed_factor: self.scrolling_layout_swipe_speed_factor,
+            ..current.clone()
+        }
+    }
+}
+
 /// The word the software keyboard is typing, for suggestions.
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextPredictionRequest {
@@ -322,7 +346,7 @@ pub enum SettingsCommand {
     ConfigureTouchpad {
         request_id: u64,
         expected_revision: u64,
-        touchpad: TouchpadSettings,
+        touchpad: ShellTouchpadConfiguration,
     },
     ConfigureMouse {
         request_id: u64,

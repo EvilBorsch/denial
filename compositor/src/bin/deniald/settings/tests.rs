@@ -425,6 +425,9 @@ fn touchpad_update_is_persistent_and_revisioned() {
         natural_scroll_enabled: true,
         scroll_speed_factor: 2.5,
         scrolling_layout_swipe_speed_factor: 1.75,
+        speed: -0.4,
+        acceleration_enabled: false,
+        click_method: TouchpadClickMethod::ButtonAreas,
     };
     let old_revision = manager.revision();
     let update = manager
@@ -549,6 +552,99 @@ fn rejects_touchpad_scroll_speed_outside_supported_range() {
             Err(SettingsError::Touchpad(_))
         ));
     }
+}
+
+#[test]
+fn rejects_touchpad_speed_outside_supported_range() {
+    let temporary = TemporaryDirectory::new("settings-touchpad-speed");
+    let manager = SettingsManager::load_path(temporary.settings_path()).unwrap();
+    for speed in [-1.001, 1.001, f64::NAN] {
+        let configured = TouchpadSettings {
+            speed,
+            ..TouchpadSettings::default()
+        };
+        assert!(matches!(
+            manager.prepare_touchpad_update(manager.revision(), configured),
+            Err(SettingsError::Touchpad(_))
+        ));
+    }
+}
+
+/// Loads a complete document with `touchpad` as its touchpad section and
+/// returns the loaded settings, the saved section, and whether the file was
+/// rewritten.
+fn migrated_touchpad(touchpad: Value) -> (TouchpadSettings, Value, bool) {
+    let temporary = TemporaryDirectory::new("settings-touchpad-fields");
+    let path = temporary.settings_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    // deniald completes and writes a bare document once.
+    fs::write(&path, format!(r#"{{"version":{SETTINGS_SCHEMA_VERSION}}}"#)).unwrap();
+    SettingsManager::load_path(path.clone()).unwrap();
+    let mut complete: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    complete["touchpad"] = touchpad;
+    let written = serde_json::to_vec(&complete).unwrap();
+    fs::write(&path, &written).unwrap();
+    let manager = SettingsManager::load_path(path.clone()).unwrap();
+    let bytes = fs::read(&path).unwrap();
+    let saved: Value = serde_json::from_slice(&bytes).unwrap();
+    (
+        manager.touchpad().clone(),
+        saved["touchpad"].clone(),
+        bytes != written,
+    )
+}
+
+#[test]
+fn touchpad_section_from_before_pointer_settings_gets_their_defaults() {
+    let (touchpad, saved, rewritten) = migrated_touchpad(serde_json::json!({
+        "tapToClickEnabled": false,
+        "naturalScrollEnabled": true,
+        "scrollSpeedFactor": 2.0,
+        "scrollingLayoutSwipeSpeedFactor": 1.5
+    }));
+    let expected = TouchpadSettings {
+        tap_to_click_enabled: false,
+        natural_scroll_enabled: true,
+        scroll_speed_factor: 2.0,
+        scrolling_layout_swipe_speed_factor: 1.5,
+        ..TouchpadSettings::default()
+    };
+    assert_eq!(touchpad, expected);
+    assert!(rewritten);
+    assert_eq!(saved, serde_json::to_value(&expected).unwrap());
+    assert_eq!(saved["speed"], 0.0);
+    assert_eq!(saved["accelerationEnabled"], true);
+    assert_eq!(saved["clickMethod"], "clickfinger");
+}
+
+#[test]
+fn touchpad_click_methods_have_document_names() {
+    for (name, method) in [
+        ("clickfinger", TouchpadClickMethod::Clickfinger),
+        ("buttonAreas", TouchpadClickMethod::ButtonAreas),
+    ] {
+        let touchpad: TouchpadSettings =
+            serde_json::from_value(serde_json::json!({ "clickMethod": name })).unwrap();
+        assert_eq!(touchpad.click_method, method);
+        assert_eq!(serde_json::to_value(method).unwrap(), name);
+    }
+    assert!(
+        serde_json::from_value::<TouchpadSettings>(serde_json::json!({"clickMethod": "corner"}))
+            .is_err()
+    );
+}
+
+#[test]
+fn complete_touchpad_section_is_not_rewritten() {
+    let configured = TouchpadSettings {
+        speed: 0.35,
+        acceleration_enabled: false,
+        click_method: TouchpadClickMethod::ButtonAreas,
+        ..TouchpadSettings::default()
+    };
+    let (touchpad, _, rewritten) = migrated_touchpad(serde_json::to_value(&configured).unwrap());
+    assert_eq!(touchpad, configured);
+    assert!(!rewritten);
 }
 
 #[test]

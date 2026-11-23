@@ -30,6 +30,13 @@ desktop inside it. The remaining area is black.
 
 This requires no Dart transform and no scaling of Flutter's finished image.
 
+## Pointer motion
+
+Relative pointer deltas from libinput (mice, touchpads) move the pointer in
+logical pixels, as in other Wayland compositors, and `zwp_relative_pointer_v1`
+reports them unchanged. The output scale does not slow the pointer down: at
+1.5x a touchpad stroke crosses the same share of the screen as at 1x.
+
 ## Native Wayland applications
 
 - Register `wp_fractional_scale_manager_v1`; `wp_viewporter` already exists.

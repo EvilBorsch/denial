@@ -280,10 +280,9 @@ pub(super) fn synchronize_settings(
                 expected_revision,
                 touchpad,
             } => {
-                let prepared = events
-                    .frontend()
-                    .settings
-                    .prepare_touchpad_update(expected_revision, touchpad);
+                let settings = &events.frontend().settings;
+                let touchpad = touchpad.applied_to(settings.touchpad());
+                let prepared = settings.prepare_touchpad_update(expected_revision, touchpad);
                 let result = match prepared {
                     Ok(prepared) => {
                         let previous = events.frontend().settings.touchpad().clone();
@@ -311,6 +310,9 @@ pub(super) fn synchronize_settings(
                                         scroll_speed_factor = next.scroll_speed_factor,
                                         scrolling_layout_swipe_speed_factor =
                                             next.scrolling_layout_swipe_speed_factor,
+                                        speed = next.speed,
+                                        acceleration = next.acceleration_enabled,
+                                        click_method = ?next.click_method,
                                         "applied persistent touchpad settings"
                                     );
                                     Ok(())
@@ -947,6 +949,9 @@ fn control_input_snapshot(
         "natural_scroll_enabled": touchpad.natural_scroll_enabled,
         "scroll_speed_factor": touchpad.scroll_speed_factor,
         "scrolling_layout_swipe_speed_factor": touchpad.scrolling_layout_swipe_speed_factor,
+        "touchpad_speed": touchpad.speed,
+        "touchpad_acceleration_enabled": touchpad.acceleration_enabled,
+        "touchpad_click_method": touchpad.click_method,
     }))
 }
 

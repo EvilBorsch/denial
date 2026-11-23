@@ -453,6 +453,7 @@ dependencies = [
  "drm-ffi",
  "flatbuffers",
  "futures-lite",
+ "input",
  "libc",
  "libloading 0.9.0",
  "png",

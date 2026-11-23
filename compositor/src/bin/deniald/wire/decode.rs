@@ -901,7 +901,7 @@ fn decode_settings_request(
             Ok(SettingsCommand::ConfigureTouchpad {
                 request_id,
                 expected_revision: request.expected_revision(),
-                touchpad: TouchpadSettings {
+                touchpad: ShellTouchpadConfiguration {
                     tap_to_click_enabled: touchpad.tap_to_click_enabled(),
                     natural_scroll_enabled: touchpad.natural_scroll_enabled(),
                     scroll_speed_factor: touchpad.scroll_speed_factor(),

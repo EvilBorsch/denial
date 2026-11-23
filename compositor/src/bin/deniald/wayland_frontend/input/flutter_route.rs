@@ -118,13 +118,14 @@ pub(super) fn process_flutter_input_event(
     match &event {
         InputEvent::PointerMotion { event: motion, .. } => {
             let flutter_captured = state.flutter_input.pointer_captured();
+            // Libinput's deltas move the pointer in logical pixels, as in other
+            // Wayland compositors: an output's scale decides how sharply the
+            // scene is drawn, not how far the pointer travels for a movement
+            // of the hand.
             let delta = motion.delta();
-            let delta_unaccel = motion.delta_unaccel();
             let (position, target, relative) = {
                 let frontend = state.frontend_mut();
                 frontend.set_pointer_cursor_visible(true);
-                let scale = frontend.atlas_scale.max(f64::EPSILON);
-                let delta = Point::from((delta.x / scale, delta.y / scale));
                 let position = frontend.clamp_pointer(frontend.pointer_location + delta);
                 let target =
                     if secure_locked || (flutter_captured && !frontend.clipboard_drag_active) {
@@ -136,7 +137,7 @@ pub(super) fn process_flutter_input_event(
                     };
                 let relative = RelativeMotionEvent {
                     delta,
-                    delta_unaccel: Point::from((delta_unaccel.x / scale, delta_unaccel.y / scale)),
+                    delta_unaccel: motion.delta_unaccel(),
                     time: motion.time(),
                 };
                 (position, target, relative)
@@ -851,14 +852,20 @@ pub(super) fn route_pointer_axis<E: PointerAxisEvent<LibinputInputBackend>>(
     let vertical =
         logical_axis_scroll_delta(source, vertical_amount, vertical_v120, scroll_speed_factor);
     let mut frame = AxisFrame::new(event.time()).source(source);
+    // Inverted under natural scrolling: clients that follow the hand rather
+    // than the content, such as sliders, read the physical direction.
     if horizontal != 0.0 {
-        frame = frame.value(Axis::Horizontal, horizontal);
+        frame = frame
+            .value(Axis::Horizontal, horizontal)
+            .relative_direction(Axis::Horizontal, event.relative_direction(Axis::Horizontal));
         if let Some(v120) = horizontal_v120 {
             frame = frame.v120(Axis::Horizontal, v120 as i32);
         }
     }
     if vertical != 0.0 {
-        frame = frame.value(Axis::Vertical, vertical);
+        frame = frame
+            .value(Axis::Vertical, vertical)
+            .relative_direction(Axis::Vertical, event.relative_direction(Axis::Vertical));
         if let Some(v120) = vertical_v120 {
             frame = frame.v120(Axis::Vertical, v120 as i32);
         }
