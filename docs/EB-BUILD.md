@@ -158,7 +158,8 @@ untouched v0.6.8: the three `cpu_scheduling` kernel tests (utilization clamp
 `EOPNOTSUPP` in the WSL kernel; a test re-executing its own binary, which
 qemu-user cannot) and the timing-sensitive
 `frame_deadline_source_tests::acquire_callback_removes_queued_deadline_source`.
-On `eb/mode-follow` 709 of 714 pass with the same 4 failing.
+On `eb/mode-follow` 709 of 714 pass with the same 4 failing. On `eb/power-tiles`
+735 of 740 pass with the same 4 failing.
 
 The portal's tests and the protocol's run the same way, the D-Bus ones on a
 private session bus:
@@ -335,7 +336,9 @@ On v0.6.8 this passes 188 tests and fails 12 that need Denial's engine
 (`left_app_test`, `session_power_test`, one of `phone_desk_test`, two of
 `mobile_connectivity_marks_test`); `eb/lockscreen-keyboard` passes 193 and
 `eb/compositor-inhibit-keyboard` 196, with the same 12 failing; `eb/mode-follow`
-223 with the same 12 failing, and `packages/denial_flutter_sdk` all 111.
+223 with the same 12 failing, and `packages/denial_flutter_sdk` all 111;
+`eb/integration` at `d2baa59` 244 and `eb/power-tiles` 256, with the same 12
+failing, and the SDK all 111.
 
 ## Another Denial release
 
