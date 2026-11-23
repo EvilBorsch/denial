@@ -340,6 +340,9 @@ class _DesktopOverviewHubState extends ConsumerState<DesktopOverviewHub>
             dragged: dragged,
             listing: listing,
             motion: motion,
+            // A closing overview may zoom into another screen than the one
+            // it opened on; the dimming fades instead of following it.
+            shown: interactive,
           ),
         ),
         Positioned.fromRect(
@@ -366,7 +369,7 @@ class _DesktopOverviewHubState extends ConsumerState<DesktopOverviewHub>
           child: IgnorePointer(
             ignoring: !interactive || !listing.searching,
             child: _Dropdown(
-              visible: listing.searching,
+              visible: interactive && listing.searching,
               child: DesktopSearchResultList(
                 listing: listing,
                 selected: searchSelected,
@@ -452,6 +455,7 @@ class _SearchVeils extends StatelessWidget {
     required this.dragged,
     required this.listing,
     required this.motion,
+    required this.shown,
   });
 
   final DesktopOverviewState overview;
@@ -459,6 +463,7 @@ class _SearchVeils extends StatelessWidget {
   final int? dragged;
   final DesktopSearchListing listing;
   final Animation<double> motion;
+  final bool shown;
 
   @override
   Widget build(BuildContext context) {
@@ -473,7 +478,7 @@ class _SearchVeils extends StatelessWidget {
     final scrim = context.shellColors.overviewScrim;
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     return TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: veils.isEmpty ? 0.0 : 1.0),
+      tween: Tween<double>(end: shown && veils.isNotEmpty ? 1.0 : 0.0),
       duration: reduceMotion ? Duration.zero : Motion.tile,
       curve: Motion.standard,
       builder: (context, strength, _) => CustomPaint(
