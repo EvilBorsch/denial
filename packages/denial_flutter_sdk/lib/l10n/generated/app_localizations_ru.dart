@@ -755,6 +755,21 @@ class AppLocalizationsRu extends AppLocalizations {
   String get desktopSearchApplications => 'Поиск приложений';
 
   @override
+  String get desktopSearchWindowsAndApplications => 'Поиск окон и приложений';
+
+  @override
+  String get desktopSearchWindowsSection => 'Окна';
+
+  @override
+  String get desktopSearchApplicationsSection => 'Приложения';
+
+  @override
+  String get desktopSearchNoResults => 'Ничего не найдено';
+
+  @override
+  String get desktopClearSearch => 'Очистить поиск';
+
+  @override
   String get desktopSystemProfile => 'Профиль системы';
 
   @override

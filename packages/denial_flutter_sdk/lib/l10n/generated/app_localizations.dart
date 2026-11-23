@@ -1372,6 +1372,36 @@ abstract class AppLocalizations {
   /// **'Search applications'**
   String get desktopSearchApplications;
 
+  /// Placeholder and accessible label of the shell's search field, in the screens overview and the search over the desktop (Alt+F): it finds open windows by app and title, and apps to start.
+  ///
+  /// In en, this message translates to:
+  /// **'Search windows and apps'**
+  String get desktopSearchWindowsAndApplications;
+
+  /// Heading of the open windows among the shell search's results.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows'**
+  String get desktopSearchWindowsSection;
+
+  /// Heading of the apps to start among the shell search's results.
+  ///
+  /// In en, this message translates to:
+  /// **'Apps'**
+  String get desktopSearchApplicationsSection;
+
+  /// The shell search found no window and no app for what was typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing found'**
+  String get desktopSearchNoResults;
+
+  /// Accessible label of the button that empties the shell's search field.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear search'**
+  String get desktopClearSearch;
+
   /// English UI text for desktopSystemProfile.
   ///
   /// In en, this message translates to:

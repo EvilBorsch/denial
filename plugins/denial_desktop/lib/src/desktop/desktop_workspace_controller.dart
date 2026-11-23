@@ -512,6 +512,9 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
             items: overviewItems,
             bounds: nextOverview.bounds,
             mostRecentFirst: nextOverview.appWindows != null,
+            labelExtent: nextOverview.appWindows != null
+                ? DesktopOverviewLayout.titleExtent
+                : 0.0,
           ),
         );
         for (final placement in next.values) {
@@ -640,10 +643,12 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
             z: placement.z,
           ),
     ];
+    // The app windows name every window under it.
     final frames = DesktopOverviewLayout.arrange(
       items: items,
       bounds: bounds,
       mostRecentFirst: appWindows != null,
+      labelExtent: appWindows != null ? DesktopOverviewLayout.titleExtent : 0.0,
     );
     if (frames.isEmpty) {
       return;

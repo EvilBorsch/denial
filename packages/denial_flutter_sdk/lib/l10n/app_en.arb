@@ -1022,6 +1022,26 @@
   "@desktopSearchApplications": {
     "description": "English UI text for desktopSearchApplications."
   },
+  "desktopSearchWindowsAndApplications": "Search windows and apps",
+  "@desktopSearchWindowsAndApplications": {
+    "description": "Placeholder and accessible label of the shell's search field, in the screens overview and the search over the desktop (Alt+F): it finds open windows by app and title, and apps to start."
+  },
+  "desktopSearchWindowsSection": "Windows",
+  "@desktopSearchWindowsSection": {
+    "description": "Heading of the open windows among the shell search's results."
+  },
+  "desktopSearchApplicationsSection": "Apps",
+  "@desktopSearchApplicationsSection": {
+    "description": "Heading of the apps to start among the shell search's results."
+  },
+  "desktopSearchNoResults": "Nothing found",
+  "@desktopSearchNoResults": {
+    "description": "The shell search found no window and no app for what was typed."
+  },
+  "desktopClearSearch": "Clear search",
+  "@desktopClearSearch": {
+    "description": "Accessible label of the button that empties the shell's search field."
+  },
   "desktopSystemProfile": "System profile",
   "@desktopSystemProfile": {
     "description": "English UI text for desktopSystemProfile."

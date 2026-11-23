@@ -23,6 +23,7 @@ import '../state/desktop_window_switcher.dart';
 import '../state/quick_settings.dart';
 import '../widgets/shell_frame_time_overlay.dart';
 import 'desktop_overview_keyboard.dart';
+import 'desktop_overview_hub.dart';
 import 'desktop_overview_layout.dart';
 import 'desktop_overview_motion.dart';
 import 'desktop_overview_target.dart';
@@ -33,6 +34,7 @@ import '../color_tuning/color_tuning_controller.dart';
 import 'desktop_scene.dart';
 import 'desktop_scene_selection.dart';
 import 'desktop_screens_overview_layout.dart';
+import 'desktop_shell_search.dart';
 import 'desktop_window_coordinator.dart';
 import 'desktop_workspace.dart';
 import 'system_tray_module.dart';
@@ -180,7 +182,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         // The eb18 contract; the tracks that implement them handle them.
         break;
       case DenialShellAction.search:
-        break;
+        _toggleSearch(event.monitorId);
       case DenialShellAction.shellGesture:
         if (event.gesture case final gesture?) {
           _cancelWindowSwitcher();
@@ -460,6 +462,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   /// nothing to show.
   bool _openOverview(int? preferredMonitorId) {
     ref.read(clipboardTrayProvider.notifier).close();
+    ref.read(desktopSearchOverlayProvider.notifier).close();
     _panelHoverController.reset();
     _applicationSearchFocusNode.unfocus();
 
@@ -498,7 +501,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       _cancelPendingWorkspaceRequest();
       workspace.openScreensOverview(
         monitorId: target.monitorId,
-        bounds: target.bounds,
+        // The band above the cards holds the search field.
+        bounds: DesktopOverviewHubMetrics.contentBounds(target.bounds),
         backgroundBounds: target.backgroundBounds,
         viewport: target.workArea,
         selectedObjectId: shellState.deskForegroundObjectId,
@@ -544,6 +548,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       return false;
     }
     ref.read(clipboardTrayProvider.notifier).close();
+    ref.read(desktopSearchOverlayProvider.notifier).close();
     _panelHoverController.reset();
     _applicationSearchFocusNode.unfocus();
     final shellState = ref.read(referenceShellProvider);
@@ -583,13 +588,50 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     workspace.closePanels();
     workspace.toggleOverview(
       monitorId: target.monitorId,
-      bounds: target.bounds,
+      // The band above the windows names their app.
+      bounds: DesktopOverviewHubMetrics.contentBounds(target.bounds),
       backgroundBounds: target.backgroundBounds,
       objectIds: appWindows,
       selectedObjectId: focusedId,
       appWindows: focused.appId,
     );
     return ref.read(desktopWorkspaceProvider).overviewActive;
+  }
+
+  /// The search key: the search over the desktop, opened on [monitorId]'s
+  /// output, or closed again. In the hub of the full-screen apps layout it
+  /// puts the keyboard into the overview's own search field instead.
+  void _toggleSearch(int? monitorId) {
+    final shell = ref.read(referenceShellProvider);
+    if (shell.locked) {
+      return;
+    }
+    final workspace = ref.read(desktopWorkspaceProvider);
+    if (desktopOverviewIsHub(workspace.overview)) {
+      ref.read(desktopOverviewSearchFocusProvider.notifier).request();
+      return;
+    }
+    final search = ref.read(desktopSearchOverlayProvider.notifier);
+    if (ref.read(desktopSearchOverlayProvider) != null) {
+      search.close();
+      return;
+    }
+    _cancelWindowSwitcher();
+    _overviewGestures.interrupt();
+    if (workspace.overviewActive) {
+      _dismissOverview();
+    }
+    _closePanels();
+    ref.read(clipboardTrayProvider.notifier).close();
+    final foreground = shell.deskForegroundObjectId == null
+        ? null
+        : shell.desk.openAppWindowsByObjectId[shell.deskForegroundObjectId];
+    search.open(
+      monitorId ??
+          foreground?.monitorId ??
+          ref.read(deskDisplayLayoutProvider)?.mainOutput?.monitorId ??
+          0,
+    );
   }
 
   void _moveOverviewSelection(DesktopOverviewDirection direction) {
@@ -707,6 +749,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   void _openLauncher() {
     if (ref.read(desktopLauncherProvider) == null) return;
     ref.read(clipboardTrayProvider.notifier).close();
+    ref.read(desktopSearchOverlayProvider.notifier).close();
     final workspace = ref.read(desktopWorkspaceProvider);
     if (!workspace.overviewActive && !workspace.launcherOpen) {
       _panelHoverController.beginOpening();
@@ -739,6 +782,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
 
   void _openDashboard() {
     ref.read(clipboardTrayProvider.notifier).close();
+    ref.read(desktopSearchOverlayProvider.notifier).close();
     final workspace = ref.read(desktopWorkspaceProvider);
     if (!workspace.overviewActive && !workspace.dashboardOpen) {
       _panelHoverController.beginOpening();
@@ -1181,7 +1225,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         color: context.shellColors.background,
         child: LayoutBuilder(
           builder: (context, constraints) => DesktopOverviewKeyboard(
-            active: desktop.overviewActive,
+            // The hub's search field takes the overview's keys itself.
+            active:
+                desktop.overviewActive &&
+                !desktopOverviewIsHub(desktop.overview),
             onNavigate: _moveOverviewSelection,
             onActivate: _activateOverviewSelection,
             onDismiss: _dismissOverview,
@@ -1222,6 +1269,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                   .closeWindow,
               onOverviewBarrierTap: _handleOverviewBarrierTap,
               onSelectOverviewWorkspace: _selectOverviewWorkspace,
+              onDismissOverview: _dismissOverview,
+              onNavigateOverview: _moveOverviewSelection,
+              onActivateOverviewSelection: _activateOverviewSelection,
               onExpandScreenStack: ref
                   .read(desktopWorkspaceProvider.notifier)
                   .expandScreenStack,

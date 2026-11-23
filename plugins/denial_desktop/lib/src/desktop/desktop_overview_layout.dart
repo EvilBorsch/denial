@@ -35,6 +35,9 @@ abstract final class DesktopOverviewLayout {
   static const double minimumPreviewWidth = 160.0;
   static const double minimumPreviewHeight = 90.0;
 
+  /// Room under each window of the app windows view for its title.
+  static const double titleExtent = 36.0;
+
   static bool isUsefulPreview(Rect frame) {
     return frame.width >= minimumPreviewWidth &&
         frame.height >= minimumPreviewHeight;
@@ -42,10 +45,13 @@ abstract final class DesktopOverviewLayout {
 
   /// [mostRecentFirst] reads the windows from the most recently focused
   /// (highest z) instead of keeping their places on the desktop.
+  /// [labelExtent] keeps that much room free under every window, for a
+  /// label.
   static Map<int, Rect> arrange({
     required List<DesktopOverviewItem> items,
     required Rect bounds,
     bool mostRecentFirst = false,
+    double labelExtent = 0.0,
   }) {
     final usefulItems = items
         .where((item) => isUsefulPreview(item.frame))
@@ -73,7 +79,7 @@ abstract final class DesktopOverviewLayout {
     _OverviewCandidate? best;
     for (var rowCount = 1; rowCount <= ordered.length; rowCount += 1) {
       final rows = _partitionRows(ordered, rowCount);
-      final candidate = _layoutRows(rows, available);
+      final candidate = _layoutRows(rows, available, labelExtent);
       if (candidate != null && (best == null || candidate.score > best.score)) {
         best = candidate;
       }
@@ -153,9 +159,11 @@ abstract final class DesktopOverviewLayout {
   static _OverviewCandidate? _layoutRows(
     List<List<DesktopOverviewItem>> rows,
     Rect available,
+    double labelExtent,
   ) {
-    final verticalGaps = gap * math.max(0, rows.length - 1);
-    final heightForWindows = available.height - verticalGaps;
+    final rowGap = gap + labelExtent;
+    final verticalGaps = rowGap * math.max(0, rows.length - 1);
+    final heightForWindows = available.height - verticalGaps - labelExtent;
     if (heightForWindows <= 0.0) {
       return null;
     }
@@ -206,7 +214,8 @@ abstract final class DesktopOverviewLayout {
     ];
     final layoutHeight =
         rowHeights.fold<double>(0.0, (sum, height) => sum + height) +
-        verticalGaps;
+        verticalGaps +
+        labelExtent;
 
     final frames = <int, Rect>{};
     var occupiedArea = 0.0;
@@ -249,7 +258,7 @@ abstract final class DesktopOverviewLayout {
       }
       minimumHeight = math.min(minimumHeight, height);
       maximumHeight = math.max(maximumHeight, height);
-      top += height + gap;
+      top += height + rowGap;
     }
 
     final balance = maximumHeight <= 0.0

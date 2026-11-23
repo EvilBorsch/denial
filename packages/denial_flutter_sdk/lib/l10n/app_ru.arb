@@ -1048,6 +1048,26 @@
   "@desktopSearchApplications": {
     "description": "English UI text for desktopSearchApplications."
   },
+  "desktopSearchWindowsAndApplications": "Поиск окон и приложений",
+  "@desktopSearchWindowsAndApplications": {
+    "description": "Placeholder and accessible label of the shell's search field, in the screens overview and the search over the desktop (Alt+F): it finds open windows by app and title, and apps to start."
+  },
+  "desktopSearchWindowsSection": "Окна",
+  "@desktopSearchWindowsSection": {
+    "description": "Heading of the open windows among the shell search's results."
+  },
+  "desktopSearchApplicationsSection": "Приложения",
+  "@desktopSearchApplicationsSection": {
+    "description": "Heading of the apps to start among the shell search's results."
+  },
+  "desktopSearchNoResults": "Ничего не найдено",
+  "@desktopSearchNoResults": {
+    "description": "The shell search found no window and no app for what was typed."
+  },
+  "desktopClearSearch": "Очистить поиск",
+  "@desktopClearSearch": {
+    "description": "Accessible label of the button that empties the shell's search field."
+  },
   "desktopSystemProfile": "Профиль системы",
   "@desktopSystemProfile": {
     "description": "English UI text for desktopSystemProfile."

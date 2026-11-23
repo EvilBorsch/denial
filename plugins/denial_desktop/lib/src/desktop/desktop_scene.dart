@@ -30,10 +30,12 @@ import 'desktop_covered_outputs.dart';
 import 'desktop_held_layers.dart';
 import 'desktop_home_layout.dart';
 import 'desktop_minimize_layer_handoff.dart';
+import 'desktop_overview_hub.dart';
 import 'desktop_overview_motion.dart';
 import 'desktop_panel_overlay.dart';
 import 'desktop_pixel_alignment.dart';
 import 'desktop_scene_layers.dart';
+import 'desktop_search_overlay.dart';
 import 'desktop_window_frame.dart';
 import 'desktop_window_layers.dart';
 import 'desktop_window_switcher_bounds.dart';
@@ -295,6 +297,9 @@ class DesktopScene extends ConsumerStatefulWidget {
     required this.onCloseWindow,
     required this.onOverviewBarrierTap,
     required this.onSelectOverviewWorkspace,
+    required this.onDismissOverview,
+    required this.onNavigateOverview,
+    required this.onActivateOverviewSelection,
     this.onExpandScreenStack,
     required this.onBeginOverviewDrag,
     required this.onUpdateOverviewDrag,
@@ -335,6 +340,12 @@ class DesktopScene extends ConsumerStatefulWidget {
   final ValueChanged<DenialWindow> onCloseWindow;
   final ValueChanged<Offset> onOverviewBarrierTap;
   final void Function(int monitorId, int workspaceId) onSelectOverviewWorkspace;
+
+  /// The overview's own keys, which its search field takes while it is the
+  /// hub of the full-screen apps layout.
+  final VoidCallback onDismissOverview;
+  final ValueChanged<DesktopOverviewDirection> onNavigateOverview;
+  final VoidCallback onActivateOverviewSelection;
 
   /// Spreads a stack of the screens overview into a card for each screen.
   final ValueChanged<String>? onExpandScreenStack;
@@ -961,11 +972,17 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                 key: const ValueKey<String>('desktop-overview-input-layer'),
                 active: desktop.overviewActive,
                 onBarrierTap: onOverviewBarrierTap,
-                decoration: DesktopWorkspaceOverviewDeck(
-                  desktop: desktop,
-                  motion: overviewMotion,
-                  onSelectWorkspace: widget.onSelectOverviewWorkspace,
-                  onExpandScreenStack: widget.onExpandScreenStack,
+                decoration: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    const DesktopOverviewBackdrop(),
+                    DesktopWorkspaceOverviewDeck(
+                      desktop: desktop,
+                      motion: overviewMotion,
+                      onSelectWorkspace: widget.onSelectOverviewWorkspace,
+                      onExpandScreenStack: widget.onExpandScreenStack,
+                    ),
+                  ],
                 ),
                 foregroundControls: <Widget>[
                   surfacePlane(ShellSurfaceLayer.desktopControls),
@@ -1021,6 +1038,16 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                   ),
                 ),
               ),
+              Positioned.fill(
+                child: DesktopOverviewHub(
+                  onActivateWindow: onActivateWindow,
+                  onLaunchApplication: onLaunchApp,
+                  onLaunchLocalApplication: onLaunchLocalApp,
+                  onDismiss: widget.onDismissOverview,
+                  onNavigate: widget.onNavigateOverview,
+                  onActivateSelection: widget.onActivateOverviewSelection,
+                ),
+              ),
               for (final closing in _closingWindows.values)
                 Positioned.fromRect(
                   key: ValueKey<String>('desktop-closing-window-${closing.id}'),
@@ -1057,6 +1084,15 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                 onPanelOpened: widget.onPanelOpened,
                 onLaunchApp: onLaunchApp,
                 onLaunchLocalApp: onLaunchLocalApp,
+              ),
+              Positioned.fill(
+                child: DesktopSearchOverlay(
+                  viewSize: viewSize,
+                  displayLayout: displayLayout,
+                  onActivateWindow: onActivateWindow,
+                  onLaunchApplication: onLaunchApp,
+                  onLaunchLocalApplication: onLaunchLocalApp,
+                ),
               ),
               for (final popup in popupSurfaces)
                 if (popup.geometry case final geometry?)
