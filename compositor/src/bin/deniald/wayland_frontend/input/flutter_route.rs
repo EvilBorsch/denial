@@ -1323,6 +1323,11 @@ fn begin_middle_drag(
         serial,
         Focus::Keep,
     );
+    // As any press does: the window under it becomes the active one, for
+    // the click as for a drag.
+    if activate_client_route(state, route, serial) {
+        state.scene_sync.mark_dirty();
+    }
     true
 }
 
