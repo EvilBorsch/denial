@@ -7181,6 +7181,28 @@
       }
     }
   },
+  "recentsSplitWith": "Рядом с {app}",
+  "@recentsSplitWith": {
+    "description": "Tablet recents: label of the screen sides a long-pressed card is dropped on to share the screen with the app in front (Split View).",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "splitViewDivider": "Ширина приложений рядом",
+  "@splitViewDivider": {
+    "description": "Accessibility label of the divider between two apps side by side (Split View) on the tablet."
+  },
+  "splitViewHandle": "Переместить {app}",
+  "@splitViewHandle": {
+    "description": "Accessibility label of the handle on top of an app side by side with another (Split View) on the tablet.",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
   "setupWelcome": "Добро пожаловать",
   "@setupWelcome": {
     "description": "First-boot setup: title of the language step."

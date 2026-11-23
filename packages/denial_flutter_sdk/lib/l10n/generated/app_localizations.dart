@@ -9510,6 +9510,24 @@ abstract class AppLocalizations {
   /// **'Close all {count} windows of {app}'**
   String recentsCloseAppWindows(String app, int count);
 
+  /// Tablet recents: label of the screen sides a long-pressed card is dropped on to share the screen with the app in front (Split View).
+  ///
+  /// In en, this message translates to:
+  /// **'Side by side with {app}'**
+  String recentsSplitWith(String app);
+
+  /// Accessibility label of the divider between two apps side by side (Split View) on the tablet.
+  ///
+  /// In en, this message translates to:
+  /// **'Width of the apps side by side'**
+  String get splitViewDivider;
+
+  /// Accessibility label of the handle on top of an app side by side with another (Split View) on the tablet.
+  ///
+  /// In en, this message translates to:
+  /// **'Move {app}'**
+  String splitViewHandle(String app);
+
   /// First-boot setup: title of the language step.
   ///
   /// In en, this message translates to:

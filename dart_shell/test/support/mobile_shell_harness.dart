@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:denial_desktop/src/state/reference_shell_controller.dart';
+import 'package:denial_flutter_sdk/applications.dart';
 import 'package:denial_flutter_sdk/environment.dart';
 import 'package:denial_flutter_sdk/input.dart' show InputLayoutSnapshot;
 import 'package:denial_flutter_sdk/models.dart';
 import 'package:denial_flutter_sdk/platform.dart';
 import 'package:denial_flutter_sdk/state.dart';
+import 'package:denial_flutter_sdk/system_services.dart'
+    show HapticsService, hapticsServiceProvider;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -24,6 +27,8 @@ DenialWindow phoneWindow(
   Rect? geometry,
   bool minimized = false,
   bool texture = true,
+  int? splitPartner,
+  double splitRatio = 0,
 }) {
   final frame = geometry ?? const Rect.fromLTWH(0, 48, 1357, 912);
   return DenialWindow(
@@ -52,6 +57,45 @@ DenialWindow phoneWindow(
     transform: 0,
     scale120: 120,
     minimized: minimized,
+    splitViewPartnerObjectId: splitPartner,
+    splitViewRatio: splitRatio,
+  );
+}
+
+/// Windows [left] and [right] (ids, app ids) side by side in Split View
+/// on the tablet, the left one taking [share]: their halves as deniald
+/// configures them, with its 10 px gap.
+(DenialWindow, DenialWindow) splitWindows(
+  (int, String) left,
+  (int, String) right, {
+  double share = 0.5,
+  bool texture = true,
+}) {
+  const width = 1357.0;
+  const gap = 10.0;
+  final leftWidth = ((width - gap) * share).roundToDouble();
+  return (
+    phoneWindow(
+      left.$1,
+      left.$2,
+      geometry: Rect.fromLTWH(0, 48, leftWidth, 912),
+      splitPartner: right.$1,
+      splitRatio: share,
+      texture: texture,
+    ),
+    phoneWindow(
+      right.$1,
+      right.$2,
+      geometry: Rect.fromLTWH(
+        leftWidth + gap,
+        48,
+        width - leftWidth - gap,
+        912,
+      ),
+      splitPartner: left.$1,
+      splitRatio: share,
+      texture: texture,
+    ),
   );
 }
 
@@ -114,8 +158,32 @@ class MobileShellBridge extends DenialBridge {
   void minimizeWindow(DenialWindow window) =>
       requests.add('minimize ${window.objectId}');
 
+  /// The input layouts the shell published, the last one last.
+  final inputLayouts = <InputLayoutSnapshot>[];
+
   @override
-  bool publishInputLayout(InputLayoutSnapshot snapshot) => true;
+  bool publishInputLayout(InputLayoutSnapshot snapshot) {
+    inputLayouts.add(snapshot);
+    return true;
+  }
+
+  @override
+  void splitView(
+    DenialWindow window,
+    DenialWindow target, {
+    required bool windowOnLeft,
+    required double ratio,
+  }) => requests.add(
+    'split ${window.objectId} ${target.objectId} '
+    '${windowOnLeft ? 'left' : 'right'} ${ratio.toStringAsFixed(3)}',
+  );
+
+  @override
+  void leaveSplitView(DenialWindow window) =>
+      requests.add('leave split ${window.objectId}');
+
+  @override
+  void prewarmHaptics() {}
 
   @override
   void dispose() {
@@ -135,6 +203,10 @@ class MobileShellHarness {
         denialBridgeProvider.overrideWithValue(bridge),
         startupEnvironmentProvider.overrideWithValue(
           StartupEnvironment(const {'DENIAL_SHELL_PROFILE': 'mobile'}),
+        ),
+        homeGridControllerProvider.overrideWith(_NoApps.new),
+        hapticsServiceProvider.overrideWith(
+          (ref) => _QuietHaptics(ref.watch(denialBridgeProvider)),
         ),
       ],
     );
@@ -163,6 +235,7 @@ class MobileShellHarness {
   /// Ends a test: the fake bridge answers no platform request, so dispose
   /// and let the requests time out.
   Future<void> finish(WidgetTester tester) async {
+    await tester.pumpWidget(const SizedBox.shrink());
     dispose();
     await tester.pump(const Duration(seconds: 5));
   }
@@ -175,4 +248,21 @@ class MobileShellHarness {
     container.dispose();
     bridge.dispose();
   }
+}
+
+/// Home with no apps: windows have no home app.
+class _NoApps extends HomeGridController {
+  @override
+  Future<HomeGridState> build() async =>
+      HomeGridState(slots: const <HomeGridItem?>[]);
+}
+
+class _QuietHaptics extends HapticsService {
+  _QuietHaptics(super.bridge);
+
+  @override
+  void prewarm() {}
+
+  @override
+  void pulse() {}
 }

@@ -5076,6 +5076,19 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String recentsSplitWith(String app) {
+    return '与 $app 并排';
+  }
+
+  @override
+  String get splitViewDivider => '并排应用的宽度';
+
+  @override
+  String splitViewHandle(String app) {
+    return '移动$app';
+  }
+
+  @override
   String get setupWelcome => '欢迎';
 
   @override

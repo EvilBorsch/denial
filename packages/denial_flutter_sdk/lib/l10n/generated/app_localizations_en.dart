@@ -5331,6 +5331,19 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String recentsSplitWith(String app) {
+    return 'Side by side with $app';
+  }
+
+  @override
+  String get splitViewDivider => 'Width of the apps side by side';
+
+  @override
+  String splitViewHandle(String app) {
+    return 'Move $app';
+  }
+
+  @override
   String get setupWelcome => 'Welcome';
 
   @override

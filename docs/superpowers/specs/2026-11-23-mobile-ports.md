@@ -133,52 +133,61 @@ handles and Recents.
 - `WindowRequestKind.SplitView = 14`: `window_id` and `target_window_id`
   become a pair; `screen_side` 0 puts `window_id` on the left, 1 on the
   right; the new `WindowRequest.split_ratio` is the left window's share
-  (snapped by the shell to 1/3, 1/2 or 2/3). Sent again for a pair, it
-  changes the share or swaps the sides. A window in another pair leaves it
-  first.
+  (the shell sends 1/3, 1/2 or 2/3). Sent again for a pair, it changes the
+  share or swaps the sides. A window in another pair leaves it first.
 - `WindowRequestKind.LeaveSplitView = 15`: `window_id`'s pair dissolves;
   both windows fill the screen again.
 - `Window.split_view_partner_id` (object id of the other window, 0 when
   none) and `Window.split_view_ratio` (the left share; 0 when none).
 - An older deniald rejects the unknown request kinds as malformed input
-  for that request only (the shell never sends them unless deniald
-  published a split); an older shell ignores the new fields.
+  for that request only; a newer shell sends them only from Split View's
+  controls, which appear only once deniald publishes a pair's fields
+  (the Recents drop is the exception: against an older deniald its pair
+  never forms, and after a second Recents opens the card alone). An older
+  shell ignores the new fields. Nothing about pairs is persisted.
 
 ### Behaviour
 
-- **Entering, from Recents.** Long press a card: it lifts (haptic tick),
-  and the screen's left and right halves become drop zones labelled "Split
-  with <app in front>". Drag the card into one and release: the card's
-  window takes that side, the app that was in front the other, at 1/2, and
-  Recents closes on the pair. Released elsewhere, the card settles back.
-  Without an app in front (Recents opened from home) or on the front app's
-  own card there is no one to split with and the long press does nothing
-  but the lift.
-- **The divider** is a dark bar between the windows with a grab handle;
-  its touch zone is 44 px wide. Dragging it, both windows are covered by
-  their app icon on glass (as on iPadOS, the apps do not resize under the
-  finger) and the bar follows the finger. Released, it snaps to the nearest
-  of 1/3, 1/2 and 2/3; dragged within 12% of an edge, the window on that
-  side leaves the split and the other fills the screen. The covers fade out
-  once both windows have their new size.
-- **The handle** at the top of each half (a short bar in the status strip,
-  44 px touch zone): dragging it moves that window with the finger,
-  scaled down. Released over the other half, the two swap sides. Pulled
-  down more than a quarter of the screen and released, the window leaves the
-  split and fills the screen in front; the other goes to Recents. Otherwise
-  it settles back.
-- **Closing one side:** when either window closes (the app quits, or its
-  card is flung in Recents), the other fills the screen.
-- **Recents and switching:** a pair is one card, both windows drawn at
-  their place; tapping it brings the pair back, flinging it closes both,
-  and the pill moves between it and other apps like any app. Going home
-  minimizes both, as leaving any app does; bringing one back restores its
-  partner too.
-- **Focus:** the window touched last has the keyboard focus; the other
-  keeps running and drawing.
+- **A pair is one card.** In Recents and for the home pill's quick
+  switch, the two windows share one card (held by the window with the
+  lower object id), drawn side by side on the divider's dark bar, and
+  labelled with both apps, left first. Tapping it brings the pair back
+  with the app touched last in front; flinging it closes both; it is never
+  grouped with other cards of its apps.
+- **Entering, from Recents.** Long press a card: it lifts (haptic tick)
+  and follows the finger, and the screen's left and right edges (30% of
+  the width each) become drop zones labelled "Side by side with <app in
+  front>". Released over one, the card's window takes that side and the
+  app that was in front the other, at 1/2; Recents opens on the pair once
+  deniald has made it (or opens the card alone after a second). Released
+  elsewhere, the card settles back. The front app's own card, and every
+  card when Recents was opened from home or beside a desk, has no lift: a
+  long press stays a tap.
+- **The divider** is the dark gap between the windows with a grab bar;
+  its touch zone is 44 px wide. Dragging it, both apps are covered by
+  their icons (as on iPadOS, the apps do not resize under the finger) and
+  the bar follows the finger. Released, it rests at the nearest of 1/3,
+  1/2 and 2/3 (a fling carries it on); dragged within 12% of an edge, the
+  app on that side leaves the pair and the other fills the screen. The
+  covers go once both apps have drawn their new widths, or after 0.7 s.
+- **The handle** at the top of each half (a short bar just below the
+  status bar, 96x36 px touch zone): dragging it lifts that app, which
+  follows the finger, a little smaller. Released with its middle over the
+  other half, the two swap sides, each keeping its width. Pulled down more
+  than a quarter of the screen, it leaves the pair and fills the screen in
+  front; the other app leaves the screen as an app left for another does
+  (minimized, still in Recents). Otherwise it settles back.
+- **Closing one side:** when either window closes (the app quits),
+  deniald gives the other the whole screen.
+- **Leaving and coming back:** going home or to another app minimizes
+  both (deniald minimizes a pair as one); bringing either back restores
+  both.
+- **Focus:** a touch on either app gives it the keyboard; the other is
+  not minimized and keeps drawing.
 - **Fullscreen:** a split window that asks for fullscreen (a video) fills
-  the screen while it is fullscreen; the pair resumes when it leaves
-  fullscreen.
+  the screen while it is fullscreen; the pair resumes after.
+- **Touches:** both windows take touches in their halves, dialogs over
+  them above them; the divider and the handles are the shell's.
 
 ## Left out, and why
 

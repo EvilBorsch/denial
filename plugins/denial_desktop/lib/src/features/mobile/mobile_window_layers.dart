@@ -1,17 +1,41 @@
 import 'package:denial_desktop/src/state/reference_shell_controller.dart';
 import 'package:denial_desktop/src/state/reference_shell_presentation.dart';
 
+import 'package:denial_flutter_sdk/models.dart' show DenialWindow;
 import 'package:denial_flutter_sdk/rendering.dart' show FrostedBackdrop;
+import 'package:denial_flutter_sdk/system_services.dart'
+    show hapticsServiceProvider;
 
 import '../../widgets/overview/app_deck_layer.dart';
 import '../../widgets/shade/shade_progress.dart';
 
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart'
+    show ValueListenable, immutable, listEquals;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'mobile_primary_window_stage.dart';
+import 'mobile_split_stage.dart';
 import '../../state/phone_desk.dart';
+import '../../state/split_view.dart';
+
+/// The Split View pair in front and the windows of its card, back to front.
+@immutable
+class _SplitScene {
+  const _SplitScene(this.pair, this.windows);
+
+  final SplitPair pair;
+  final List<DenialWindow> windows;
+
+  @override
+  bool operator ==(Object other) =>
+      other is _SplitScene &&
+      other.pair == pair &&
+      listEquals(other.windows, windows);
+
+  @override
+  int get hashCode => Object.hash(pair, Object.hashAll(windows));
+}
 
 /// The app in front at rest. While the deck presents, it draws the apps.
 class MobilePrimaryWindowLayer extends ConsumerWidget {
@@ -30,6 +54,15 @@ class MobilePrimaryWindowLayer extends ConsumerWidget {
     );
     final window = visual.window;
     if (window == null) return const SizedBox.shrink();
+    final split = ref.watch(
+      referenceShellProvider.select((state) {
+        final pair = state.primarySplit;
+        final card = state.deckAppOf(pair?.left.objectId);
+        return pair == null || card == null
+            ? null
+            : _SplitScene(pair, state.deckCardWindows(card));
+      }),
+    );
     final deck = ref.read(referenceShellProvider.notifier).deck;
     final topInset = ref.watch(mobilePresentationTopInsetProvider);
     // The shade's frosted glass hides the app completely once established.
@@ -54,11 +87,18 @@ class MobilePrimaryWindowLayer extends ConsumerWidget {
           ),
           child: Padding(
             padding: EdgeInsets.only(top: topInset),
-            child: MobilePrimaryWindowStage(
-              currentWindow: window,
-              behind: visual.behind,
-              opacity: hidden ? 0.0 : 1.0,
-            ),
+            child: split != null
+                ? MobileSplitStage(
+                    pair: split.pair,
+                    windows: split.windows,
+                    foreground: window.objectId,
+                    opacity: hidden ? 0.0 : 1.0,
+                  )
+                : MobilePrimaryWindowStage(
+                    currentWindow: window,
+                    behind: visual.behind,
+                    opacity: hidden ? 0.0 : 1.0,
+                  ),
           ),
         );
       },
@@ -104,6 +144,10 @@ class MobileAppDeckLayer extends ConsumerWidget {
       onDismissWindow: controller.dismissFromRecents,
       onOpenWindow: controller.openFromRecents,
       onMoveWindowToDesk: deskBeside ? controller.moveToDesk : null,
+      // Split View is the phone's alone: beside a desk apps go there.
+      splitTargetOf: deskBeside ? null : controller.splitTargetFor,
+      onSplit: deskBeside ? null : controller.splitWithFront,
+      onLift: () => ref.read(hapticsServiceProvider).pulse(),
     );
   }
 }

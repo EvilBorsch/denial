@@ -11,11 +11,13 @@ import '../../launcher/window_application.dart';
 
 /// The app icon and name above a card, aligned to its start edge. With
 /// [showsTitle], for an app with several windows in Recents, the window's
-/// title under the name tells its cards apart.
+/// title under the name tells its cards apart. A Split View pair's card
+/// names both apps, left first.
 class OverviewCardLabel extends ConsumerWidget {
   const OverviewCardLabel({
     super.key,
     required this.window,
+    this.partner,
     this.trailingSpace = 0,
     this.showsTitle = false,
   });
@@ -26,6 +28,9 @@ class OverviewCardLabel extends ConsumerWidget {
 
   final DenialWindow window;
 
+  /// The app [window] shares the screen with in Split View.
+  final DenialWindow? partner;
+
   /// Room kept free at the end of the row, for a button over it.
   final double trailingSpace;
 
@@ -34,6 +39,15 @@ class OverviewCardLabel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final partner = this.partner;
+    if (partner != null) {
+      final first = window.geometryX <= partner.geometryX;
+      return _PairLabel(
+        left: first ? window : partner,
+        right: first ? partner : window,
+        trailingSpace: trailingSpace,
+      );
+    }
     final application = ref.watch(windowApplicationProvider(window.appId));
     final colors = context.shellColors;
     final icon = application.icon;
@@ -91,6 +105,76 @@ class OverviewCardLabel extends ConsumerWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// The two apps of a Split View pair above their card: each icon and name,
+/// left first.
+class _PairLabel extends ConsumerWidget {
+  const _PairLabel({
+    required this.left,
+    required this.right,
+    required this.trailingSpace,
+  });
+
+  final DenialWindow left;
+  final DenialWindow right;
+  final double trailingSpace;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = context.shellColors;
+    Widget app(DenialWindow window) {
+      final application = ref.watch(windowApplicationProvider(window.appId));
+      final icon = application.icon;
+      return Flexible(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox.square(
+              dimension: OverviewCardLabel.iconSize,
+              child: icon != null
+                  ? FittedBox(child: Icon(icon, color: colors.textPrimary))
+                  : AppIconImage(iconPath: application.iconPath),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                application.name ?? localizedWindowTitle(context, window),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: colors.textPrimary,
+                  fontSize: 17,
+                  height: 1,
+                  letterSpacing: 0,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: OverviewCardLabel.height,
+      child: Row(
+        children: [
+          app(left),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: SizedBox(
+              width: 1.5,
+              height: 24,
+              child: ColoredBox(color: colors.textSecondary),
+            ),
+          ),
+          app(right),
+          if (trailingSpace > 0) SizedBox(width: trailingSpace),
+        ],
+      ),
     );
   }
 }
