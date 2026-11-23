@@ -5081,7 +5081,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get splitViewDivider => '并排应用的宽度';
+  String get splitViewDivider => '应用之间的分隔条';
 
   @override
   String splitViewHandle(String app) {

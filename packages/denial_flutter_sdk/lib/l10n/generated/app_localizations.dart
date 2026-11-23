@@ -9519,7 +9519,7 @@ abstract class AppLocalizations {
   /// Accessibility label of the divider between two apps side by side (Split View) on the tablet.
   ///
   /// In en, this message translates to:
-  /// **'Width of the apps side by side'**
+  /// **'Divider between the apps'**
   String get splitViewDivider;
 
   /// Accessibility label of the handle on top of an app side by side with another (Split View) on the tablet.

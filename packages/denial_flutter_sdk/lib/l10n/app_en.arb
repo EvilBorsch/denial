@@ -7028,7 +7028,7 @@
   "@recentsCloseAppWindows": {"description": "Accessibility label of the button on a tablet recents card that closes every window of the card's app.", "placeholders": {"app": {"type": "String"}, "count": {"type": "int"}}},
   "recentsSplitWith": "Side by side with {app}",
   "@recentsSplitWith": {"description": "Tablet recents: label of the screen sides a long-pressed card is dropped on to share the screen with the app in front (Split View).", "placeholders": {"app": {"type": "String"}}},
-  "splitViewDivider": "Width of the apps side by side",
+  "splitViewDivider": "Divider between the apps",
   "@splitViewDivider": {"description": "Accessibility label of the divider between two apps side by side (Split View) on the tablet."},
   "splitViewHandle": "Move {app}",
   "@splitViewHandle": {"description": "Accessibility label of the handle on top of an app side by side with another (Split View) on the tablet.", "placeholders": {"app": {"type": "String"}}},

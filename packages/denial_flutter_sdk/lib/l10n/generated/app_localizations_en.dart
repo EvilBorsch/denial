@@ -5336,7 +5336,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get splitViewDivider => 'Width of the apps side by side';
+  String get splitViewDivider => 'Divider between the apps';
 
   @override
   String splitViewHandle(String app) {

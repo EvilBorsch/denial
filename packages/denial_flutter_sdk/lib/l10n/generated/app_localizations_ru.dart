@@ -5385,15 +5385,15 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String recentsSplitWith(String app) {
-    return 'Рядом с $app';
+    return 'Рядом с приложением $app';
   }
 
   @override
-  String get splitViewDivider => 'Ширина приложений рядом';
+  String get splitViewDivider => 'Разделитель между приложениями';
 
   @override
   String splitViewHandle(String app) {
-    return 'Переместить $app';
+    return 'Переместить приложение $app';
   }
 
   @override
