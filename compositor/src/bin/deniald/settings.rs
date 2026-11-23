@@ -1063,6 +1063,7 @@ impl SettingsManager {
         parse_cursor_size(&incoming)?;
         parse_apps_scale(&incoming)?;
         parse_apps_follow(&incoming)?;
+        validate_presentation(&incoming)?;
         parse_window_layout_kind(&incoming)?;
         parse_keyboard_resize_step(&incoming)?;
         parse_scrolling_layout_wheel_settings(&incoming)?;
@@ -1574,6 +1575,7 @@ fn parse_document(bytes: &[u8]) -> Result<ParsedSettingsDocument, SettingsError>
     set_cursor_size(&mut document, cursor_size)?;
     parse_apps_scale(&document)?;
     parse_apps_follow(&document)?;
+    validate_presentation(&document)?;
     let had_window_layout = document
         .get("layout")
         .and_then(Value::as_object)
@@ -2008,6 +2010,43 @@ impl AppsFollow {
             text_scaling_milli,
         }
     }
+}
+
+/// The shell's presentation section (`presentation`): whether it follows
+/// a physical keyboard (`followKeyboard`), and the presentation it chose
+/// last (`mode`, `"tablet"` or `"desktop"`) with whether a physical keyboard
+/// was attached then (`modeKeyboard`). The shell decides and keeps it;
+/// deniald only checks it. Releases up to `eb17` do not read this section
+/// and keep it as it is. A value added later must not be put into these
+/// keys, or this release rejects the whole file: give it a key of its own,
+/// as `layout.windowLayoutVariant` does.
+fn validate_presentation(document: &Map<String, Value>) -> Result<(), SettingsError> {
+    let Some(section) = document.get("presentation") else {
+        return Ok(());
+    };
+    let section = section
+        .as_object()
+        .ok_or_else(|| SettingsError::Document("presentation must be an object".to_owned()))?;
+    let set = |key: &str| section.get(key).filter(|value| !value.is_null());
+    if section
+        .get("followKeyboard")
+        .is_some_and(|value| !value.is_boolean())
+    {
+        return Err(SettingsError::Document(
+            "presentation.followKeyboard must be true or false".to_owned(),
+        ));
+    }
+    if set("mode").is_some_and(|mode| !matches!(mode.as_str(), Some("tablet" | "desktop"))) {
+        return Err(SettingsError::Document(
+            "presentation.mode must be \"tablet\", \"desktop\" or null".to_owned(),
+        ));
+    }
+    if set("modeKeyboard").is_some_and(|value| !value.is_boolean()) {
+        return Err(SettingsError::Document(
+            "presentation.modeKeyboard must be true, false or null".to_owned(),
+        ));
+    }
+    Ok(())
 }
 
 /// The presentation a shell starts in, until it reports its own.
