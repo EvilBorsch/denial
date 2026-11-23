@@ -296,7 +296,7 @@ pub(super) fn configured_outputs(
                 info!(
                     output = name,
                     scale = f64::from(default_scale_120) / f64::from(SCALE_BASE),
-                    "scaling handheld panel by its pixel density"
+                    "scaling built-in panel by its pixel density"
                 );
             }
             Ok(ConnectedOutput {
@@ -492,14 +492,27 @@ fn output_control_mode(
 
 /// Logical pixels per inch on handheld panels: the density the mobile shell and
 /// desktop clients were tuned at (scale 2 on the 450 ppi 12R and Edge 70), so
-/// layouts keep one physical size on every panel.
+/// layouts keep one physical size on every phone.
 const HANDHELD_LOGICAL_PPI: f64 = 225.0;
+/// Logical pixels per inch on tablet panels. A tablet is used at arm's length
+/// or on a desk, not in the hand at reading distance, so at a phone's density
+/// its shell is too small to read: on the OnePlus Pad 3 (13.2", 315 ppi by the
+/// size its panel reports) the handheld rule gives scale 1.5, where the top
+/// bar's text is half the height of an app's at the scale its owner chose.
+/// iPadOS shows 132 points per inch on the iPad Pro 13"; a little below that
+/// the Pad 3 lands on scale 2.5, 1357x960 logical pixels, the proportions of
+/// that iPad (1376x1032 points) and of a 13" MacBook Air (1470x956), for the
+/// tablet and the desktop presentation alike.
+const TABLET_LOGICAL_PPI: f64 = 125.0;
+/// Panels this large are tablets (or laptops), smaller ones phones.
+const TABLET_MIN_DIAGONAL_INCHES: f64 = 9.0;
 /// Density scales are rounded to quarter steps, which keeps sizes within a few
 /// percent and lands common panels on integer scales clients need not resample.
 const DENSITY_SCALE_STEP_120: f64 = 30.0;
 
 /// The scale of an output whose configuration names none. A built-in DSI panel
-/// that reports its size is scaled to `HANDHELD_LOGICAL_PPI`; other outputs,
+/// that reports its size is scaled to `HANDHELD_LOGICAL_PPI`, or to
+/// `TABLET_LOGICAL_PPI` from `TABLET_MIN_DIAGONAL_INCHES` up; other outputs,
 /// and panels reporting no plausible size, keep the unscaled default.
 fn default_scale_120(info: &connector::Info, (width, height): (u32, u32)) -> u32 {
     let Some((width_mm, height_mm)) = info.size() else {
@@ -519,7 +532,12 @@ fn density_scale_120(diagonal_pixels: f64, diagonal_mm: f64) -> u32 {
     if !(HANDHELD_LOGICAL_PPI..=2000.0).contains(&pixels_per_inch) {
         return SCALE_BASE;
     }
-    let scale_120 = pixels_per_inch / HANDHELD_LOGICAL_PPI * f64::from(SCALE_BASE);
+    let logical_ppi = if diagonal_mm / 25.4 >= TABLET_MIN_DIAGONAL_INCHES {
+        TABLET_LOGICAL_PPI
+    } else {
+        HANDHELD_LOGICAL_PPI
+    };
+    let scale_120 = pixels_per_inch / logical_ppi * f64::from(SCALE_BASE);
     ((scale_120 / DENSITY_SCALE_STEP_120).round() * DENSITY_SCALE_STEP_120) as u32
 }
 
@@ -1056,14 +1074,17 @@ mod tests {
     }
 
     #[test]
-    fn handheld_panels_scale_to_the_tuned_density_in_quarter_steps() {
+    fn built_in_panels_scale_to_their_class_density_in_quarter_steps() {
         let scale = |pixels: (f64, f64), mm: (f64, f64)| {
             density_scale_120(pixels.0.hypot(pixels.1), mm.0.hypot(mm.1))
         };
-        // OnePlus 12R, Motorola Edge 70, OnePlus Pad 4.
+        // Phones: OnePlus 12R, Motorola Edge 70.
         assert_eq!(scale((1264.0, 2780.0), (71.0, 157.0)), 240);
         assert_eq!(scale((1220.0, 2712.0), (69.0, 154.0)), 240);
-        assert_eq!(scale((3392.0, 2400.0), (274.0, 193.0)), 180);
+        // Tablets: OnePlus Pad 3 (13.2", 315 ppi), a 10.9" 2.5K panel
+        // (277 ppi).
+        assert_eq!(scale((3392.0, 2400.0), (274.0, 193.0)), 300);
+        assert_eq!(scale((2560.0, 1600.0), (235.0, 147.0)), 270);
         // Below 225 ppi, or an implausible size, stays unscaled.
         assert_eq!(scale((1920.0, 1080.0), (344.0, 194.0)), SCALE_BASE);
         assert_eq!(scale((1264.0, 2780.0), (1.0, 1.0)), SCALE_BASE);
