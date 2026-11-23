@@ -1193,7 +1193,9 @@ fn begin_touch_divider(state: &mut RuntimeState, slot: i32, position: Point<f64,
     let Some(hit) = frontend.layout_divider_at(position) else {
         return false;
     };
-    if frontend.note_divider_press(&hit, std::time::Instant::now()) {
+    let double = frontend.note_divider_press(&hit, std::time::Instant::now());
+    info!(axis = ?hit.divider.axis, double, "finger took a split divider");
+    if double {
         let changed = state.frontend_mut().reset_layout_divider(&hit);
         for (window, geometry) in changed {
             super::super::queue_transient_window_placement(
@@ -1274,6 +1276,11 @@ fn begin_divider_grab(state: &mut RuntimeState, button: u32, serial: Serial) -> 
     let double = state
         .frontend_mut()
         .note_divider_press(&hit, std::time::Instant::now());
+    info!(
+        axis = ?hit.divider.axis,
+        double,
+        "pointer took a split divider"
+    );
     if double {
         let changed = state.frontend_mut().reset_layout_divider(&hit);
         for (window, geometry) in changed {

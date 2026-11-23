@@ -39,6 +39,11 @@ pub(crate) struct HorizontalLayoutScrollFrame {
 
 #[cfg(feature = "flutter")]
 const TOUCHPAD_SCROLLING_TILE_SWIPE_DISTANCE: f64 = 125.0;
+/// Touchpad travel per screen of the full-screen apps layout: about 37 mm
+/// of the cover's 120 mm touchpad (libinput reports about 10.7 units per
+/// mm of three-finger travel), so one comfortable swipe moves one screen.
+#[cfg(feature = "flutter")]
+const TOUCHPAD_SCREEN_SWIPE_DISTANCE: f64 = 400.0;
 #[cfg(feature = "flutter")]
 const MOUSE_WHEEL_ANGLE_PER_STEP: f64 = 15.0;
 
@@ -79,26 +84,54 @@ fn touchpad_scrolling_layout_delta(
     delta_x: f64,
     work_extent: i32,
     gap: i32,
-    column_fraction: f64,
+    (column_fraction, swipe_distance): (f64, f64),
     swipe_speed_factor: f64,
 ) -> f64 {
     // Libinput swipe deltas describe gesture travel, not logical scene pixels.
     // Normalize only this scrolling-layout route so 125 units of touchpad
-    // travel track one default tile stride (one screen in the full-screen
-    // apps layout) without changing device or shortcut sensitivity anywhere
-    // else.
+    // travel track one default tile stride (400 units one screen in the
+    // full-screen apps layout) without changing device or shortcut
+    // sensitivity anywhere else.
     let default_tile_stride =
         f64::from(work_extent.max(1)) * column_fraction + f64::from(gap.max(0));
-    delta_x * default_tile_stride * swipe_speed_factor / TOUCHPAD_SCROLLING_TILE_SWIPE_DISTANCE
+    delta_x * default_tile_stride * swipe_speed_factor / swipe_distance
 }
 
-/// The share of the work area a new strip column takes.
+/// The share of the work area a new strip column takes, and the touchpad
+/// travel that moves the strip by one such column.
 #[cfg(feature = "flutter")]
-fn strip_column_fraction(kind: WindowLayoutKind) -> f64 {
+fn strip_column_stride(kind: WindowLayoutKind) -> (f64, f64) {
     if kind == WindowLayoutKind::Screens {
-        1.0
+        (1.0, TOUCHPAD_SCREEN_SWIPE_DISTANCE)
     } else {
-        DEFAULT_SCROLLING_COLUMN_FRACTION
+        (
+            DEFAULT_SCROLLING_COLUMN_FRACTION,
+            TOUCHPAD_SCROLLING_TILE_SWIPE_DISTANCE,
+        )
+    }
+}
+
+/// Fingers on the touchscreen move the strip of screens exactly as far as
+/// they travel, in logical pixels; the touchpad's travel is scaled.
+#[cfg(feature = "flutter")]
+fn strip_delta(
+    kind: WindowLayoutKind,
+    delta_x: f64,
+    direct: bool,
+    work_extent: i32,
+    gap: i32,
+    swipe_speed_factor: f64,
+) -> f64 {
+    if direct && kind == WindowLayoutKind::Screens {
+        delta_x
+    } else {
+        touchpad_scrolling_layout_delta(
+            delta_x,
+            work_extent,
+            gap,
+            strip_column_stride(kind),
+            swipe_speed_factor,
+        )
     }
 }
 
@@ -282,19 +315,22 @@ impl WaylandFrontend {
     }
 
     #[cfg(feature = "flutter")]
+    /// `direct`: fingers on the touchscreen rather than a touchpad.
     pub(crate) fn scroll_layout_horizontally(
         &mut self,
         delta_x: f64,
+        direct: bool,
     ) -> Option<HorizontalLayoutScrollFrame> {
         self.prepare_layout_arrangement();
         let (layout_space, work_area, gap, monitor_geometry, axis) =
             self.horizontal_layout_scroll_context()?;
         let swipe_speed_factor = self.settings.touchpad().scrolling_layout_swipe_speed_factor;
-        let delta_x = touchpad_scrolling_layout_delta(
+        let delta_x = strip_delta(
+            self.window_layout.kind(),
             delta_x,
+            direct,
             axis.main_extent(work_area),
             gap,
-            strip_column_fraction(self.window_layout.kind()),
             swipe_speed_factor,
         );
         if !self
@@ -326,7 +362,7 @@ impl WaylandFrontend {
             vertical_delta,
             axis.main_extent(work_area),
             gap,
-            strip_column_fraction(self.window_layout.kind()),
+            strip_column_stride(self.window_layout.kind()).0,
             settings.speed,
             settings.up_direction,
         );
@@ -351,18 +387,20 @@ impl WaylandFrontend {
         &mut self,
         cancelled: bool,
         projected_delta_x: Option<f64>,
+        direct: bool,
     ) -> Option<HorizontalLayoutScrollFrame> {
         self.prepare_layout_arrangement();
         let (layout_space, work_area, gap, monitor_geometry, axis) =
             self.horizontal_layout_scroll_context()?;
         let swipe_speed_factor = self.settings.touchpad().scrolling_layout_swipe_speed_factor;
-        let column_fraction = strip_column_fraction(self.window_layout.kind());
+        let kind = self.window_layout.kind();
         let projected_delta_x = projected_delta_x.map(|delta_x| {
-            touchpad_scrolling_layout_delta(
+            strip_delta(
+                kind,
                 delta_x,
+                direct,
                 axis.main_extent(work_area),
                 gap,
-                column_fraction,
                 swipe_speed_factor,
             )
         });

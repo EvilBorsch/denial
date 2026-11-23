@@ -16,6 +16,8 @@ use smithay::utils::{Logical, Point, Rectangle};
 use super::super::window_layout::{
     LayoutDirection, LayoutScreen, LayoutSpace, WindowLayout, WindowLayoutKind,
 };
+use tracing::info;
+
 use super::WaylandFrontend;
 use super::managed_window::ManagedWindow;
 
@@ -249,9 +251,11 @@ impl WaylandFrontend {
         target: &Window,
         side: LayoutDirection,
     ) -> bool {
-        self.change_screens(window, target, |layout, window, target| {
+        let joined = self.change_screens(window, target, |layout, window, target| {
             layout.move_beside(window, target, side)
-        })
+        });
+        info!(?side, joined, screens = ?self.screen_counts(), "joined a screen");
+        joined
     }
 
     /// Gives `window` a screen of its own just before or after the screen
@@ -262,9 +266,25 @@ impl WaylandFrontend {
         target: &Window,
         before: bool,
     ) -> bool {
-        self.change_screens(window, target, |layout, window, target| {
+        let moved = self.change_screens(window, target, |layout, window, target| {
             layout.move_to_column(window, target, before)
-        })
+        });
+        info!(before, moved, screens = ?self.screen_counts(), "moved to a screen of its own");
+        moved
+    }
+
+    /// The tiles of each screen of each output, for the journal.
+    fn screen_counts(&self) -> Vec<Vec<usize>> {
+        self.output_screens()
+            .into_iter()
+            .map(|(_, output)| {
+                output
+                    .screens
+                    .iter()
+                    .map(|screen| screen.windows.len())
+                    .collect()
+            })
+            .collect()
     }
 
     fn change_screens(

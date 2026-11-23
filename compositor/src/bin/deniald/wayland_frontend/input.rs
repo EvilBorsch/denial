@@ -1955,20 +1955,25 @@ pub(super) fn dispatch_swipe_gesture(
 
     match gesture_event {
         TouchpadGestureEvent::HorizontalScrollBegin { delta_x } => {
-            let handled = update_horizontal_layout_scroll(state, delta_x);
+            let handled = update_horizontal_layout_scroll(state, delta_x, position.is_some());
             if handled {
                 info!("began continuous scrolling-layout gesture");
             }
             return handled;
         }
         TouchpadGestureEvent::HorizontalScrollUpdate { delta_x } => {
-            return update_horizontal_layout_scroll(state, delta_x);
+            return update_horizontal_layout_scroll(state, delta_x, position.is_some());
         }
         TouchpadGestureEvent::HorizontalScrollEnd {
             cancelled,
             projected_delta_x,
         } => {
-            return finish_horizontal_layout_scroll(state, cancelled, Some(projected_delta_x));
+            return finish_horizontal_layout_scroll_from(
+                state,
+                cancelled,
+                Some(projected_delta_x),
+                position.is_some(),
+            );
         }
         TouchpadGestureEvent::Trigger(_)
         | TouchpadGestureEvent::Repeat(_)
@@ -2052,11 +2057,12 @@ fn dispatch_screens_gesture(
 }
 
 #[cfg(feature = "flutter")]
-fn update_horizontal_layout_scroll(state: &mut RuntimeState, delta_x: f64) -> bool {
+/// `direct`: fingers on the touchscreen rather than a touchpad.
+fn update_horizontal_layout_scroll(state: &mut RuntimeState, delta_x: f64, direct: bool) -> bool {
     let Some(frame) = state
         .wayland
         .as_mut()
-        .and_then(|frontend| frontend.scroll_layout_horizontally(delta_x))
+        .and_then(|frontend| frontend.scroll_layout_horizontally(delta_x, direct))
     else {
         return false;
     };
@@ -2109,8 +2115,18 @@ fn finish_horizontal_layout_scroll(
     cancelled: bool,
     projected_delta_x: Option<f64>,
 ) -> bool {
+    finish_horizontal_layout_scroll_from(state, cancelled, projected_delta_x, false)
+}
+
+#[cfg(feature = "flutter")]
+fn finish_horizontal_layout_scroll_from(
+    state: &mut RuntimeState,
+    cancelled: bool,
+    projected_delta_x: Option<f64>,
+    direct: bool,
+) -> bool {
     let Some(frame) = state.wayland.as_mut().and_then(|frontend| {
-        frontend.finish_layout_horizontal_scroll(cancelled, projected_delta_x)
+        frontend.finish_layout_horizontal_scroll(cancelled, projected_delta_x, direct)
     }) else {
         return false;
     };

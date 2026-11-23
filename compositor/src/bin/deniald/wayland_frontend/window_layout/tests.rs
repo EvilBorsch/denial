@@ -184,15 +184,33 @@ fn decorated_layout_minimum_includes_the_server_frame() {
 #[test]
 fn touchpad_scrolling_delta_applies_the_configured_travel_scale() {
     assert_eq!(
-        touchpad_scrolling_layout_delta(125.0, 1_000, 10, DEFAULT_SCROLLING_COLUMN_FRACTION, 1.0),
+        touchpad_scrolling_layout_delta(
+            125.0,
+            1_000,
+            10,
+            strip_column_stride(WindowLayoutKind::Scrolling),
+            1.0
+        ),
         610.0
     );
     assert_eq!(
-        touchpad_scrolling_layout_delta(-62.5, 1_000, 10, DEFAULT_SCROLLING_COLUMN_FRACTION, 0.5),
+        touchpad_scrolling_layout_delta(
+            -62.5,
+            1_000,
+            10,
+            strip_column_stride(WindowLayoutKind::Scrolling),
+            0.5
+        ),
         -152.5
     );
     assert_eq!(
-        touchpad_scrolling_layout_delta(100.0, 1_000, 10, DEFAULT_SCROLLING_COLUMN_FRACTION, 2.0),
+        touchpad_scrolling_layout_delta(
+            100.0,
+            1_000,
+            10,
+            strip_column_stride(WindowLayoutKind::Scrolling),
+            2.0
+        ),
         976.0
     );
 }
@@ -238,21 +256,25 @@ fn mouse_wheel_scrolling_delta_applies_speed_and_direction() {
 #[cfg(feature = "flutter")]
 #[test]
 fn a_full_swipe_travels_one_screen_in_the_screens_layout() {
-    // The same 125 units of touchpad travel that move one three-fifths
-    // column in the scrolling layout move one whole screen and its gap.
+    // 400 units of touchpad travel move one whole screen and its gap; the
+    // scrolling layout keeps 125 units per three-fifths column.
     assert_eq!(
-        touchpad_scrolling_layout_delta(
-            125.0,
-            1_000,
-            10,
-            strip_column_fraction(WindowLayoutKind::Screens),
-            1.0
-        ),
+        strip_delta(WindowLayoutKind::Screens, 400.0, false, 1_000, 10, 1.0),
         1_010.0
     );
     assert_eq!(
-        strip_column_fraction(WindowLayoutKind::Scrolling),
-        DEFAULT_SCROLLING_COLUMN_FRACTION
+        strip_delta(WindowLayoutKind::Scrolling, 125.0, false, 1_000, 10, 1.0),
+        610.0
+    );
+    // Fingers on the touchscreen move the screens exactly as far as they
+    // go; the scrolling layout keeps its scaling for them.
+    assert_eq!(
+        strip_delta(WindowLayoutKind::Screens, -237.0, true, 1_000, 10, 1.0),
+        -237.0
+    );
+    assert_eq!(
+        strip_delta(WindowLayoutKind::Scrolling, 125.0, true, 1_000, 10, 1.0),
+        610.0
     );
 }
 
