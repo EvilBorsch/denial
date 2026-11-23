@@ -1186,6 +1186,21 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
     return true;
   }
 
+  /// Selects [objectId]'s preview in the open overview, as the overview's
+  /// search chooses a window among its results.
+  bool selectOverviewWindow(int objectId) {
+    final overview = state.overview;
+    if (overview == null ||
+        overview.selectedObjectId == objectId ||
+        !overview.frames.containsKey(objectId)) {
+      return false;
+    }
+    state = state.copyWith(
+      overview: overview.copyWith(selectedObjectId: objectId),
+    );
+    return true;
+  }
+
   bool moveOverviewSelection(DesktopOverviewDirection direction) {
     final overview = state.overview;
     if (overview == null || overview.frames.isEmpty) {

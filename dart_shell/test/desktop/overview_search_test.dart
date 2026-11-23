@@ -362,6 +362,32 @@ void main() {
       expect(shell.navigated, isEmpty);
     });
 
+    testWidgets('the window chosen among the results is selected on its card', (
+      tester,
+    ) async {
+      final shell = _Harness();
+      await shell.pump(tester, shell.hub());
+      await shell.openOverview(tester);
+      int? selected() => shell.container
+          .read(desktopWorkspaceProvider)
+          .overview!
+          .selectedObjectId;
+      expect(selected(), 2);
+      await tester.enterText(find.byType(EditableText), 'fire');
+      await tester.pump();
+      await tester.pump();
+      expect(selected(), 4);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      await tester.pump();
+      expect(selected(), 1);
+      // The app below the windows leaves the selection on the last window.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      await tester.pump();
+      expect(selected(), 1);
+    });
+
     testWidgets('Esc clears the query first, then closes', (tester) async {
       final shell = _Harness();
       await shell.pump(tester, shell.hub());

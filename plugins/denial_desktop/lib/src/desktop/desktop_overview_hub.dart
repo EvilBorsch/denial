@@ -303,6 +303,22 @@ class _DesktopOverviewHubState extends ConsumerState<DesktopOverviewHub>
         (overview.backgroundBounds.bottom - field.bottom) * 0.62,
       ),
     );
+    // The window chosen among the results is the overview's selection too,
+    // so the arrows visibly move between the windows they choose.
+    if (interactive && listing.searching) {
+      final entries = listing.entries;
+      final selected = entries.isEmpty ? null : entries[searchSelected];
+      if (selected case DesktopSearchWindowEntry(:final window)
+          when overview.selectedObjectId != window.id) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ref
+                .read(desktopWorkspaceProvider.notifier)
+                .selectOverviewWindow(window.id);
+          }
+        });
+      }
+    }
     // The window being dragged goes undimmed with the pointer.
     final dragged = ref.watch(
       desktopWorkspaceProvider.select((state) {
