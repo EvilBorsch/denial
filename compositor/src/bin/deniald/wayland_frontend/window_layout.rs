@@ -79,15 +79,27 @@ fn touchpad_scrolling_layout_delta(
     delta_x: f64,
     work_extent: i32,
     gap: i32,
+    column_fraction: f64,
     swipe_speed_factor: f64,
 ) -> f64 {
     // Libinput swipe deltas describe gesture travel, not logical scene pixels.
     // Normalize only this scrolling-layout route so 125 units of touchpad
-    // travel track one default tile stride without changing device or
-    // shortcut sensitivity anywhere else.
+    // travel track one default tile stride (one screen in the full-screen
+    // apps layout) without changing device or shortcut sensitivity anywhere
+    // else.
     let default_tile_stride =
-        f64::from(work_extent.max(1)) * DEFAULT_SCROLLING_COLUMN_FRACTION + f64::from(gap.max(0));
+        f64::from(work_extent.max(1)) * column_fraction + f64::from(gap.max(0));
     delta_x * default_tile_stride * swipe_speed_factor / TOUCHPAD_SCROLLING_TILE_SWIPE_DISTANCE
+}
+
+/// The share of the work area a new strip column takes.
+#[cfg(feature = "flutter")]
+fn strip_column_fraction(kind: WindowLayoutKind) -> f64 {
+    if kind == WindowLayoutKind::Screens {
+        1.0
+    } else {
+        DEFAULT_SCROLLING_COLUMN_FRACTION
+    }
 }
 
 #[cfg(feature = "flutter")]
@@ -95,11 +107,12 @@ fn mouse_wheel_scrolling_layout_delta(
     vertical_delta: f64,
     work_extent: i32,
     gap: i32,
+    column_fraction: f64,
     speed: f64,
     up_direction: ScrollingLayoutWheelUpDirection,
 ) -> f64 {
     let default_tile_stride =
-        f64::from(work_extent.max(1)) * DEFAULT_SCROLLING_COLUMN_FRACTION + f64::from(gap.max(0));
+        f64::from(work_extent.max(1)) * column_fraction + f64::from(gap.max(0));
     let direction = match up_direction {
         ScrollingLayoutWheelUpDirection::Left => -1.0,
         ScrollingLayoutWheelUpDirection::Right => 1.0,
@@ -155,6 +168,11 @@ fn layout_frame_maximum_size(
 
 impl WaylandFrontend {
     fn scrolling_layout_axis_for_output(&self, output: &super::WaylandOutput) -> LayoutAxis {
+        // Screens sit side by side whatever the output's rotation: three
+        // fingers move between them across the screen, as on macOS.
+        if self.window_layout.kind() == WindowLayoutKind::Screens {
+            return LayoutAxis::Horizontal;
+        }
         scrolling_layout_axis(
             self.scrolling_layout_axes
                 .get(&output.connector)
@@ -179,6 +197,18 @@ impl WaylandFrontend {
 
     pub(super) fn window_layout_manages_geometry(&self) -> bool {
         self.window_layout.manages_geometry()
+    }
+
+    pub(crate) fn window_layout_kind(&self) -> WindowLayoutKind {
+        self.window_layout.kind()
+    }
+
+    /// Whether desk windows are arranged as full-screen apps now. The phone
+    /// panel of the mobile presentation never takes a window layout.
+    #[cfg(feature = "flutter")]
+    pub(crate) fn screens_layout_active(&self) -> bool {
+        self.window_layout.kind() == WindowLayoutKind::Screens
+            && (!self.mobile_shell || self.phone_with_desk())
     }
 
     pub(crate) fn window_is_layout_managed(&self, window: &Window) -> bool {
@@ -243,7 +273,7 @@ impl WaylandFrontend {
         &self,
         position: Option<Point<f64, Logical>>,
     ) -> bool {
-        self.window_layout.kind() == WindowLayoutKind::Scrolling
+        self.window_layout.kind().scrolls_horizontally()
             && self
                 .horizontal_layout_scroll_context()
                 .is_some_and(|(_, _, _, monitor, _)| {
@@ -264,6 +294,7 @@ impl WaylandFrontend {
             delta_x,
             axis.main_extent(work_area),
             gap,
+            strip_column_fraction(self.window_layout.kind()),
             swipe_speed_factor,
         );
         if !self
@@ -295,6 +326,7 @@ impl WaylandFrontend {
             vertical_delta,
             axis.main_extent(work_area),
             gap,
+            strip_column_fraction(self.window_layout.kind()),
             settings.speed,
             settings.up_direction,
         );
@@ -324,11 +356,13 @@ impl WaylandFrontend {
         let (layout_space, work_area, gap, monitor_geometry, axis) =
             self.horizontal_layout_scroll_context()?;
         let swipe_speed_factor = self.settings.touchpad().scrolling_layout_swipe_speed_factor;
+        let column_fraction = strip_column_fraction(self.window_layout.kind());
         let projected_delta_x = projected_delta_x.map(|delta_x| {
             touchpad_scrolling_layout_delta(
                 delta_x,
                 axis.main_extent(work_area),
                 gap,
+                column_fraction,
                 swipe_speed_factor,
             )
         });
@@ -361,15 +395,22 @@ impl WaylandFrontend {
         Rectangle<i32, Logical>,
         LayoutAxis,
     )> {
-        let focused = self.focused_layout_window()?;
-        if !self.window_layout.contains(&focused) {
-            return None;
-        }
-        let window = self.window_for_layout_id(&focused)?;
-        if self.window_has_constrained_state(&window) {
-            return None;
-        }
-        let layout_space = self.window_layout.space_for(&focused)?;
+        let layout_space = match self
+            .focused_layout_window()
+            .filter(|focused| self.window_layout.contains(focused))
+        {
+            Some(focused) => {
+                let window = self.window_for_layout_id(&focused)?;
+                if self.window_has_constrained_state(&window) {
+                    return None;
+                }
+                self.window_layout.space_for(&focused)?
+            }
+            None if self.window_layout.kind() == WindowLayoutKind::Screens => {
+                self.screens_space_under_pointer()?
+            }
+            None => return None,
+        };
         let output = self
             .outputs
             .iter()
@@ -815,7 +856,7 @@ impl WaylandFrontend {
         let mut target = self.layout_drop_target_in(window, space, location, previous)?;
         if target.mode == LayoutDropMode::Swap && self.managed_layout_space(window) != Some(space) {
             target.mode = match self.window_layout.kind() {
-                WindowLayoutKind::Scrolling => {
+                WindowLayoutKind::Scrolling | WindowLayoutKind::Screens => {
                     let geometry = self.window_geometry_target(&target.window);
                     let axis = self
                         .outputs
@@ -921,6 +962,7 @@ impl WaylandFrontend {
         for record in self.window_registry.values_mut() {
             record.layout_insertion_anchor = None;
         }
+        let order = self.layout_switch_order();
         let previously_managed = self.window_layout.manages_geometry();
         let next = create_window_layout(kind);
         let next_managed = next.manages_geometry();
@@ -931,8 +973,22 @@ impl WaylandFrontend {
             self.restore_stacking_geometries();
         }
         self.window_layout = next;
+        // The full-screen apps layout has no workspaces: the settings say
+        // so for it (`SettingsManager::workspace_settings`). Apply that
+        // before the rebuild, so the windows of every workspace join one
+        // strip, and leaving the layout finds them all on workspace one.
+        #[cfg(feature = "flutter")]
+        self.set_workspace_settings(self.settings.workspace_settings());
         if next_managed {
-            self.rebuild_window_layout();
+            self.rebuild_window_layout_in_order(&order);
+            if kind == WindowLayoutKind::Screens
+                && let Some(focused) = self
+                    .focused_layout_window()
+                    .filter(|focused| self.window_layout.contains(focused))
+                && self.window_layout.activate(&focused)
+            {
+                self.arrange_layout_windows();
+            }
         }
         info!(
             layout = kind.settings_name(),
@@ -1116,6 +1172,15 @@ impl WaylandFrontend {
     /// Rebuild output membership after hotplug/rotation while preserving each
     /// window's original stacking rectangle.
     pub(crate) fn rebuild_window_layout(&mut self) -> bool {
+        self.rebuild_window_layout_in_order(&HashMap::new())
+    }
+
+    /// Rebuilds with windows ranked by `order` first, in that order, then the
+    /// rest in stacking order.
+    fn rebuild_window_layout_in_order(
+        &mut self,
+        order: &HashMap<ObjectId, (usize, u8, usize)>,
+    ) -> bool {
         // The phone alone: every window fills it, and no desk layout keeps
         // the windows a desk took away with it.
         #[cfg(feature = "flutter")]
@@ -1128,9 +1193,14 @@ impl WaylandFrontend {
         if !self.window_layout.manages_geometry() {
             return false;
         }
-        let windows = self
-            .space
-            .elements()
+        let mut elements = self.space.elements().collect::<Vec<_>>();
+        elements.sort_by_key(|window| {
+            self.window_root_surface(window)
+                .and_then(|root| order.get(&root.id()).copied())
+                .map_or((1, (0, 0, 0)), |rank| (0, rank))
+        });
+        let windows = elements
+            .into_iter()
             .filter_map(|window| {
                 if !self.window_layout_eligible(window) {
                     return None;
@@ -1241,6 +1311,7 @@ impl WaylandFrontend {
         for parent in changed_parents {
             changed |= self.reconcile_xdg_transient_descendant_placements(&parent);
         }
+        changed |= self.keep_floats_over_screens();
         changed
     }
 
@@ -1757,7 +1828,11 @@ fn layout_drop_mode_for_kind(
     previous: Option<LayoutDropMode>,
 ) -> LayoutDropMode {
     match kind {
-        WindowLayoutKind::Dwindle => layout_drop_mode(geometry, location, previous),
+        // A screen splits on any side, as Dwindle does; the strip itself
+        // only changes through the screens overview.
+        WindowLayoutKind::Dwindle | WindowLayoutKind::Screens => {
+            layout_drop_mode(geometry, location, previous)
+        }
         WindowLayoutKind::Scrolling => {
             // A drop can stack leaves across the strip, but never divide a
             // column along the scrolling axis. Those edges are swap targets.

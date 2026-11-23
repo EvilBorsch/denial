@@ -2788,3 +2788,436 @@ fn scrolling_removal_returns_focus_to_the_left_neighbor() {
         ]
     );
 }
+
+// Full-screen apps layout ("screens").
+
+fn screen_area() -> Rectangle<i32, Logical> {
+    rect(0, 40, 1000, 600)
+}
+const SCREEN_GAP: i32 = 8;
+
+fn screens_layout(windows: &[u64]) -> Box<dyn WindowLayout<u64>> {
+    let mut layout = create_window_layout::<u64>(WindowLayoutKind::Screens);
+    let mut anchor = None;
+    for &window in windows {
+        layout.insert(LayoutInsertion {
+            window,
+            space: OUTPUT,
+            anchor,
+        });
+        anchor = Some(window);
+        layout.prepare_arrange(OUTPUT, screen_area(), SCREEN_GAP, LayoutAxis::Horizontal);
+    }
+    layout
+}
+
+fn settle(layout: &mut dyn WindowLayout<u64>) -> Vec<LayoutPlacement<u64>> {
+    layout.prepare_arrange(OUTPUT, screen_area(), SCREEN_GAP, LayoutAxis::Horizontal);
+    layout.arrange(OUTPUT, screen_area(), SCREEN_GAP)
+}
+
+fn screen_windows(layout: &dyn WindowLayout<u64>) -> Vec<Vec<u64>> {
+    layout
+        .screens(OUTPUT, screen_area(), SCREEN_GAP)
+        .into_iter()
+        .map(|screen| screen.windows)
+        .collect()
+}
+
+fn geometry_of(placements: &[LayoutPlacement<u64>], window: u64) -> Rectangle<i32, Logical> {
+    placements
+        .iter()
+        .find(|placement| placement.window == window)
+        .unwrap_or_else(|| panic!("window {window} has no placement"))
+        .geometry
+}
+
+/// The screen on the output: a stride of one work area and one gap per
+/// screen, so a neighbour never peeks in at rest.
+fn screen_at(index: i32, current: i32) -> Rectangle<i32, Logical> {
+    rect(
+        (index - current) * (screen_area().size.w + SCREEN_GAP),
+        screen_area().loc.y,
+        screen_area().size.w,
+        screen_area().size.h,
+    )
+}
+
+#[test]
+fn screens_layout_round_trips_its_settings_name_and_keeps_a_legacy_value() {
+    assert_eq!(WindowLayoutKind::Screens.settings_name(), "screens");
+    assert_eq!(
+        WindowLayoutKind::from_settings_name("screens"),
+        Some(WindowLayoutKind::Screens)
+    );
+    assert!(!WindowLayoutKind::Screens.is_legacy());
+    assert_eq!(
+        WindowLayoutKind::Screens.legacy_fallback(),
+        WindowLayoutKind::Scrolling
+    );
+    for kind in [
+        WindowLayoutKind::Stacking,
+        WindowLayoutKind::Dwindle,
+        WindowLayoutKind::Scrolling,
+    ] {
+        assert!(kind.is_legacy());
+        assert_eq!(kind.legacy_fallback(), kind);
+    }
+    assert!(WindowLayoutKind::Screens.scrolls_horizontally());
+    assert!(!WindowLayoutKind::Dwindle.scrolls_horizontally());
+    assert_eq!(
+        create_window_layout::<u64>(WindowLayoutKind::Screens).kind(),
+        WindowLayoutKind::Screens
+    );
+}
+
+#[test]
+fn screens_open_each_app_full_screen_right_of_the_current_screen() {
+    let mut layout = screens_layout(&[1]);
+    let placements = settle(layout.as_mut());
+    assert_eq!(geometry_of(&placements, 1), screen_area());
+
+    layout.insert(LayoutInsertion {
+        window: 2,
+        space: OUTPUT,
+        anchor: Some(1),
+    });
+    let placements = settle(layout.as_mut());
+    // The new screen is current; its left neighbour lies a gap beyond the
+    // output's left edge.
+    assert_eq!(geometry_of(&placements, 2), screen_area());
+    assert_eq!(geometry_of(&placements, 1), screen_at(0, 1));
+
+    // Opened from the first screen, a window takes the place right of it.
+    layout.activate(&1);
+    settle(layout.as_mut());
+    layout.insert(LayoutInsertion {
+        window: 3,
+        space: OUTPUT,
+        anchor: Some(1),
+    });
+    let placements = settle(layout.as_mut());
+    assert_eq!(
+        screen_windows(layout.as_ref()),
+        vec![vec![1], vec![3], vec![2]]
+    );
+    assert_eq!(geometry_of(&placements, 3), screen_area());
+    assert_eq!(geometry_of(&placements, 1), screen_at(0, 1));
+    assert_eq!(geometry_of(&placements, 2), screen_at(2, 1));
+    let screens = layout.screens(OUTPUT, screen_area(), SCREEN_GAP);
+    assert_eq!(screens[1].rect, screen_area());
+    assert_eq!(screens[2].rect, screen_at(2, 1));
+    assert_eq!(screens[2].active, 2);
+}
+
+#[test]
+fn closing_a_screen_focuses_its_left_neighbour_or_the_right_one_when_first() {
+    let mut layout = screens_layout(&[1, 2, 3]);
+    layout.activate(&2);
+    settle(layout.as_mut());
+    assert!(layout.remove(&2));
+    let placements = settle(layout.as_mut());
+    assert_eq!(screen_windows(layout.as_ref()), vec![vec![1], vec![3]]);
+    assert_eq!(geometry_of(&placements, 1), screen_area());
+    assert_eq!(geometry_of(&placements, 3), screen_at(1, 0));
+
+    assert!(layout.remove(&1));
+    let placements = settle(layout.as_mut());
+    assert_eq!(geometry_of(&placements, 3), screen_area());
+
+    // A tile closing inside a split keeps its screen.
+    let mut layout = screens_layout(&[1, 2]);
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Right));
+    assert!(layout.remove(&2));
+    let placements = settle(layout.as_mut());
+    assert_eq!(geometry_of(&placements, 1), screen_area());
+}
+
+#[test]
+fn joining_a_screen_splits_it_in_halves_on_the_dropped_side() {
+    let half = (screen_area().size.w - SCREEN_GAP) / 2;
+    let half_height = (screen_area().size.h - SCREEN_GAP) / 2;
+    let left = rect(0, 40, half, 600);
+    let right = rect(half + SCREEN_GAP, 40, half, 600);
+    let top = rect(0, 40, 1000, half_height);
+    let bottom = rect(0, 40 + half_height + SCREEN_GAP, 1000, half_height);
+    for (direction, moved, stayed) in [
+        (LayoutDirection::Left, left, right),
+        (LayoutDirection::Right, right, left),
+        (LayoutDirection::Up, top, bottom),
+        (LayoutDirection::Down, bottom, top),
+    ] {
+        let mut layout = screens_layout(&[1, 2, 3]);
+        assert!(layout.move_beside(&3, &1, direction), "{direction:?}");
+        let placements = settle(layout.as_mut());
+        // The moved window's screen is gone and the joined screen is
+        // current, split exactly in halves.
+        assert_eq!(screen_windows(layout.as_ref()).len(), 2, "{direction:?}");
+        assert_eq!(geometry_of(&placements, 3), moved, "{direction:?}");
+        assert_eq!(geometry_of(&placements, 1), stayed, "{direction:?}");
+        assert_eq!(
+            geometry_of(&placements, 2),
+            screen_at(1, 0),
+            "{direction:?}"
+        );
+    }
+}
+
+#[test]
+fn third_and_fourth_tiles_split_the_tile_they_land_on_and_a_fifth_is_refused() {
+    let mut layout = screens_layout(&[1, 2, 3, 4, 5]);
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Right));
+    assert!(layout.move_beside(&3, &2, LayoutDirection::Down));
+    assert!(layout.move_beside(&4, &1, LayoutDirection::Down));
+    let placements = settle(layout.as_mut());
+    let half = (screen_area().size.w - SCREEN_GAP) / 2;
+    let half_height = (screen_area().size.h - SCREEN_GAP) / 2;
+    assert_eq!(geometry_of(&placements, 1), rect(0, 40, half, half_height));
+    assert_eq!(
+        geometry_of(&placements, 4),
+        rect(0, 40 + half_height + SCREEN_GAP, half, half_height)
+    );
+    assert_eq!(
+        geometry_of(&placements, 2),
+        rect(half + SCREEN_GAP, 40, half, half_height)
+    );
+    assert_eq!(
+        geometry_of(&placements, 3),
+        rect(
+            half + SCREEN_GAP,
+            40 + half_height + SCREEN_GAP,
+            half,
+            half_height
+        )
+    );
+    // Quarters are the most a screen holds; the fifth window keeps its own.
+    assert!(!layout.move_beside(&5, &3, LayoutDirection::Left));
+    assert_eq!(
+        screen_windows(layout.as_ref()),
+        vec![vec![1, 4, 2, 3], vec![5]]
+    );
+    // A tile of that screen still moves within it.
+    assert!(layout.move_beside(&1, &3, LayoutDirection::Right));
+    assert_eq!(screen_windows(layout.as_ref()).len(), 2);
+}
+
+#[test]
+fn separating_and_reordering_give_windows_their_own_screen_in_place() {
+    let mut layout = screens_layout(&[1, 2, 3]);
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Right));
+    assert_eq!(screen_windows(layout.as_ref()), vec![vec![1, 2], vec![3]]);
+
+    // Separate: out of the split, into the gap after the last screen.
+    assert!(layout.move_to_column(&2, &3, false));
+    let placements = settle(layout.as_mut());
+    assert_eq!(
+        screen_windows(layout.as_ref()),
+        vec![vec![1], vec![3], vec![2]]
+    );
+    assert_eq!(geometry_of(&placements, 2), screen_area());
+    assert_eq!(geometry_of(&placements, 1), screen_at(0, 2));
+
+    // Reorder: a single-window screen moves before the first one.
+    assert!(layout.move_to_column(&3, &1, true));
+    let placements = settle(layout.as_mut());
+    assert_eq!(
+        screen_windows(layout.as_ref()),
+        vec![vec![3], vec![1], vec![2]]
+    );
+    assert_eq!(geometry_of(&placements, 3), screen_area());
+    // Dropping a lone screen back into its own place changes nothing.
+    assert!(!layout.move_to_column(&3, &1, true));
+}
+
+#[test]
+fn a_swipe_snaps_the_strip_to_a_whole_screen() {
+    let mut layout = screens_layout(&[1, 2, 3]);
+    layout.activate(&1);
+    settle(layout.as_mut());
+
+    // Less than half a screen falls back to the current screen.
+    assert!(layout.scroll_horizontally(
+        OUTPUT,
+        screen_area(),
+        SCREEN_GAP,
+        LayoutAxis::Horizontal,
+        -300.0
+    ));
+    assert_eq!(
+        layout.finish_horizontal_scroll(
+            OUTPUT,
+            screen_area(),
+            SCREEN_GAP,
+            LayoutAxis::Horizontal,
+            false,
+            None
+        ),
+        Some(1)
+    );
+    let placements = settle(layout.as_mut());
+    assert_eq!(geometry_of(&placements, 1), screen_area());
+
+    // Fingers moving left past the middle bring in the screen on the right.
+    assert!(layout.scroll_horizontally(
+        OUTPUT,
+        screen_area(),
+        SCREEN_GAP,
+        LayoutAxis::Horizontal,
+        -600.0
+    ));
+    assert_eq!(
+        layout.finish_horizontal_scroll(
+            OUTPUT,
+            screen_area(),
+            SCREEN_GAP,
+            LayoutAxis::Horizontal,
+            false,
+            None
+        ),
+        Some(2)
+    );
+    let placements = settle(layout.as_mut());
+    assert_eq!(geometry_of(&placements, 2), screen_area());
+    assert_eq!(geometry_of(&placements, 1), screen_at(0, 1));
+    assert_eq!(geometry_of(&placements, 3), screen_at(2, 1));
+
+    // A short, fast flick to the right projects onto the previous screen.
+    assert!(layout.scroll_horizontally(
+        OUTPUT,
+        screen_area(),
+        SCREEN_GAP,
+        LayoutAxis::Horizontal,
+        100.0
+    ));
+    assert_eq!(
+        layout.finish_horizontal_scroll(
+            OUTPUT,
+            screen_area(),
+            SCREEN_GAP,
+            LayoutAxis::Horizontal,
+            false,
+            Some(700.0)
+        ),
+        Some(1)
+    );
+    let placements = settle(layout.as_mut());
+    assert_eq!(geometry_of(&placements, 1), screen_area());
+
+    // A cancelled swipe returns to where it started.
+    assert!(layout.scroll_horizontally(
+        OUTPUT,
+        screen_area(),
+        SCREEN_GAP,
+        LayoutAxis::Horizontal,
+        -900.0
+    ));
+    assert_eq!(
+        layout.finish_horizontal_scroll(
+            OUTPUT,
+            screen_area(),
+            SCREEN_GAP,
+            LayoutAxis::Horizontal,
+            true,
+            None
+        ),
+        Some(1)
+    );
+    let placements = settle(layout.as_mut());
+    assert_eq!(geometry_of(&placements, 1), screen_area());
+}
+
+#[test]
+fn screens_neither_maximize_nor_resize_but_their_splits_do() {
+    let mut layout = screens_layout(&[1, 2]);
+    assert!(!layout.set_maximized(&2, true));
+    assert!(!layout.is_maximized(&2));
+    // A lone screen keeps the work area on both axes.
+    for axis in [LayoutAxis::Horizontal, LayoutAxis::Vertical] {
+        assert!(!layout.resize_from_keyboard(LayoutKeyboardResizeRequest {
+            window: 2,
+            work_area: screen_area(),
+            gap: SCREEN_GAP,
+            axis,
+            change: LayoutSizeChange::Adjust(-100.0),
+        }));
+    }
+    assert!(!layout.resize(LayoutResizeRequest {
+        window: 2,
+        work_area: screen_area(),
+        gap: SCREEN_GAP,
+        delta_x: -100.0,
+        delta_y: -100.0,
+        edges: LayoutResizeEdges {
+            right: true,
+            bottom: true,
+            ..LayoutResizeEdges::default()
+        },
+    }));
+    assert_eq!(geometry_of(&settle(layout.as_mut()), 2), screen_area());
+
+    // Inside a split the shared boundary moves and the screen stays whole.
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Right));
+    settle(layout.as_mut());
+    assert!(layout.resize_from_keyboard(LayoutKeyboardResizeRequest {
+        window: 1,
+        work_area: screen_area(),
+        gap: SCREEN_GAP,
+        axis: LayoutAxis::Horizontal,
+        change: LayoutSizeChange::Adjust(100.0),
+    }));
+    let placements = settle(layout.as_mut());
+    let first = geometry_of(&placements, 1);
+    let second = geometry_of(&placements, 2);
+    assert!(first.size.w > second.size.w);
+    assert_eq!(first.loc.x, 0);
+    assert_eq!(second.loc.x + second.size.w, screen_area().size.w);
+    // Reset returns the split to equal halves.
+    assert!(layout.resize_from_keyboard(LayoutKeyboardResizeRequest {
+        window: 1,
+        work_area: screen_area(),
+        gap: SCREEN_GAP,
+        axis: LayoutAxis::Horizontal,
+        change: LayoutSizeChange::Reset,
+    }));
+    let placements = settle(layout.as_mut());
+    assert_eq!(
+        geometry_of(&placements, 1).size.w,
+        geometry_of(&placements, 2).size.w
+    );
+}
+
+#[test]
+fn other_layouts_have_no_screens() {
+    for kind in [
+        WindowLayoutKind::Stacking,
+        WindowLayoutKind::Dwindle,
+        WindowLayoutKind::Scrolling,
+    ] {
+        let mut layout = create_window_layout::<u64>(kind);
+        layout.insert(LayoutInsertion {
+            window: 1,
+            space: OUTPUT,
+            anchor: None,
+        });
+        layout.prepare_arrange(OUTPUT, screen_area(), SCREEN_GAP, LayoutAxis::Horizontal);
+        assert!(
+            layout.screens(OUTPUT, screen_area(), SCREEN_GAP).is_empty(),
+            "{kind:?}"
+        );
+    }
+    // The scrolling layout keeps its three-fifths columns.
+    let mut scrolling = create_window_layout::<u64>(WindowLayoutKind::Scrolling);
+    scrolling.insert(LayoutInsertion {
+        window: 1,
+        space: OUTPUT,
+        anchor: None,
+    });
+    scrolling.prepare_arrange(OUTPUT, screen_area(), SCREEN_GAP, LayoutAxis::Horizontal);
+    assert_eq!(
+        scrolling.arrange(OUTPUT, screen_area(), SCREEN_GAP)[0]
+            .geometry
+            .size
+            .w,
+        600
+    );
+}

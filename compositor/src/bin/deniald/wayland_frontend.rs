@@ -210,6 +210,8 @@ mod presentation;
 mod scene_input;
 #[path = "wayland_frontend/screencopy.rs"]
 mod screencopy;
+#[path = "wayland_frontend/screens.rs"]
+mod screens;
 #[path = "wayland_frontend/startup.rs"]
 mod startup;
 pub(crate) use startup::FrontendConfig;
@@ -522,6 +524,9 @@ pub(super) struct WaylandFrontend {
     next_surface_id: u64,
     window_registry: WindowRegistry,
     window_layout: Box<dyn WindowLayout<ObjectId>>,
+    /// Floating windows of the full-screen apps layout and the screen each
+    /// one stays over.
+    screen_floats: HashMap<ObjectId, screens::ScreenFloat>,
     #[cfg(feature = "flutter")]
     workspace_drop_preview: Option<window_management::WorkspaceDropPreview>,
     #[cfg(feature = "flutter")]

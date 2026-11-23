@@ -1382,3 +1382,114 @@ fn suspend_migration_follows_the_minutes_migration() {
     assert_eq!(document["power"]["idleSuspendTimeoutSeconds"], 2700);
     assert_eq!(document["power"]["idleSuspendAfterScreenOffSeconds"], 1800);
 }
+
+/// What `deniald` up to `eb16.tp1` accepts in `layout.windowLayout`: any
+/// other value makes it reject the whole file and run on defaults.
+fn older_deniald_accepts(file: &Value) -> bool {
+    matches!(
+        file["layout"]["windowLayout"].as_str(),
+        Some("stacking" | "dwindle" | "scrolling")
+    )
+}
+
+fn commit_window_layout(manager: &mut SettingsManager, layout: Value) {
+    let update = manager
+        .prepare_shell_update(
+            manager.revision(),
+            &shell_document(serde_json::json!({
+                "appearance": {"colorSchemePreference": "preferDark"},
+                "layout": layout
+            })),
+        )
+        .unwrap();
+    manager.commit(update).unwrap();
+}
+
+#[test]
+fn screens_layout_is_stored_so_an_older_deniald_still_loads_the_file() {
+    let temporary = TemporaryDirectory::new("settings-screens-layout");
+    let path = temporary.settings_path();
+    let mut manager = SettingsManager::load_path(path.clone()).unwrap();
+    commit_window_layout(&mut manager, serde_json::json!({"windowLayout": "screens"}));
+    assert_eq!(manager.window_layout_kind(), WindowLayoutKind::Screens);
+
+    // On disk: a layout every release knows, the real one beside it.
+    let file: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert!(older_deniald_accepts(&file));
+    assert_eq!(file["layout"]["windowLayout"], "scrolling");
+    assert_eq!(file["layout"]["windowLayoutVariant"], "screens");
+
+    // Served to the shell and Settings as itself.
+    let served: Value = serde_json::from_str(&manager.document_json().unwrap()).unwrap();
+    assert_eq!(served["layout"]["windowLayout"], "screens");
+    assert!(served["layout"].get("windowLayoutVariant").is_none());
+
+    // This release reads it back, and an external edit of the file is no
+    // change at all.
+    let reloaded = SettingsManager::load_path(path.clone()).unwrap();
+    assert_eq!(reloaded.window_layout_kind(), WindowLayoutKind::Screens);
+    assert!(manager.prepare_external_reload().unwrap().is_none());
+
+    // Leaving the layout leaves no variant behind.
+    commit_window_layout(&mut manager, serde_json::json!({"windowLayout": "dwindle"}));
+    let file: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(file["layout"]["windowLayout"], "dwindle");
+    assert!(file["layout"].get("windowLayoutVariant").is_none());
+}
+
+#[test]
+fn a_stale_or_unknown_layout_variant_keeps_the_stored_layout() {
+    let temporary = TemporaryDirectory::new("settings-layout-variant");
+    let path = temporary.settings_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    for (stored, variant, expected) in [
+        // An older release changed the layout since: its choice stands.
+        ("dwindle", "screens", WindowLayoutKind::Dwindle),
+        // A layout from a newer release: its fallback stands.
+        ("scrolling", "tiles", WindowLayoutKind::Scrolling),
+        ("scrolling", "screens", WindowLayoutKind::Screens),
+    ] {
+        fs::write(
+            &path,
+            serde_json::to_vec(&serde_json::json!({
+                "version": SETTINGS_SCHEMA_VERSION,
+                "revision": 3,
+                "layout": {"windowLayout": stored, "windowLayoutVariant": variant}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let manager = SettingsManager::load_path(path.clone()).unwrap();
+        assert_eq!(manager.window_layout_kind(), expected, "{stored} {variant}");
+        let served: Value = serde_json::from_str(&manager.document_json().unwrap()).unwrap();
+        assert!(served["layout"].get("windowLayoutVariant").is_none());
+    }
+}
+
+#[test]
+fn screens_layout_turns_workspaces_off_but_keeps_the_users_choice() {
+    let temporary = TemporaryDirectory::new("settings-screens-workspaces");
+    let path = temporary.settings_path();
+    let mut manager = SettingsManager::load_path(path).unwrap();
+    commit_window_layout(
+        &mut manager,
+        serde_json::json!({"windowLayout": "dwindle", "workspacesEnabled": true, "workspaceCount": 5}),
+    );
+    assert!(manager.workspace_settings().enabled);
+
+    commit_window_layout(
+        &mut manager,
+        serde_json::json!({"windowLayout": "screens", "workspacesEnabled": true, "workspaceCount": 5}),
+    );
+    let workspaces = manager.workspace_settings();
+    assert!(!workspaces.enabled);
+    assert_eq!(workspaces.count, 5);
+    let served: Value = serde_json::from_str(&manager.document_json().unwrap()).unwrap();
+    assert_eq!(served["layout"]["workspacesEnabled"], true);
+
+    commit_window_layout(
+        &mut manager,
+        serde_json::json!({"windowLayout": "dwindle", "workspacesEnabled": true, "workspaceCount": 5}),
+    );
+    assert!(manager.workspace_settings().enabled);
+}

@@ -184,15 +184,15 @@ fn decorated_layout_minimum_includes_the_server_frame() {
 #[test]
 fn touchpad_scrolling_delta_applies_the_configured_travel_scale() {
     assert_eq!(
-        touchpad_scrolling_layout_delta(125.0, 1_000, 10, 1.0),
+        touchpad_scrolling_layout_delta(125.0, 1_000, 10, DEFAULT_SCROLLING_COLUMN_FRACTION, 1.0),
         610.0
     );
     assert_eq!(
-        touchpad_scrolling_layout_delta(-62.5, 1_000, 10, 0.5),
+        touchpad_scrolling_layout_delta(-62.5, 1_000, 10, DEFAULT_SCROLLING_COLUMN_FRACTION, 0.5),
         -152.5
     );
     assert_eq!(
-        touchpad_scrolling_layout_delta(100.0, 1_000, 10, 2.0),
+        touchpad_scrolling_layout_delta(100.0, 1_000, 10, DEFAULT_SCROLLING_COLUMN_FRACTION, 2.0),
         976.0
     );
 }
@@ -205,6 +205,7 @@ fn mouse_wheel_scrolling_delta_applies_speed_and_direction() {
             -15.0,
             1_000,
             10,
+            DEFAULT_SCROLLING_COLUMN_FRACTION,
             1.0,
             ScrollingLayoutWheelUpDirection::Left,
         ),
@@ -215,6 +216,7 @@ fn mouse_wheel_scrolling_delta_applies_speed_and_direction() {
             -15.0,
             1_000,
             10,
+            DEFAULT_SCROLLING_COLUMN_FRACTION,
             2.0,
             ScrollingLayoutWheelUpDirection::Right,
         ),
@@ -225,10 +227,64 @@ fn mouse_wheel_scrolling_delta_applies_speed_and_direction() {
             7.5,
             1_000,
             10,
+            DEFAULT_SCROLLING_COLUMN_FRACTION,
             0.5,
             ScrollingLayoutWheelUpDirection::Left,
         ),
         -152.5
+    );
+}
+
+#[cfg(feature = "flutter")]
+#[test]
+fn a_full_swipe_travels_one_screen_in_the_screens_layout() {
+    // The same 125 units of touchpad travel that move one three-fifths
+    // column in the scrolling layout move one whole screen and its gap.
+    assert_eq!(
+        touchpad_scrolling_layout_delta(
+            125.0,
+            1_000,
+            10,
+            strip_column_fraction(WindowLayoutKind::Screens),
+            1.0
+        ),
+        1_010.0
+    );
+    assert_eq!(
+        strip_column_fraction(WindowLayoutKind::Scrolling),
+        DEFAULT_SCROLLING_COLUMN_FRACTION
+    );
+}
+
+#[test]
+fn screens_split_on_every_side_but_scrolling_columns_do_not() {
+    let geometry = Rectangle::new(Point::from((0, 0)), Size::from((1000, 600)));
+    for (location, direction) in [
+        ((10, 300), LayoutDirection::Left),
+        ((990, 300), LayoutDirection::Right),
+        ((500, 10), LayoutDirection::Up),
+        ((500, 590), LayoutDirection::Down),
+    ] {
+        assert_eq!(
+            layout_drop_mode_for_kind(
+                WindowLayoutKind::Screens,
+                LayoutAxis::Horizontal,
+                geometry,
+                Point::from(location),
+                None,
+            ),
+            LayoutDropMode::Split(direction)
+        );
+    }
+    assert_eq!(
+        layout_drop_mode_for_kind(
+            WindowLayoutKind::Scrolling,
+            LayoutAxis::Horizontal,
+            geometry,
+            Point::from((10, 300)),
+            None,
+        ),
+        LayoutDropMode::Swap
     );
 }
 

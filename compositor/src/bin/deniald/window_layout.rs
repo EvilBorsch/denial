@@ -36,6 +36,8 @@ pub(super) enum WindowLayoutKind {
     Stacking,
     Dwindle,
     Scrolling,
+    /// Full-screen apps: a strip of screens, each filling the work area.
+    Screens,
 }
 
 impl WindowLayoutKind {
@@ -44,6 +46,7 @@ impl WindowLayoutKind {
             Self::Stacking => "stacking",
             Self::Dwindle => "dwindle",
             Self::Scrolling => "scrolling",
+            Self::Screens => "screens",
         }
     }
 
@@ -52,8 +55,29 @@ impl WindowLayoutKind {
             "stacking" => Some(Self::Stacking),
             "dwindle" => Some(Self::Dwindle),
             "scrolling" => Some(Self::Scrolling),
+            "screens" => Some(Self::Screens),
             _ => None,
         }
+    }
+
+    /// The layout a `deniald` that predates this one shows instead. Every
+    /// release up to `eb16.tp1` rejects a settings file whose
+    /// `windowLayout` it does not know, so the file keeps this value.
+    pub(super) const fn legacy_fallback(self) -> Self {
+        match self {
+            Self::Screens => Self::Scrolling,
+            other => other,
+        }
+    }
+
+    /// Whether every `deniald` reads this value in a settings file.
+    pub(super) const fn is_legacy(self) -> bool {
+        !matches!(self, Self::Screens)
+    }
+
+    /// A strip that scrolls with three fingers.
+    pub(super) const fn scrolls_horizontally(self) -> bool {
+        matches!(self, Self::Scrolling | Self::Screens)
     }
 }
 
@@ -168,6 +192,21 @@ impl LayoutResizeEdges {
         }
     }
 }
+
+/// One screen of the full-screen apps layout.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct LayoutScreen<WindowId> {
+    /// Where the screen is, in output coordinates. Only the current screen
+    /// lies on the output; the others are beside it, a gap away.
+    pub(super) rect: Rectangle<i32, Logical>,
+    /// Its tiles in split order.
+    pub(super) windows: Vec<WindowId>,
+    /// The tile that takes focus when the screen does.
+    pub(super) active: WindowId,
+}
+
+/// The most tiles one screen holds: halves, then quarters.
+pub(super) const MAX_SCREEN_TILES: usize = 4;
 
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct LayoutResizeRequest<WindowId> {
@@ -386,6 +425,17 @@ where
         None
     }
 
+    /// The screens of one layout space in strip order. Only the full-screen
+    /// apps layout has screens.
+    fn screens(
+        &self,
+        _space: LayoutSpace,
+        _work_area: Rectangle<i32, Logical>,
+        _gap: i32,
+    ) -> Vec<LayoutScreen<WindowId>> {
+        Vec::new()
+    }
+
     /// Arrange one output. `gap` is the logical distance between siblings;
     /// outer insets are already reflected in `work_area`.
     fn arrange(
@@ -487,6 +537,7 @@ where
         WindowLayoutKind::Stacking => Box::<StackingLayout>::default(),
         WindowLayoutKind::Dwindle => Box::<DwindleLayout<WindowId>>::default(),
         WindowLayoutKind::Scrolling => Box::<ScrollingLayout<WindowId>>::default(),
+        WindowLayoutKind::Screens => Box::new(ScrollingLayout::<WindowId>::screens()),
     }
 }
 
@@ -1230,11 +1281,41 @@ where
 /// after that the viewport moves only far
 /// enough to reveal the active column and retains as many neighbors as fit.
 /// Quarter-turned outputs rotate the strip while tile splits remain physical.
+///
+/// In [`StripMode::Screens`] the same strip is the full-screen apps layout:
+/// every column is a screen exactly as wide as the work area, so at rest the
+/// gap and every other screen lie outside the output. A screen's split tree
+/// holds up to [`MAX_SCREEN_TILES`] tiles. Screens are neither maximized nor
+/// resized; only their splits move.
 #[derive(Clone, Debug)]
 struct ScrollingLayout<WindowId> {
     maximum_sizes: Vec<(WindowId, Size<i32, Logical>)>,
     rows: HashMap<LayoutSpace, ScrollingRow<WindowId>>,
     minimum_sizes: Vec<(WindowId, Size<i32, Logical>)>,
+    mode: StripMode,
+}
+
+/// How a scrolling strip sizes its columns.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum StripMode {
+    /// Columns open at three fifths of the work area and can be resized.
+    #[default]
+    Columns,
+    /// Every column is one full screen.
+    Screens,
+}
+
+impl StripMode {
+    const fn new_column_fraction(self) -> f64 {
+        match self {
+            Self::Columns => DEFAULT_SCROLLING_COLUMN_FRACTION,
+            Self::Screens => 1.0,
+        }
+    }
+
+    const fn screens(self) -> bool {
+        matches!(self, Self::Screens)
+    }
 }
 
 impl<WindowId> Default for ScrollingLayout<WindowId> {
@@ -1243,6 +1324,16 @@ impl<WindowId> Default for ScrollingLayout<WindowId> {
             rows: HashMap::new(),
             maximum_sizes: Vec::new(),
             minimum_sizes: Vec::new(),
+            mode: StripMode::Columns,
+        }
+    }
+}
+
+impl<WindowId> ScrollingLayout<WindowId> {
+    fn screens() -> Self {
+        Self {
+            mode: StripMode::Screens,
+            ..Self::default()
         }
     }
 }
@@ -1833,6 +1924,7 @@ where
         cancelled: bool,
         projected_translation: Option<f64>,
         minimum_sizes: &[(WindowId, Size<i32, Logical>)],
+        screens: bool,
     ) -> Option<WindowId> {
         if self.columns.is_empty() {
             return None;
@@ -1882,18 +1974,21 @@ where
         let selected = self.columns[selected_index].active.clone();
         self.active = Some(selected.clone());
         self.scroll_origin = None;
-        if !cancelled && selected_index != active_index {
+        // A strip of screens always comes to rest on a whole screen.
+        if !cancelled && (selected_index != active_index || screens) {
             self.needs_reveal = true;
             self.prepare_arrange(work_area, gap, axis, minimum_sizes);
         }
         Some(selected)
     }
 
+    /// `screens`: the column is a full screen; only its splits resize.
     fn resize_from_keyboard(
         &mut self,
         request: &LayoutKeyboardResizeRequest<WindowId>,
         minimum_sizes: &[(WindowId, Size<i32, Logical>)],
         maximum_sizes: &[(WindowId, Size<i32, Logical>)],
+        screens: bool,
     ) -> bool {
         let Some(index) = self.position(&request.window) else {
             return false;
@@ -1917,6 +2012,9 @@ where
         {
             self.needs_reveal |= changed;
             return changed;
+        }
+        if screens {
+            return false;
         }
         if request.axis != axis {
             return self.columns[index].root.leaf_count() == 1
@@ -1955,11 +2053,13 @@ where
         changed
     }
 
+    /// `screens`: the column is a full screen; only its splits resize.
     fn resize(
         &mut self,
         request: &LayoutResizeRequest<WindowId>,
         minimum_sizes: &[(WindowId, Size<i32, Logical>)],
         maximum_sizes: &[(WindowId, Size<i32, Logical>)],
+        screens: bool,
     ) -> bool {
         let Some(column_index) = self.position(&request.window) else {
             return false;
@@ -2026,7 +2126,8 @@ where
             LayoutAxis::Vertical => resized.vertical,
         };
         let mut changed = resized.changed;
-        if !self.columns[column_index].maximized
+        if !screens
+            && !self.columns[column_index].maximized
             && self.columns[column_index].root.leaf_count() == 1
         {
             // Like niri's topmost tile: leading cross-edge drags are ignored.
@@ -2046,7 +2147,8 @@ where
                 );
             }
         }
-        if !main_boundary_resized
+        if !screens
+            && !main_boundary_resized
             && main_delta.is_finite()
             && main_extent > 0
             && (main_leading || main_trailing)
@@ -2095,6 +2197,52 @@ where
         changed
     }
 
+    /// Each column's main-axis location and extent in output coordinates.
+    fn column_spans(
+        &self,
+        work_area: Rectangle<i32, Logical>,
+        gap: i32,
+        minimum_sizes: &[(WindowId, Size<i32, Logical>)],
+    ) -> Vec<(i32, i32)> {
+        let axis = self.axis;
+        let widths = self.widths(work_area, gap, minimum_sizes, axis);
+        let view_start = self.resolved_view_start(work_area, gap, axis, minimum_sizes);
+        let main_origin = axis.main_location(self.active_view_area(work_area));
+        let mut column_start = 0_i64;
+        widths
+            .into_iter()
+            .map(|width| {
+                let location = (f64::from(main_origin) + column_start as f64 - view_start)
+                    .round()
+                    .clamp(f64::from(i32::MIN), f64::from(i32::MAX))
+                    as i32;
+                let width = width.clamp(1, i64::from(i32::MAX)) as i32;
+                column_start = column_start
+                    .saturating_add(i64::from(width))
+                    .saturating_add(i64::from(gap));
+                (location, width)
+            })
+            .collect()
+    }
+
+    fn screens(
+        &self,
+        work_area: Rectangle<i32, Logical>,
+        requested_gap: i32,
+        minimum_sizes: &[(WindowId, Size<i32, Logical>)],
+    ) -> Vec<LayoutScreen<WindowId>> {
+        let gap = requested_gap.max(0);
+        self.columns
+            .iter()
+            .zip(self.column_spans(work_area, gap, minimum_sizes))
+            .map(|(column, (location, width))| LayoutScreen {
+                rect: self.axis.tile_geometry(work_area, location, width),
+                windows: column.root.window_ids(),
+                active: column.active.clone(),
+            })
+            .collect()
+    }
+
     fn arrange(
         &self,
         work_area: Rectangle<i32, Logical>,
@@ -2108,19 +2256,12 @@ where
 
         let axis = self.axis;
         let gap = requested_gap.max(0);
-        let widths = self.widths(work_area, gap, minimum_sizes, axis);
-        let view_start = self.resolved_view_start(work_area, gap, axis, minimum_sizes);
-        let main_origin = axis.main_location(self.active_view_area(work_area));
-        let mut column_start = 0_i64;
         let mut placements = Vec::new();
-        for (column, width) in self.columns.iter().zip(widths) {
-            let location = (f64::from(main_origin) + column_start as f64 - view_start)
-                .round()
-                .clamp(f64::from(i32::MIN), f64::from(i32::MAX)) as i32;
-            let width = width.clamp(1, i64::from(i32::MAX)) as i32;
-            column_start = column_start
-                .saturating_add(i64::from(width))
-                .saturating_add(i64::from(gap));
+        for (column, (location, width)) in
+            self.columns
+                .iter()
+                .zip(self.column_spans(work_area, gap, minimum_sizes))
+        {
             let column_area = if column.maximized {
                 self.maximize_area_or(work_area)
             } else {
@@ -2159,11 +2300,15 @@ where
     }
 
     fn kind(&self) -> WindowLayoutKind {
-        WindowLayoutKind::Scrolling
+        match self.mode {
+            StripMode::Columns => WindowLayoutKind::Scrolling,
+            StripMode::Screens => WindowLayoutKind::Screens,
+        }
     }
 
     fn insert(&mut self, insertion: LayoutInsertion<WindowId>) {
         self.remove(&insertion.window);
+        let fraction = self.mode.new_column_fraction();
         let row = self
             .rows
             .entry(insertion.space)
@@ -2175,7 +2320,7 @@ where
             .map_or(row.columns.len(), |anchor| anchor + 1);
         row.columns.insert(
             index,
-            ScrollingColumn::single(insertion.window.clone(), DEFAULT_SCROLLING_COLUMN_FRACTION),
+            ScrollingColumn::single(insertion.window.clone(), fraction),
         );
         row.active = Some(insertion.window);
         row.scroll_origin = None;
@@ -2361,7 +2506,7 @@ where
             let width_fraction = previous_widths
                 .iter()
                 .find_map(|(window, width)| (window == &insertion.window).then_some(*width))
-                .unwrap_or(DEFAULT_SCROLLING_COLUMN_FRACTION);
+                .unwrap_or(self.mode.new_column_fraction());
             let row = self
                 .rows
                 .entry(insertion.space)
@@ -2470,6 +2615,14 @@ where
         let destination_space = self
             .space_for(target)
             .expect("located scrolling target must have a layout space");
+        if self.mode.screens() {
+            let row = &self.rows[&destination_space];
+            let column = &row.columns[row.position(target).expect("located screen target")];
+            // A tile already on this screen only moves within it.
+            if !column.contains(window) && column.root.leaf_count() >= MAX_SCREEN_TILES {
+                return false;
+            }
+        }
         let extracted = self
             .rows
             .get_mut(&source_space)
@@ -2641,6 +2794,10 @@ where
     }
 
     fn set_maximized(&mut self, window: &WindowId, maximized: bool) -> bool {
+        // A screen already fills the work area.
+        if self.mode.screens() {
+            return false;
+        }
         self.rows
             .values_mut()
             .find(|row| row.position(window).is_some())
@@ -2662,7 +2819,12 @@ where
         else {
             return false;
         };
-        row.resize_from_keyboard(&request, &self.minimum_sizes, &self.maximum_sizes)
+        row.resize_from_keyboard(
+            &request,
+            &self.minimum_sizes,
+            &self.maximum_sizes,
+            self.mode.screens(),
+        )
     }
 
     fn resize(&mut self, request: LayoutResizeRequest<WindowId>) -> bool {
@@ -2673,7 +2835,12 @@ where
         else {
             return false;
         };
-        row.resize(&request, &self.minimum_sizes, &self.maximum_sizes)
+        row.resize(
+            &request,
+            &self.minimum_sizes,
+            &self.maximum_sizes,
+            self.mode.screens(),
+        )
     }
 
     fn prepare_arrange(
@@ -2720,7 +2887,22 @@ where
             cancelled,
             projected_translation,
             minimum_sizes,
+            self.mode.screens(),
         )
+    }
+
+    fn screens(
+        &self,
+        space: LayoutSpace,
+        work_area: Rectangle<i32, Logical>,
+        gap: i32,
+    ) -> Vec<LayoutScreen<WindowId>> {
+        if !self.mode.screens() {
+            return Vec::new();
+        }
+        self.rows.get(&space).map_or_else(Vec::new, |row| {
+            row.screens(work_area, gap, &self.minimum_sizes)
+        })
     }
 
     fn arrange(

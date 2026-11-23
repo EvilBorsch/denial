@@ -394,6 +394,7 @@ impl WaylandFrontend {
             next_surface_id: 1,
             window_registry: WindowRegistry::default(),
             window_layout: create_window_layout(window_layout_kind),
+            screen_floats: HashMap::new(),
             #[cfg(feature = "flutter")]
             workspace_drop_preview: None,
             #[cfg(feature = "flutter")]

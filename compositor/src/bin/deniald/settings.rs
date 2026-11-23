@@ -953,8 +953,19 @@ impl SettingsManager {
             .unwrap_or(DEFAULT_CALLS_APP)
     }
 
+    /// The workspaces in effect. The full-screen apps layout has none: its
+    /// strip of screens takes their place. The user's own setting stays in
+    /// the document for the other layouts.
     pub(super) fn workspace_settings(&self) -> WorkspaceSettings {
-        parse_workspace_settings(&self.document).unwrap_or_default()
+        let workspaces = parse_workspace_settings(&self.document).unwrap_or_default();
+        if self.window_layout_kind() == WindowLayoutKind::Screens {
+            WorkspaceSettings {
+                enabled: false,
+                ..workspaces
+            }
+        } else {
+            workspaces
+        }
     }
 
     pub(super) fn document_json(&self) -> Result<String, SettingsError> {
@@ -1282,7 +1293,7 @@ impl SettingsManager {
             .get("revision")
             .and_then(Value::as_u64)
             .ok_or_else(|| SettingsError::Document("settings revision is missing".to_owned()))?;
-        let bytes = render_document(&document)?;
+        let bytes = render_document_for_disk(&document)?;
         let temporary = write_temporary(&self.path, &bytes)?;
         Ok(PreparedSettingsUpdate {
             target: self.path.clone(),
@@ -1297,7 +1308,7 @@ impl SettingsManager {
     }
 
     fn persist_current(&mut self) -> Result<(), SettingsError> {
-        let bytes = render_document(&self.document)?;
+        let bytes = render_document_for_disk(&self.document)?;
         let temporary = write_temporary(&self.path, &bytes)?;
         if read_settings_file(&self.path)? != self.persisted_bytes {
             let _ = fs::remove_file(&temporary);
@@ -1501,6 +1512,7 @@ fn parse_document(bytes: &[u8]) -> Result<ParsedSettingsDocument, SettingsError>
             "settings version {version} is not supported"
         )));
     }
+    restore_window_layout_variant(&mut document);
     let revision = document
         .get("revision")
         .and_then(Value::as_u64)
@@ -2314,6 +2326,74 @@ fn read_settings_file(path: &Path) -> Result<Option<Vec<u8>>, SettingsError> {
         )));
     }
     Ok(Some(bytes))
+}
+
+/// Where the settings file keeps a window layout an older `deniald` does not
+/// know. Every release up to `eb16.tp1` rejects the whole file for an
+/// unknown `layout.windowLayout` and runs on defaults, so the file names a
+/// layout every release knows there and the real one here.
+const WINDOW_LAYOUT_VARIANT: &str = "windowLayoutVariant";
+
+/// The settings file as written to disk: a layout older releases do not know
+/// is stored as its legacy fallback plus [`WINDOW_LAYOUT_VARIANT`]. Served
+/// documents keep the real `layout.windowLayout`.
+fn render_document_for_disk(document: &Map<String, Value>) -> Result<Vec<u8>, SettingsError> {
+    let kind = document
+        .get("layout")
+        .and_then(Value::as_object)
+        .and_then(|layout| layout.get("windowLayout"))
+        .and_then(Value::as_str)
+        .and_then(WindowLayoutKind::from_settings_name);
+    let Some(kind) = kind.filter(|kind| !kind.is_legacy()) else {
+        let mut document = document.clone();
+        if let Some(layout) = document.get_mut("layout").and_then(Value::as_object_mut) {
+            layout.remove(WINDOW_LAYOUT_VARIANT);
+        }
+        return render_document(&document);
+    };
+    let mut document = document.clone();
+    let layout = document
+        .get_mut("layout")
+        .and_then(Value::as_object_mut)
+        .expect("a parsed window layout lives in the layout section");
+    layout.insert(
+        "windowLayout".to_owned(),
+        Value::String(kind.legacy_fallback().settings_name().to_owned()),
+    );
+    layout.insert(
+        WINDOW_LAYOUT_VARIANT.to_owned(),
+        Value::String(kind.settings_name().to_owned()),
+    );
+    render_document(&document)
+}
+
+/// Reads [`WINDOW_LAYOUT_VARIANT`] back into `layout.windowLayout`. A variant
+/// this release does not know, or one whose fallback no longer matches
+/// because an older release changed the layout since, is dropped and the
+/// stored layout stays.
+fn restore_window_layout_variant(document: &mut Map<String, Value>) {
+    let Some(layout) = document.get_mut("layout").and_then(Value::as_object_mut) else {
+        return;
+    };
+    let Some(variant) = layout.remove(WINDOW_LAYOUT_VARIANT) else {
+        return;
+    };
+    let Some(kind) = variant
+        .as_str()
+        .and_then(WindowLayoutKind::from_settings_name)
+    else {
+        return;
+    };
+    let stored = layout
+        .get("windowLayout")
+        .and_then(Value::as_str)
+        .and_then(WindowLayoutKind::from_settings_name);
+    if stored == Some(kind.legacy_fallback()) {
+        layout.insert(
+            "windowLayout".to_owned(),
+            Value::String(kind.settings_name().to_owned()),
+        );
+    }
 }
 
 fn render_document(document: &Map<String, Value>) -> Result<Vec<u8>, SettingsError> {

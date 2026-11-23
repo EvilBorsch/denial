@@ -17,7 +17,7 @@ use super::super::RuntimeState;
 use super::super::window_grab::LayoutPreviewSet;
 use super::super::window_grab::constrain_dimension;
 #[cfg(feature = "flutter")]
-use super::super::window_layout::{LayoutDirection, LayoutSpace};
+use super::super::window_layout::{LayoutDirection, LayoutSpace, WindowLayoutKind};
 #[cfg(feature = "flutter")]
 use super::super::window_placement_store::RestoredWindowPlacement;
 #[cfg(feature = "flutter")]
@@ -2053,6 +2053,12 @@ pub(super) fn toggle_shell_maximize_focused_toplevel(state: &mut RuntimeState) -
         .map(|window| window.facts().client_state)
         .unwrap_or_default();
 
+    // A screen of the full-screen apps layout already fills the work area.
+    if state.frontend().window_layout_kind() == WindowLayoutKind::Screens
+        && state.frontend().window_is_layout_managed(&window)
+    {
+        return true;
+    }
     let scrolling_maximize = state.frontend().window_is_scrolling_layout_managed(&window);
     if scrolling_maximize {
         return toggle_scrolling_layout_maximize(state, &window);

@@ -496,14 +496,16 @@ pub(super) fn synchronize_settings(
     }
     let frontend = events.frontend_mut();
     let kind = frontend.settings.window_layout_kind();
-    if frontend.set_window_layout_kind(kind) {
-        events.scene_sync.mark_dirty();
-    }
-    let frontend = events.frontend_mut();
+    // A layout switch applies the workspaces in effect itself: the
+    // full-screen apps layout has none.
+    let layout_changed = frontend.set_window_layout_kind(kind);
     let settings = frontend.settings.workspace_settings();
-    if frontend.set_workspace_settings(settings) {
+    let workspaces_changed = frontend.set_workspace_settings(settings);
+    if workspaces_changed {
         frontend.rebuild_window_layout();
-        let workspace_states = frontend.workspace_state_snapshot();
+    }
+    if layout_changed || workspaces_changed {
+        let workspace_states = events.frontend().workspace_state_snapshot();
         for (monitor_id, workspace_id) in workspace_states {
             events.queue_workspace_action(monitor_id, workspace_id);
         }
