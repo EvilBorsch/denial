@@ -7129,6 +7129,12 @@ abstract class AppLocalizations {
   /// **'Selected {windowTitle}'**
   String windowSwitcherSelected(String windowTitle);
 
+  /// Accessible name of the Alt+Tab app switcher (one icon per app; held Alt, Tab steps, release switches).
+  ///
+  /// In en, this message translates to:
+  /// **'App switcher'**
+  String get appSwitcherLabel;
+
   /// English UI text for windowUntitled.
   ///
   /// In en, this message translates to:

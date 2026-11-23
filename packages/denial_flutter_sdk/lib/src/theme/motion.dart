@@ -56,6 +56,15 @@ class Motion {
   static const Duration windowSwitcherExpand = Duration(milliseconds: 320);
   static const Duration windowSwitcherCycle = Duration(milliseconds: 240);
   static const Duration windowSwitcherCollapse = Duration(milliseconds: 280);
+
+  /// How long Alt stays down after Alt+Tab before the app switcher shows; a
+  /// quicker tap switches without it, as ⌘Tab does.
+  static const Duration appSwitcherHoldDelay = Duration(milliseconds: 130);
+  static const Duration appSwitcherOpen = Duration(milliseconds: 180);
+  static const Duration appSwitcherClose = Duration(milliseconds: 150);
+
+  /// The selection moving from one app or window to the next.
+  static const Duration appSwitcherSelect = Duration(milliseconds: 150);
   static const Duration systemLevelHud = Duration(milliseconds: 220);
   static const Duration systemLevelHudValue = Duration(milliseconds: 260);
   static const Duration systemLevelHudLimit = Duration(milliseconds: 260);

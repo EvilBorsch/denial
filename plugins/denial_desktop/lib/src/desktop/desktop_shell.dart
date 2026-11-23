@@ -18,8 +18,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/shell_plugin_services.dart';
 import '../features/default_shell/panel_composition.dart';
 import '../state/clipboard_tray.dart';
+import '../state/desktop_app_switcher.dart';
 import '../state/desktop_visibility.dart';
 import '../state/desktop_window_switcher.dart';
+import '../widgets/desktop_app_switcher.dart';
 import '../state/quick_settings.dart';
 import '../widgets/shell_frame_time_overlay.dart';
 import 'desktop_overview_keyboard.dart';
@@ -48,6 +50,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   late final DesktopPanelHoverController _panelHoverController;
   Timer? _windowSwitcherHoldTimer;
   Timer? _windowSwitcherCleanupTimer;
+  Timer? _appSwitcherHoldTimer;
+  Timer? _appSwitcherCleanupTimer;
   final Map<int, Timer> _workspaceTransitionTimers = <int, Timer>{};
   // Rust only focuses windows on a visible workspace. Activating one on
   // another workspace first switches there, then completes once the
@@ -90,6 +94,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     _panelHoverController.dispose();
     _windowSwitcherHoldTimer?.cancel();
     _windowSwitcherCleanupTimer?.cancel();
+    _appSwitcherHoldTimer?.cancel();
+    _appSwitcherCleanupTimer?.cancel();
     for (final timer in _workspaceTransitionTimers.values) {
       timer.cancel();
     }
@@ -161,11 +167,20 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       case DenialShellAction.openSettings:
         _openSettings();
       case DenialShellAction.appSwitcherNext:
+        _stepAppSwitcher(DesktopAppSwitcherStep.next, event.monitorId);
       case DenialShellAction.appSwitcherPrevious:
+        _stepAppSwitcher(DesktopAppSwitcherStep.previous, event.monitorId);
       case DenialShellAction.appSwitcherWindowNext:
+        _stepAppSwitcher(DesktopAppSwitcherStep.windowNext, event.monitorId);
       case DenialShellAction.appSwitcherWindowPrevious:
+        _stepAppSwitcher(
+          DesktopAppSwitcherStep.windowPrevious,
+          event.monitorId,
+        );
       case DenialShellAction.appSwitcherEnd:
+        _finishAppSwitcher();
       case DenialShellAction.appSwitcherCancel:
+        _cancelAppSwitcher();
       case DenialShellAction.search:
       case DenialShellAction.shellGesture:
         // The eb18 contract; the tracks that implement them handle them.
@@ -407,6 +422,86 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     _windowSwitcherCleanupTimer?.cancel();
     _windowSwitcherCleanupTimer = null;
     ref.read(desktopWindowSwitcherProvider.notifier).cancel();
+  }
+
+  /// Alt+Tab and its keys while Alt is held. The first step begins a
+  /// session from every open window, wherever it is; the switcher shows
+  /// once Alt stays down a moment, so a quick Alt+Tab just switches.
+  void _stepAppSwitcher(DesktopAppSwitcherStep step, int? monitorId) {
+    final shell = ref.read(referenceShellProvider);
+    final apps = desktopAppSwitcherOrder(
+      windows: shell.desk.openAppWindows,
+      placements: ref.read(desktopWorkspaceProvider).placements,
+      focusedObjectId: shell.deskForegroundObjectId,
+    );
+    final controller = ref.read(desktopAppSwitcherProvider.notifier);
+    final previous = ref.read(desktopAppSwitcherProvider);
+    final next = controller.step(step, apps: apps, monitorId: monitorId);
+    if (next == null || previous?.sessionId == next.sessionId) {
+      return;
+    }
+    _cancelWindowSwitcher();
+    _appSwitcherCleanupTimer?.cancel();
+    _appSwitcherCleanupTimer = null;
+    _appSwitcherHoldTimer?.cancel();
+    final sessionId = next.sessionId;
+    _appSwitcherHoldTimer = Timer(
+      MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : Motion.appSwitcherHoldDelay,
+      () {
+        if (mounted) {
+          controller.show(sessionId);
+        }
+      },
+    );
+  }
+
+  /// Alt went up: the selected app's most recent window, or the window `
+  /// chose, comes to the front, on its screen and restored if minimized.
+  void _finishAppSwitcher() {
+    _appSwitcherHoldTimer?.cancel();
+    _appSwitcherHoldTimer = null;
+    final session = ref.read(desktopAppSwitcherProvider);
+    final target = ref.read(desktopAppSwitcherProvider.notifier).end();
+    if (session == null || target == null) {
+      return;
+    }
+    final shell = ref.read(referenceShellProvider);
+    final window = shell.desk.openAppWindowsByObjectId[target];
+    final placement = ref.read(desktopWorkspaceProvider).placements[target];
+    if (window != null &&
+        (target != shell.deskForegroundObjectId ||
+            placement?.minimized == true)) {
+      _activateWindow(window);
+    }
+    _clearAppSwitcherLater(session.sessionId);
+  }
+
+  /// Escape while Alt is held: nothing changes.
+  void _cancelAppSwitcher() {
+    _appSwitcherHoldTimer?.cancel();
+    _appSwitcherHoldTimer = null;
+    final session = ref.read(desktopAppSwitcherProvider);
+    ref.read(desktopAppSwitcherProvider.notifier).cancel();
+    if (session != null) {
+      _clearAppSwitcherLater(session.sessionId);
+    }
+  }
+
+  void _clearAppSwitcherLater(int sessionId) {
+    final controller = ref.read(desktopAppSwitcherProvider.notifier);
+    _appSwitcherCleanupTimer?.cancel();
+    _appSwitcherCleanupTimer = Timer(
+      MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : Motion.appSwitcherClose,
+      () {
+        if (mounted) {
+          controller.clear(sessionId);
+        }
+      },
+    );
   }
 
   void _toggleOverview(int? preferredMonitorId) {
@@ -1186,6 +1281,15 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         ),
       ),
     );
+    final appSwitcher = ref.watch(desktopAppSwitcherProvider);
+    Rect? appSwitcherBounds;
+    for (final output in displayLayout?.outputs ?? const <DisplayOutput>[]) {
+      if (output.monitorId == appSwitcher?.monitorId && !output.inputOnly) {
+        appSwitcherBounds = output.logicalRect;
+      }
+    }
+    appSwitcherBounds ??=
+        mainOutput?.logicalRect ?? Offset.zero & MediaQuery.sizeOf(context);
     return ShellActionsBinding(
       actions: <ShellAction>[
         ...ref.watch(desktopActionsProvider),
@@ -1198,7 +1302,16 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         onOpenDashboard: _openDashboard,
         onToggleDashboard: _toggleDashboard,
       ),
-      child: scene,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          scene,
+          DesktopAppSwitcherOverlay(
+            switcher: appSwitcher,
+            bounds: appSwitcherBounds,
+          ),
+        ],
+      ),
     );
   }
 }

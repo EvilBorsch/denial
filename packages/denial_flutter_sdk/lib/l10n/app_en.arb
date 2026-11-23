@@ -5398,6 +5398,10 @@
       }
     }
   },
+  "appSwitcherLabel": "App switcher",
+  "@appSwitcherLabel": {
+    "description": "Accessible name of the Alt+Tab app switcher (one icon per app; held Alt, Tab steps, release switches)."
+  },
   "windowUntitled": "Window {windowId}",
   "@windowUntitled": {
     "description": "English UI text for windowUntitled.",

@@ -4009,6 +4009,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get appSwitcherLabel => 'App switcher';
+
+  @override
   String windowUntitled(int windowId) {
     return 'Window $windowId';
   }

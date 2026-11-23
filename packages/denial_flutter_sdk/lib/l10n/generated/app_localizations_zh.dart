@@ -3826,6 +3826,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get appSwitcherLabel => '应用切换器';
+
+  @override
   String windowUntitled(int windowId) {
     return '窗口 $windowId';
   }

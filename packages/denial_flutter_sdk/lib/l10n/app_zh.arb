@@ -1162,6 +1162,7 @@
   "wifiWepRequirements": "WEP 密钥必须包含 5 到 64 个字符。",
   "windowSwitcherPosition": "{position} / {total}",
   "windowSwitcherSelected": "已选择 {windowTitle}",
+  "appSwitcherLabel": "应用切换器",
   "windowUntitled": "窗口 {windowId}",
   "settingsGlassAdvanced": "玻璃效果调节",
   "settingsGlassReset": "重置玻璃效果",
