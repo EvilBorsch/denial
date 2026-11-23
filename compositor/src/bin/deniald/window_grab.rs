@@ -875,6 +875,9 @@ pub(super) struct DividerGrab {
     hit: super::wayland_frontend::DividerHit,
     start_boundary: f64,
     start_along: f64,
+    /// False for the second press of a double click: it evened the split
+    /// out and only holds the divider until the button is released.
+    drags: bool,
     affected_windows: Vec<Window>,
 }
 
@@ -883,6 +886,7 @@ impl DividerGrab {
     pub(super) fn new(
         start_data: GrabStartData<RuntimeState>,
         hit: super::wayland_frontend::DividerHit,
+        drags: bool,
     ) -> Self {
         let start_along = hit.along(start_data.location);
         Self {
@@ -890,6 +894,7 @@ impl DividerGrab {
             start_along,
             start_data,
             hit,
+            drags,
             affected_windows: Vec::new(),
         }
     }
@@ -905,7 +910,7 @@ impl PointerGrab<RuntimeState> for DividerGrab {
         event: &MotionEvent,
     ) {
         handle.motion(data, None, event);
-        if !event.location.x.is_finite() || !event.location.y.is_finite() {
+        if !self.drags || !event.location.x.is_finite() || !event.location.y.is_finite() {
             return;
         }
         let boundary = self.start_boundary + self.hit.along(event.location) - self.start_along;

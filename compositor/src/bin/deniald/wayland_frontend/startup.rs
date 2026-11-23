@@ -396,9 +396,9 @@ impl WaylandFrontend {
             window_layout: create_window_layout(window_layout_kind),
             screen_floats: HashMap::new(),
             #[cfg(feature = "flutter")]
-            last_divider_press: None,
+            divider_presses: Default::default(),
             #[cfg(feature = "flutter")]
-            touch_divider: None,
+            touch_dividers: Default::default(),
             #[cfg(feature = "flutter")]
             divider_cursor: None,
             #[cfg(feature = "flutter")]

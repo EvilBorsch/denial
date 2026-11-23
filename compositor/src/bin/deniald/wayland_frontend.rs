@@ -216,7 +216,7 @@ mod screencopy;
 #[path = "wayland_frontend/screens.rs"]
 mod screens;
 #[cfg(feature = "flutter")]
-pub(crate) use dividers::{DividerHit, TouchDivider};
+pub(crate) use dividers::{DividerHit, TouchDivider, TouchDividers};
 #[path = "wayland_frontend/startup.rs"]
 mod startup;
 pub(crate) use startup::FrontendConfig;
@@ -532,15 +532,12 @@ pub(super) struct WaylandFrontend {
     /// Floating windows of the full-screen apps layout and the screen each
     /// one stays over.
     screen_floats: HashMap<ObjectId, screens::ScreenFloat>,
-    /// The last press on a split divider, for double clicks and taps.
+    /// Presses on split dividers, for double clicks and taps.
     #[cfg(feature = "flutter")]
-    last_divider_press: Option<(
-        super::window_layout::LayoutDivider<ObjectId>,
-        std::time::Instant,
-    )>,
-    /// A finger dragging a split divider.
+    divider_presses: dividers::DividerPresses<ObjectId>,
+    /// The finger holding a split divider.
     #[cfg(feature = "flutter")]
-    pub(crate) touch_divider: Option<TouchDivider>,
+    pub(crate) touch_dividers: TouchDividers,
     /// The resize cursor of the divider under the pointer, shown over what
     /// the shell or a client asks for, and what they asked for meanwhile.
     #[cfg(feature = "flutter")]

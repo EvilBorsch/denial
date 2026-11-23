@@ -2690,6 +2690,15 @@ fn reset_input_devices(state: &mut RuntimeState, reset: InputDeviceReset) {
             .map(|frontend| frontend.touch_gestures.cancel_all())
             .unwrap_or_default();
         touch_gestures::apply_actions(state, actions);
+        // A finger holding a divider lifts no more: settle the drag, so the
+        // slot is free for the next finger.
+        if let Some(drag) = state
+            .wayland
+            .as_mut()
+            .and_then(|frontend| frontend.touch_dividers.release_all())
+        {
+            flutter_route::end_touch_divider(state, drag);
+        }
     }
     if reset.keyboard {
         state.native_escape_shortcut.reset();
