@@ -131,3 +131,65 @@ The touchpad and touchscreen three- and four-finger gestures share one recognize
 - The stack expansion UI.
 - Strings not fixed above.
 - Whether the divider drag also applies to dwindle and scrolling.
+
+# Iteration 2: eb18 (2026-11-23 night)
+
+The owner installed eb17, and the agent tested it on the tablet (`D:\androidlinux\device-logs\eb17-check\`, `eb17-explore\`, CHANGES.md entry of 22:44). The owner then asked for a Mac-like, gesture-first mode with search, Alt+Tab and Mac shortcuts, and for the useful parts to reach the mobile presentation too. They want the work done autonomously without questions, so every decision below is the agent's call unless quoted from the owner.
+
+## Bugs found on the tablet (fix first)
+
+- **Four fingers up:** the launcher opens and closes at once. It is visible at 0.3 s and gone at 1.5 s, while a Super tap keeps it open. Suspect a toggle fired twice (a repeat or end event).
+- **Divider by touch:** a finger on the split divider does not take it (no "took a split divider" in the journal; `vinput swipe 0.5 0.5 0.62 0.5`).
+- **Overview leftovers:** after a join an empty card frame stays. The desktop clock widget shows through the overview.
+- **Desktop mode is forgotten:** after a session restart the shell came up mobile and had to be switched with the tile. Persist the presentation the owner chose last (a settings key), and start in it.
+
+## The owner's requests (quoted) and the decided design
+
+- "A logical mode built on touchpad swipes, or on the mouse with the middle button held":
+  - **Middle-button drag** acts as a three-finger swipe in the screens layout: sideways moves the strip with the pointer, up opens the overview, down opens the app windows.
+  - A middle click without movement (past a small threshold) still reaches the client as a normal press and release (links in new tabs, paste).
+  - Cost: clients lose middle-button drags (canvas pan, autoscroll). There is a Settings toggle, on by default in the screens layout.
+- "If an app spawns several windows they are easy to find":
+  - The app-windows view (three fingers down) shows every window of the app with its title, plus the app icon and name, even for one window.
+  - The overview stacks windows of one app (eb17). Verify it with an app that really opens two windows.
+- "Easy to find the right app with a swipe up, with search there" (the overview becomes the hub):
+  - A search field at the top takes typing immediately. Typing filters screens and windows by app name and window title.
+  - Below the open windows, matching apps from the launcher catalog can be started (Spotlight-like). Enter goes to the first match or starts it.
+  - The background is dimmed and blurred, labels are larger and carry icons. The overview follows the fingers as it opens (Mission Control feel).
+- **Global search** ("Alt+F … through our Spotlight"): the same search, as an overlay over the current screen, on Alt+F in the Mac preset. In the default (Super) preset Super+F is fullscreen and Super+Space switches the layout, so search gets a free Super combination of the builder's choice (documented).
+- **"Alt+Tab must work":**
+  - An app switcher like ⌘Tab. Hold the modifier and Tab cycles apps (all windows of an app are one icon); Shift+Tab goes back; releasing switches. Grave (`) cycles the windows of the current app.
+  - In the default preset it is Alt+Tab as well (a PC habit). It replaces nothing the owner uses (Super+Tab stays the window switcher).
+- **Mac preset** ("Alt is my Super: Alt+Tab, Alt+C, Alt+V, Alt+Space switches the language as now, Alt+F searches apps"):
+  - Settings → Shortcuts gets a choice "Как на Mac" / "Like a Mac". Physical Alt acts as ⌘, physical Super acts as Option, Ctrl stays Ctrl.
+  - Implemented in deniald, which knows the focused client: per-client key translation, not an external remapper.
+  - Shell bindings on Alt: Alt+Tab, Alt+`, Alt+F (search), Alt+Space and Alt+Shift+Space (keyboard layout, as now), Alt+Shift+3 (screenshot of the screen), Alt+Shift+4 (region), Ctrl+Alt+Q (lock), Ctrl+Alt+F (fullscreen), Alt+M (minimize), Alt+H (hide the app).
+  - Every other Alt+key goes to clients as Ctrl+key (Alt+C/V/X/Z/Shift+Z/A/S/T/W/Q/N/L/R/P…).
+  - In terminals (detected by app id: GNOME Console/kgx, gnome-terminal, ptyxis, foot, alacritty, kitty, wezterm, xterm, konsole) it goes as Ctrl+Shift+key.
+  - Text navigation as on macOS:
+    - Alt+←/→ → Home/End, Alt+↑/↓ → Ctrl+Home/End, Alt+Backspace → delete to line start;
+    - Super(Option)+←/→ → Ctrl+←/→, Option+Backspace → Ctrl+Backspace;
+    - Super(Option)+letters → Alt+letters for clients (menus).
+  - With the preset off, everything is as today.
+  - The owner's choice on the search key stands: Alt+F searches, so find-in-app is Ctrl+F. All of these bindings remain editable in Shortcuts.
+- **"Beautiful animations":** the overview, app windows, the switcher and search open and close smoothly. Gesture-driven ones track the fingers and settle with a spring. Strip moves already follow the fingers.
+
+## Mobile presentation ("move the useful parts there too")
+
+The mobile presentation keeps one full-screen app and Recents (no split screen this round; candidate for later). It gains:
+
+- The search overlay: from a keyboard shortcut when a keyboard is attached, and a search field in the app drawer. The app drawer is turned on by default if that does not disturb existing home layouts.
+- The app switcher (Alt+Tab) when a keyboard is attached.
+- The Mac preset key translation (it is compositor-wide).
+- Touchpad swipes:
+  - three fingers sideways switch to the neighbouring app, like the bottom pill;
+  - three up open Recents;
+  - four up open the drawer or search.
+- Anything else from this work that clearly helps the mobile presentation and is cheap, at the builder's judgement. List it in the report.
+
+## Delivery
+
+- Package `denial 0.6.8-1+eb18`, from `eb/screens-layout` in both forks (on top of eb17).
+- The agent installs it on the tablet and tests it there itself (owner's standing permission for this work: install packages, restart the Denial session, unlock with the owner's password from the T3 secret file, use Stay awake during tests). Then it iterates until the checks pass.
+- No partitions and no reboots.
+- At the end: if the checks pass, the owner's session is left in desktop mode with the screens layout and the Mac preset on, Stay awake off. The report says how to switch back.
