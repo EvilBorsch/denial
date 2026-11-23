@@ -805,10 +805,10 @@ impl flatbuffers::SimpleToVerifyInSlice for WindowActionKind {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_SHELL_ACTION_KIND: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_SHELL_ACTION_KIND: u8 = 20;
+pub const ENUM_MAX_SHELL_ACTION_KIND: u8 = 30;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_SHELL_ACTION_KIND: [ShellActionKind; 21] = [
+pub const ENUM_VALUES_SHELL_ACTION_KIND: [ShellActionKind; 31] = [
   ShellActionKind::Applications,
   ShellActionKind::Overview,
   ShellActionKind::WindowSwitcherNext,
@@ -830,6 +830,16 @@ pub const ENUM_VALUES_SHELL_ACTION_KIND: [ShellActionKind; 21] = [
   ShellActionKind::ScreenshotCaptured,
   ShellActionKind::LockScreenEditor,
   ShellActionKind::AppWindows,
+  ShellActionKind::AppSwitcherNext,
+  ShellActionKind::AppSwitcherPrevious,
+  ShellActionKind::AppSwitcherWindowNext,
+  ShellActionKind::AppSwitcherWindowPrevious,
+  ShellActionKind::AppSwitcherEnd,
+  ShellActionKind::AppSwitcherCancel,
+  ShellActionKind::Search,
+  ShellActionKind::SwitchAppPrevious,
+  ShellActionKind::SwitchAppNext,
+  ShellActionKind::ShellGesture,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -858,9 +868,19 @@ impl ShellActionKind {
   pub const ScreenshotCaptured: Self = Self(18);
   pub const LockScreenEditor: Self = Self(19);
   pub const AppWindows: Self = Self(20);
+  pub const AppSwitcherNext: Self = Self(21);
+  pub const AppSwitcherPrevious: Self = Self(22);
+  pub const AppSwitcherWindowNext: Self = Self(23);
+  pub const AppSwitcherWindowPrevious: Self = Self(24);
+  pub const AppSwitcherEnd: Self = Self(25);
+  pub const AppSwitcherCancel: Self = Self(26);
+  pub const Search: Self = Self(27);
+  pub const SwitchAppPrevious: Self = Self(28);
+  pub const SwitchAppNext: Self = Self(29);
+  pub const ShellGesture: Self = Self(30);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 20;
+  pub const ENUM_MAX: u8 = 30;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::Applications,
     Self::Overview,
@@ -883,6 +903,16 @@ impl ShellActionKind {
     Self::ScreenshotCaptured,
     Self::LockScreenEditor,
     Self::AppWindows,
+    Self::AppSwitcherNext,
+    Self::AppSwitcherPrevious,
+    Self::AppSwitcherWindowNext,
+    Self::AppSwitcherWindowPrevious,
+    Self::AppSwitcherEnd,
+    Self::AppSwitcherCancel,
+    Self::Search,
+    Self::SwitchAppPrevious,
+    Self::SwitchAppNext,
+    Self::ShellGesture,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -908,6 +938,16 @@ impl ShellActionKind {
       Self::ScreenshotCaptured => Some("ScreenshotCaptured"),
       Self::LockScreenEditor => Some("LockScreenEditor"),
       Self::AppWindows => Some("AppWindows"),
+      Self::AppSwitcherNext => Some("AppSwitcherNext"),
+      Self::AppSwitcherPrevious => Some("AppSwitcherPrevious"),
+      Self::AppSwitcherWindowNext => Some("AppSwitcherWindowNext"),
+      Self::AppSwitcherWindowPrevious => Some("AppSwitcherWindowPrevious"),
+      Self::AppSwitcherEnd => Some("AppSwitcherEnd"),
+      Self::AppSwitcherCancel => Some("AppSwitcherCancel"),
+      Self::Search => Some("Search"),
+      Self::SwitchAppPrevious => Some("SwitchAppPrevious"),
+      Self::SwitchAppNext => Some("SwitchAppNext"),
+      Self::ShellGesture => Some("ShellGesture"),
       _ => None,
     }
   }
@@ -963,6 +1003,184 @@ impl<'a> flatbuffers::Verifiable for ShellActionKind {
 }
 
 impl flatbuffers::SimpleToVerifyInSlice for ShellActionKind {}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_SHELL_GESTURE_KIND: u8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_SHELL_GESTURE_KIND: u8 = 1;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_SHELL_GESTURE_KIND: [ShellGestureKind; 2] = [
+  ShellGestureKind::Up,
+  ShellGestureKind::Down,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct ShellGestureKind(pub u8);
+#[allow(non_upper_case_globals)]
+impl ShellGestureKind {
+  pub const Up: Self = Self(0);
+  pub const Down: Self = Self(1);
+
+  pub const ENUM_MIN: u8 = 0;
+  pub const ENUM_MAX: u8 = 1;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::Up,
+    Self::Down,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::Up => Some("Up"),
+      Self::Down => Some("Down"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for ShellGestureKind {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for ShellGestureKind {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = unsafe { flatbuffers::read_scalar_at::<u8>(buf, loc) };
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for ShellGestureKind {
+    type Output = ShellGestureKind;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        unsafe { flatbuffers::emplace_scalar::<u8>(dst, self.0); }
+    }
+}
+
+impl flatbuffers::EndianScalar for ShellGestureKind {
+  type Scalar = u8;
+  #[inline]
+  fn to_little_endian(self) -> u8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: u8) -> Self {
+    let b = u8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for ShellGestureKind {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    u8::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for ShellGestureKind {}
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MIN_SHELL_GESTURE_PHASE: u8 = 0;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+pub const ENUM_MAX_SHELL_GESTURE_PHASE: u8 = 3;
+#[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
+#[allow(non_camel_case_types)]
+pub const ENUM_VALUES_SHELL_GESTURE_PHASE: [ShellGesturePhase; 4] = [
+  ShellGesturePhase::Begin,
+  ShellGesturePhase::Update,
+  ShellGesturePhase::End,
+  ShellGesturePhase::Cancel,
+];
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
+#[repr(transparent)]
+pub struct ShellGesturePhase(pub u8);
+#[allow(non_upper_case_globals)]
+impl ShellGesturePhase {
+  pub const Begin: Self = Self(0);
+  pub const Update: Self = Self(1);
+  pub const End: Self = Self(2);
+  pub const Cancel: Self = Self(3);
+
+  pub const ENUM_MIN: u8 = 0;
+  pub const ENUM_MAX: u8 = 3;
+  pub const ENUM_VALUES: &'static [Self] = &[
+    Self::Begin,
+    Self::Update,
+    Self::End,
+    Self::Cancel,
+  ];
+  /// Returns the variant's name or "" if unknown.
+  pub fn variant_name(self) -> Option<&'static str> {
+    match self {
+      Self::Begin => Some("Begin"),
+      Self::Update => Some("Update"),
+      Self::End => Some("End"),
+      Self::Cancel => Some("Cancel"),
+      _ => None,
+    }
+  }
+}
+impl core::fmt::Debug for ShellGesturePhase {
+  fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+    if let Some(name) = self.variant_name() {
+      f.write_str(name)
+    } else {
+      f.write_fmt(format_args!("<UNKNOWN {:?}>", self.0))
+    }
+  }
+}
+impl<'a> flatbuffers::Follow<'a> for ShellGesturePhase {
+  type Inner = Self;
+  #[inline]
+  unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
+    let b = unsafe { flatbuffers::read_scalar_at::<u8>(buf, loc) };
+    Self(b)
+  }
+}
+
+impl flatbuffers::Push for ShellGesturePhase {
+    type Output = ShellGesturePhase;
+    #[inline]
+    unsafe fn push(&self, dst: &mut [u8], _written_len: usize) {
+        unsafe { flatbuffers::emplace_scalar::<u8>(dst, self.0); }
+    }
+}
+
+impl flatbuffers::EndianScalar for ShellGesturePhase {
+  type Scalar = u8;
+  #[inline]
+  fn to_little_endian(self) -> u8 {
+    self.0.to_le()
+  }
+  #[inline]
+  #[allow(clippy::wrong_self_convention)]
+  fn from_little_endian(v: u8) -> Self {
+    let b = u8::from_le(v);
+    Self(b)
+  }
+}
+
+impl<'a> flatbuffers::Verifiable for ShellGesturePhase {
+  #[inline]
+  fn run_verifier(
+    v: &mut flatbuffers::Verifier, pos: usize
+  ) -> Result<(), flatbuffers::InvalidFlatbuffer> {
+    use self::flatbuffers::Verifiable;
+    u8::run_verifier(v, pos)
+  }
+}
+
+impl flatbuffers::SimpleToVerifyInSlice for ShellGesturePhase {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_KEYBOARD_COMMAND_KIND: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
@@ -7037,6 +7255,11 @@ impl<'a> ShellAction<'a> {
   pub const VT_HAS_MONITOR_ID: flatbuffers::VOffsetT = 8;
   pub const VT_TEXTURE_ID: flatbuffers::VOffsetT = 10;
   pub const VT_WORKSPACE_ID: flatbuffers::VOffsetT = 12;
+  pub const VT_GESTURE_KIND: flatbuffers::VOffsetT = 14;
+  pub const VT_GESTURE_PHASE: flatbuffers::VOffsetT = 16;
+  pub const VT_GESTURE_PROGRESS: flatbuffers::VOffsetT = 18;
+  pub const VT_GESTURE_VELOCITY: flatbuffers::VOffsetT = 20;
+  pub const VT_GESTURE_COMMITTED: flatbuffers::VOffsetT = 22;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -7050,7 +7273,12 @@ impl<'a> ShellAction<'a> {
     let mut builder = ShellActionBuilder::new(_fbb);
     builder.add_texture_id(args.texture_id);
     builder.add_monitor_id(args.monitor_id);
+    builder.add_gesture_velocity(args.gesture_velocity);
+    builder.add_gesture_progress(args.gesture_progress);
     builder.add_workspace_id(args.workspace_id);
+    builder.add_gesture_committed(args.gesture_committed);
+    builder.add_gesture_phase(args.gesture_phase);
+    builder.add_gesture_kind(args.gesture_kind);
     builder.add_has_monitor_id(args.has_monitor_id);
     builder.add_action(args.action);
     builder.finish()
@@ -7092,6 +7320,41 @@ impl<'a> ShellAction<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<u32>(ShellAction::VT_WORKSPACE_ID, Some(1)).unwrap()}
   }
+  #[inline]
+  pub fn gesture_kind(&self) -> ShellGestureKind {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<ShellGestureKind>(ShellAction::VT_GESTURE_KIND, Some(ShellGestureKind::Up)).unwrap()}
+  }
+  #[inline]
+  pub fn gesture_phase(&self) -> ShellGesturePhase {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<ShellGesturePhase>(ShellAction::VT_GESTURE_PHASE, Some(ShellGesturePhase::Begin)).unwrap()}
+  }
+  #[inline]
+  pub fn gesture_progress(&self) -> f32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f32>(ShellAction::VT_GESTURE_PROGRESS, Some(0.0)).unwrap()}
+  }
+  #[inline]
+  pub fn gesture_velocity(&self) -> f32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f32>(ShellAction::VT_GESTURE_VELOCITY, Some(0.0)).unwrap()}
+  }
+  #[inline]
+  pub fn gesture_committed(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(ShellAction::VT_GESTURE_COMMITTED, Some(false)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for ShellAction<'_> {
@@ -7106,6 +7369,11 @@ impl flatbuffers::Verifiable for ShellAction<'_> {
      .visit_field::<bool>("has_monitor_id", Self::VT_HAS_MONITOR_ID, false)?
      .visit_field::<i64>("texture_id", Self::VT_TEXTURE_ID, false)?
      .visit_field::<u32>("workspace_id", Self::VT_WORKSPACE_ID, false)?
+     .visit_field::<ShellGestureKind>("gesture_kind", Self::VT_GESTURE_KIND, false)?
+     .visit_field::<ShellGesturePhase>("gesture_phase", Self::VT_GESTURE_PHASE, false)?
+     .visit_field::<f32>("gesture_progress", Self::VT_GESTURE_PROGRESS, false)?
+     .visit_field::<f32>("gesture_velocity", Self::VT_GESTURE_VELOCITY, false)?
+     .visit_field::<bool>("gesture_committed", Self::VT_GESTURE_COMMITTED, false)?
      .finish();
     Ok(())
   }
@@ -7116,6 +7384,11 @@ pub struct ShellActionArgs {
     pub has_monitor_id: bool,
     pub texture_id: i64,
     pub workspace_id: u32,
+    pub gesture_kind: ShellGestureKind,
+    pub gesture_phase: ShellGesturePhase,
+    pub gesture_progress: f32,
+    pub gesture_velocity: f32,
+    pub gesture_committed: bool,
 }
 impl<'a> Default for ShellActionArgs {
   #[inline]
@@ -7126,6 +7399,11 @@ impl<'a> Default for ShellActionArgs {
       has_monitor_id: false,
       texture_id: 0,
       workspace_id: 1,
+      gesture_kind: ShellGestureKind::Up,
+      gesture_phase: ShellGesturePhase::Begin,
+      gesture_progress: 0.0,
+      gesture_velocity: 0.0,
+      gesture_committed: false,
     }
   }
 }
@@ -7156,6 +7434,26 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> ShellActionBuilder<'a, 'b, A> {
     self.fbb_.push_slot::<u32>(ShellAction::VT_WORKSPACE_ID, workspace_id, 1);
   }
   #[inline]
+  pub fn add_gesture_kind(&mut self, gesture_kind: ShellGestureKind) {
+    self.fbb_.push_slot::<ShellGestureKind>(ShellAction::VT_GESTURE_KIND, gesture_kind, ShellGestureKind::Up);
+  }
+  #[inline]
+  pub fn add_gesture_phase(&mut self, gesture_phase: ShellGesturePhase) {
+    self.fbb_.push_slot::<ShellGesturePhase>(ShellAction::VT_GESTURE_PHASE, gesture_phase, ShellGesturePhase::Begin);
+  }
+  #[inline]
+  pub fn add_gesture_progress(&mut self, gesture_progress: f32) {
+    self.fbb_.push_slot::<f32>(ShellAction::VT_GESTURE_PROGRESS, gesture_progress, 0.0);
+  }
+  #[inline]
+  pub fn add_gesture_velocity(&mut self, gesture_velocity: f32) {
+    self.fbb_.push_slot::<f32>(ShellAction::VT_GESTURE_VELOCITY, gesture_velocity, 0.0);
+  }
+  #[inline]
+  pub fn add_gesture_committed(&mut self, gesture_committed: bool) {
+    self.fbb_.push_slot::<bool>(ShellAction::VT_GESTURE_COMMITTED, gesture_committed, false);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> ShellActionBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     ShellActionBuilder {
@@ -7178,6 +7476,11 @@ impl core::fmt::Debug for ShellAction<'_> {
       ds.field("has_monitor_id", &self.has_monitor_id());
       ds.field("texture_id", &self.texture_id());
       ds.field("workspace_id", &self.workspace_id());
+      ds.field("gesture_kind", &self.gesture_kind());
+      ds.field("gesture_phase", &self.gesture_phase());
+      ds.field("gesture_progress", &self.gesture_progress());
+      ds.field("gesture_velocity", &self.gesture_velocity());
+      ds.field("gesture_committed", &self.gesture_committed());
       ds.finish()
   }
 }

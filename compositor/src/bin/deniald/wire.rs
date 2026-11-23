@@ -440,6 +440,28 @@ pub enum ShellAction {
     LockScreenEditor,
     /// The windows of the focused app (full-screen apps layout).
     AppWindows,
+    /// The app switcher: step apps, step the selected app's windows, switch
+    /// to the selection (modifier released) or close (Escape).
+    #[allow(dead_code)]
+    AppSwitcherNext,
+    #[allow(dead_code)]
+    AppSwitcherPrevious,
+    #[allow(dead_code)]
+    AppSwitcherWindowNext,
+    #[allow(dead_code)]
+    AppSwitcherWindowPrevious,
+    #[allow(dead_code)]
+    AppSwitcherEnd,
+    #[allow(dead_code)]
+    AppSwitcherCancel,
+    /// Open search (the global overlay, or the open overview's field).
+    #[allow(dead_code)]
+    Search,
+    /// The neighbouring app (mobile presentation, three fingers sideways).
+    #[allow(dead_code)]
+    SwitchAppPrevious,
+    #[allow(dead_code)]
+    SwitchAppNext,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -480,6 +502,15 @@ impl ShellAction {
             Self::ScreenshotCaptured => fb::ShellActionKind::ScreenshotCaptured,
             Self::LockScreenEditor => fb::ShellActionKind::LockScreenEditor,
             Self::AppWindows => fb::ShellActionKind::AppWindows,
+            Self::AppSwitcherNext => fb::ShellActionKind::AppSwitcherNext,
+            Self::AppSwitcherPrevious => fb::ShellActionKind::AppSwitcherPrevious,
+            Self::AppSwitcherWindowNext => fb::ShellActionKind::AppSwitcherWindowNext,
+            Self::AppSwitcherWindowPrevious => fb::ShellActionKind::AppSwitcherWindowPrevious,
+            Self::AppSwitcherEnd => fb::ShellActionKind::AppSwitcherEnd,
+            Self::AppSwitcherCancel => fb::ShellActionKind::AppSwitcherCancel,
+            Self::Search => fb::ShellActionKind::Search,
+            Self::SwitchAppPrevious => fb::ShellActionKind::SwitchAppPrevious,
+            Self::SwitchAppNext => fb::ShellActionKind::SwitchAppNext,
         }
     }
 }

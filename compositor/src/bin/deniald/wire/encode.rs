@@ -938,6 +938,7 @@ fn encode_shell_action(
             has_monitor_id: monitor_id.is_some(),
             texture_id: texture_id.unwrap_or(0),
             workspace_id: u32::from(workspace_id.unwrap_or(1)),
+            ..Default::default()
         },
     );
     let envelope = fb::Envelope::create(

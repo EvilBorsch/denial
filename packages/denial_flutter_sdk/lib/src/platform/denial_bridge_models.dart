@@ -29,6 +29,72 @@ enum DenialShellAction {
   /// Show the windows of the focused app (full-screen apps layout, three
   /// fingers down).
   appWindows,
+
+  /// The app switcher (Alt+Tab, or Cmd+Tab in the Mac preset): step the
+  /// selected app forward or back. The first step opens the switcher.
+  appSwitcherNext,
+  appSwitcherPrevious,
+
+  /// Step the windows of the selected app (grave, Shift+grave). Without an
+  /// open switcher it steps the focused app's windows.
+  appSwitcherWindowNext,
+  appSwitcherWindowPrevious,
+
+  /// The switcher's modifier was released: switch to the selection.
+  appSwitcherEnd,
+
+  /// Escape while the switcher's modifier is held: close without switching.
+  appSwitcherCancel,
+
+  /// Open search: the global overlay, or the open overview's search field.
+  search,
+
+  /// Switch to the neighbouring app (mobile presentation, three fingers
+  /// sideways).
+  switchAppPrevious,
+  switchAppNext,
+
+  /// A gesture that follows the fingers or the pointer; see
+  /// [DenialShellActionEvent.gesture].
+  shellGesture,
+}
+
+/// The direction of a [DenialShellAction.shellGesture]: three fingers (or a
+/// middle-button drag) up or down.
+enum DenialShellGestureKind { up, down }
+
+enum DenialShellGesturePhase {
+  begin,
+  update,
+
+  /// The fingers lifted; [DenialShellGesture.committed] says whether the
+  /// view opens.
+  end,
+
+  /// Abandoned: another gesture took over, the session locked, ...
+  cancel,
+}
+
+class DenialShellGesture {
+  const DenialShellGesture({
+    required this.kind,
+    required this.phase,
+    required this.progress,
+    required this.velocity,
+    required this.committed,
+  });
+
+  final DenialShellGestureKind kind;
+  final DenialShellGesturePhase phase;
+
+  /// 0 at rest, 1 when the view is fully open; may leave 0..1.
+  final double progress;
+
+  /// Progress per second at [DenialShellGesturePhase.end].
+  final double velocity;
+
+  /// At [DenialShellGesturePhase.end]: true when the gesture opens its view.
+  final bool committed;
 }
 
 class DenialShellActionEvent {
@@ -38,6 +104,7 @@ class DenialShellActionEvent {
     required this.requestId,
     required this.textureId,
     required this.workspaceId,
+    this.gesture,
   });
 
   final DenialShellAction action;
@@ -45,6 +112,9 @@ class DenialShellActionEvent {
   final int requestId;
   final int? textureId;
   final int? workspaceId;
+
+  /// Only for [DenialShellAction.shellGesture].
+  final DenialShellGesture? gesture;
 }
 
 // The bridge and services share these immutable snapshots without remapping.

@@ -160,6 +160,18 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         unawaited(_showWallpaperSelector());
       case DenialShellAction.openSettings:
         _openSettings();
+      case DenialShellAction.appSwitcherNext:
+      case DenialShellAction.appSwitcherPrevious:
+      case DenialShellAction.appSwitcherWindowNext:
+      case DenialShellAction.appSwitcherWindowPrevious:
+      case DenialShellAction.appSwitcherEnd:
+      case DenialShellAction.appSwitcherCancel:
+      case DenialShellAction.search:
+      case DenialShellAction.switchAppPrevious:
+      case DenialShellAction.switchAppNext:
+      case DenialShellAction.shellGesture:
+        // The eb18 contract; the tracks that implement them handle them.
+        break;
       case DenialShellAction.workspaceChanged:
         final monitorId = event.monitorId;
         final workspaceId = event.workspaceId;

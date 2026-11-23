@@ -348,7 +348,17 @@ enum ShellActionKind {
   FocusDown(17),
   ScreenshotCaptured(18),
   LockScreenEditor(19),
-  AppWindows(20);
+  AppWindows(20),
+  AppSwitcherNext(21),
+  AppSwitcherPrevious(22),
+  AppSwitcherWindowNext(23),
+  AppSwitcherWindowPrevious(24),
+  AppSwitcherEnd(25),
+  AppSwitcherCancel(26),
+  Search(27),
+  SwitchAppPrevious(28),
+  SwitchAppNext(29),
+  ShellGesture(30);
 
   final int value;
   const ShellActionKind(this.value);
@@ -376,6 +386,16 @@ enum ShellActionKind {
       case 18: return ShellActionKind.ScreenshotCaptured;
       case 19: return ShellActionKind.LockScreenEditor;
       case 20: return ShellActionKind.AppWindows;
+      case 21: return ShellActionKind.AppSwitcherNext;
+      case 22: return ShellActionKind.AppSwitcherPrevious;
+      case 23: return ShellActionKind.AppSwitcherWindowNext;
+      case 24: return ShellActionKind.AppSwitcherWindowPrevious;
+      case 25: return ShellActionKind.AppSwitcherEnd;
+      case 26: return ShellActionKind.AppSwitcherCancel;
+      case 27: return ShellActionKind.Search;
+      case 28: return ShellActionKind.SwitchAppPrevious;
+      case 29: return ShellActionKind.SwitchAppNext;
+      case 30: return ShellActionKind.ShellGesture;
       default: throw StateError('Invalid value $value for bit flag enum');
     }
   }
@@ -384,7 +404,7 @@ enum ShellActionKind {
       value == null ? null : ShellActionKind.fromValue(value);
 
   static const int minValue = 0;
-  static const int maxValue = 20;
+  static const int maxValue = 30;
   static const fb.Reader<ShellActionKind> reader = _ShellActionKindReader();
 }
 
@@ -397,6 +417,78 @@ class _ShellActionKindReader extends fb.Reader<ShellActionKind> {
   @override
   ShellActionKind read(fb.BufferContext bc, int offset) =>
       ShellActionKind.fromValue(const fb.Uint8Reader().read(bc, offset));
+}
+
+enum ShellGestureKind {
+  Up(0),
+  Down(1);
+
+  final int value;
+  const ShellGestureKind(this.value);
+
+  factory ShellGestureKind.fromValue(int value) {
+    switch (value) {
+      case 0: return ShellGestureKind.Up;
+      case 1: return ShellGestureKind.Down;
+      default: throw StateError('Invalid value $value for bit flag enum');
+    }
+  }
+
+  static ShellGestureKind? _createOrNull(int? value) =>
+      value == null ? null : ShellGestureKind.fromValue(value);
+
+  static const int minValue = 0;
+  static const int maxValue = 1;
+  static const fb.Reader<ShellGestureKind> reader = _ShellGestureKindReader();
+}
+
+class _ShellGestureKindReader extends fb.Reader<ShellGestureKind> {
+  const _ShellGestureKindReader();
+
+  @override
+  int get size => 1;
+
+  @override
+  ShellGestureKind read(fb.BufferContext bc, int offset) =>
+      ShellGestureKind.fromValue(const fb.Uint8Reader().read(bc, offset));
+}
+
+enum ShellGesturePhase {
+  Begin(0),
+  Update(1),
+  End(2),
+  Cancel(3);
+
+  final int value;
+  const ShellGesturePhase(this.value);
+
+  factory ShellGesturePhase.fromValue(int value) {
+    switch (value) {
+      case 0: return ShellGesturePhase.Begin;
+      case 1: return ShellGesturePhase.Update;
+      case 2: return ShellGesturePhase.End;
+      case 3: return ShellGesturePhase.Cancel;
+      default: throw StateError('Invalid value $value for bit flag enum');
+    }
+  }
+
+  static ShellGesturePhase? _createOrNull(int? value) =>
+      value == null ? null : ShellGesturePhase.fromValue(value);
+
+  static const int minValue = 0;
+  static const int maxValue = 3;
+  static const fb.Reader<ShellGesturePhase> reader = _ShellGesturePhaseReader();
+}
+
+class _ShellGesturePhaseReader extends fb.Reader<ShellGesturePhase> {
+  const _ShellGesturePhaseReader();
+
+  @override
+  int get size => 1;
+
+  @override
+  ShellGesturePhase read(fb.BufferContext bc, int offset) =>
+      ShellGesturePhase.fromValue(const fb.Uint8Reader().read(bc, offset));
 }
 
 enum KeyboardCommandKind {
@@ -3602,10 +3694,15 @@ class ShellAction {
   bool get hasMonitorId => const fb.BoolReader().vTableGet(_bc, _bcOffset, 8, false);
   int get textureId => const fb.Int64Reader().vTableGet(_bc, _bcOffset, 10, 0);
   int get workspaceId => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 12, 1);
+  ShellGestureKind get gestureKind => ShellGestureKind.fromValue(const fb.Uint8Reader().vTableGet(_bc, _bcOffset, 14, 0));
+  ShellGesturePhase get gesturePhase => ShellGesturePhase.fromValue(const fb.Uint8Reader().vTableGet(_bc, _bcOffset, 16, 0));
+  double get gestureProgress => const fb.Float32Reader().vTableGet(_bc, _bcOffset, 18, 0.0);
+  double get gestureVelocity => const fb.Float32Reader().vTableGet(_bc, _bcOffset, 20, 0.0);
+  bool get gestureCommitted => const fb.BoolReader().vTableGet(_bc, _bcOffset, 22, false);
 
   @override
   String toString() {
-    return 'ShellAction{action: ${action}, monitorId: ${monitorId}, hasMonitorId: ${hasMonitorId}, textureId: ${textureId}, workspaceId: ${workspaceId}}';
+    return 'ShellAction{action: ${action}, monitorId: ${monitorId}, hasMonitorId: ${hasMonitorId}, textureId: ${textureId}, workspaceId: ${workspaceId}, gestureKind: ${gestureKind}, gesturePhase: ${gesturePhase}, gestureProgress: ${gestureProgress}, gestureVelocity: ${gestureVelocity}, gestureCommitted: ${gestureCommitted}}';
   }
 }
 
@@ -3623,7 +3720,7 @@ class ShellActionBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(5);
+    fbBuilder.startTable(10);
   }
 
   int addAction(ShellActionKind? action) {
@@ -3646,6 +3743,26 @@ class ShellActionBuilder {
     fbBuilder.addUint32(4, workspaceId);
     return fbBuilder.offset;
   }
+  int addGestureKind(ShellGestureKind? gestureKind) {
+    fbBuilder.addUint8(5, gestureKind?.value);
+    return fbBuilder.offset;
+  }
+  int addGesturePhase(ShellGesturePhase? gesturePhase) {
+    fbBuilder.addUint8(6, gesturePhase?.value);
+    return fbBuilder.offset;
+  }
+  int addGestureProgress(double? gestureProgress) {
+    fbBuilder.addFloat32(7, gestureProgress);
+    return fbBuilder.offset;
+  }
+  int addGestureVelocity(double? gestureVelocity) {
+    fbBuilder.addFloat32(8, gestureVelocity);
+    return fbBuilder.offset;
+  }
+  int addGestureCommitted(bool? gestureCommitted) {
+    fbBuilder.addBool(9, gestureCommitted);
+    return fbBuilder.offset;
+  }
 
   int finish() {
     return fbBuilder.endTable();
@@ -3658,6 +3775,11 @@ class ShellActionObjectBuilder extends fb.ObjectBuilder {
   final bool? _hasMonitorId;
   final int? _textureId;
   final int? _workspaceId;
+  final ShellGestureKind? _gestureKind;
+  final ShellGesturePhase? _gesturePhase;
+  final double? _gestureProgress;
+  final double? _gestureVelocity;
+  final bool? _gestureCommitted;
 
   ShellActionObjectBuilder({
     ShellActionKind? action,
@@ -3665,22 +3787,37 @@ class ShellActionObjectBuilder extends fb.ObjectBuilder {
     bool? hasMonitorId,
     int? textureId,
     int? workspaceId,
+    ShellGestureKind? gestureKind,
+    ShellGesturePhase? gesturePhase,
+    double? gestureProgress,
+    double? gestureVelocity,
+    bool? gestureCommitted,
   })
       : _action = action,
         _monitorId = monitorId,
         _hasMonitorId = hasMonitorId,
         _textureId = textureId,
-        _workspaceId = workspaceId;
+        _workspaceId = workspaceId,
+        _gestureKind = gestureKind,
+        _gesturePhase = gesturePhase,
+        _gestureProgress = gestureProgress,
+        _gestureVelocity = gestureVelocity,
+        _gestureCommitted = gestureCommitted;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    fbBuilder.startTable(5);
+    fbBuilder.startTable(10);
     fbBuilder.addUint8(0, _action?.value);
     fbBuilder.addInt64(1, _monitorId);
     fbBuilder.addBool(2, _hasMonitorId);
     fbBuilder.addInt64(3, _textureId);
     fbBuilder.addUint32(4, _workspaceId);
+    fbBuilder.addUint8(5, _gestureKind?.value);
+    fbBuilder.addUint8(6, _gesturePhase?.value);
+    fbBuilder.addFloat32(7, _gestureProgress);
+    fbBuilder.addFloat32(8, _gestureVelocity);
+    fbBuilder.addBool(9, _gestureCommitted);
     return fbBuilder.endTable();
   }
 
