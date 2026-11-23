@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/default_shell/panel_composition.dart';
+import 'desktop_application_catalog.dart';
 import 'desktop_workspace.dart';
 
 /// Runtime adapter for the statically selected launcher presentation.
@@ -35,67 +36,20 @@ class DesktopApplicationLauncher extends ConsumerStatefulWidget {
 
 class _DesktopApplicationLauncherHostState
     extends ConsumerState<DesktopApplicationLauncher> {
-  List<HomeGridItem?>? _slots;
-  LocalFlutterApplicationRegistry? _registry;
-  Locale? _locale;
-  List<LauncherApplication> _applications = const [];
-  Map<String, DesktopApp> _desktopApps = const {};
-  Map<String, LocalFlutterApplication> _localApps = const {};
-
-  void _updateCatalog(
-    BuildContext context,
-    List<HomeGridItem?>? slots,
-    LocalFlutterApplicationRegistry registry,
-  ) {
-    final locale = Localizations.localeOf(context);
-    if (identical(_slots, slots) &&
-        identical(_registry, registry) &&
-        _locale == locale) {
-      return;
-    }
-    _slots = slots;
-    _registry = registry;
-    _locale = locale;
-    final desktopApps = HomeGridLayout.appsIn(slots ?? const <HomeGridItem?>[])
-        .map((item) => item.app)
-        .whereType<DesktopApp>();
-    _desktopApps = {
-      for (final app in desktopApps) desktopApplicationRecentId(app.id): app,
-    };
-    _localApps = {
-      for (final app in registry.applications)
-        localApplicationRecentId(app.id): app,
-    };
-    _applications = List.unmodifiable([
-      for (final entry in _desktopApps.entries)
-        LauncherApplication(
-          id: entry.key,
-          name: entry.value.name,
-          searchableText: entry.value.searchableText,
-        ),
-      for (final entry in _localApps.entries)
-        LauncherApplication(
-          id: entry.key,
-          name: entry.value.titleFor(context),
-          searchableText: [
-            entry.value.id,
-            entry.value.titleFor(context),
-            ...entry.value.categoriesFor(context),
-          ].join(' ').toLowerCase(),
-        ),
-    ]);
-  }
+  final DesktopApplicationCatalogCache _catalogCache =
+      DesktopApplicationCatalogCache();
+  DesktopApplicationCatalog _catalog = DesktopApplicationCatalog.empty;
 
   void _launch(String id) {
-    if (_desktopApps[id] case final app?) {
+    if (_catalog.desktopApps[id] case final app?) {
       widget.onLaunch(app);
-    } else if (_localApps[id] case final app?) {
+    } else if (_catalog.localApps[id] case final app?) {
       widget.onLaunchLocal(app);
     }
   }
 
   Widget _buildIcon(BuildContext context, String id) {
-    if (_localApps[id] case final app?) {
+    if (_catalog.localApps[id] case final app?) {
       return ExcludeSemantics(
         child: Icon(
           app.icon,
@@ -104,24 +58,25 @@ class _DesktopApplicationLauncherHostState
         ),
       );
     }
-    return DeferredAppIcon(iconPath: _desktopApps[id]?.iconPath);
+    return DeferredAppIcon(iconPath: _catalog.desktopApps[id]?.iconPath);
   }
 
   @override
   Widget build(BuildContext context) {
     final plugin = ref.watch(desktopLauncherProvider);
     if (plugin == null) return const SizedBox.shrink();
-    _updateCatalog(
+    _catalog = _catalogCache.resolve(
       context,
-      ref.watch(
+      slots: ref.watch(
         homeGridControllerProvider.select((state) => state.asData?.value.slots),
       ),
-      ref.watch(localFlutterApplicationRegistryProvider),
+      registry: ref.watch(localFlutterApplicationRegistryProvider),
+      launcher: ref.watch(appLauncherProvider),
     );
     return plugin.build(
       context,
       launcher: LauncherContext(
-        applications: _applications,
+        applications: _catalog.applications,
         recentApplicationIds: ref.watch(applicationRecentsProvider),
         visible: ref.watch(
           desktopWorkspaceProvider.select((state) => state.launcherOpen),
