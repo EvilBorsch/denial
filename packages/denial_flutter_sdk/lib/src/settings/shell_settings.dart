@@ -904,6 +904,83 @@ class ShellSoundSettings {
   int get hashCode => keyboardVibration.hashCode;
 }
 
+/// The two presentations of the shell on a single screen, by the names
+/// apps see in the Settings portal (`org.denialwm.shell` `presentation`).
+enum ShellPresentationMode { tablet, desktop }
+
+/// How the shell picks its presentation on a single screen, and what it
+/// picked last (`presentation` in the settings document).
+@immutable
+class ShellPresentationSettings {
+  const ShellPresentationSettings({
+    this.followKeyboard = true,
+    this.mode,
+    this.modeKeyboard,
+  });
+
+  /// Attaching a physical keyboard (the cover, USB or Bluetooth; not a
+  /// virtual one) switches to the desktop presentation, detaching the last
+  /// one to the tablet presentation. A choice made by hand holds until the
+  /// next attach or detach.
+  final bool followKeyboard;
+
+  /// The presentation the shell showed last, which it starts in again;
+  /// null before it chose one.
+  final ShellPresentationMode? mode;
+
+  /// Whether a physical keyboard was attached when [mode] was chosen. While
+  /// [followKeyboard] is on, a restart keeps [mode] only if that is still
+  /// so: otherwise the keyboard was attached or detached in between, and it
+  /// decides.
+  final bool? modeKeyboard;
+
+  ShellPresentationSettings copyWith({
+    bool? followKeyboard,
+    ShellPresentationMode? mode,
+    bool? modeKeyboard,
+  }) {
+    return ShellPresentationSettings(
+      followKeyboard: followKeyboard ?? this.followKeyboard,
+      mode: mode ?? this.mode,
+      modeKeyboard: modeKeyboard ?? this.modeKeyboard,
+    );
+  }
+
+  Map<String, Object> toJson() => <String, Object>{
+    'followKeyboard': followKeyboard,
+    'mode': ?mode?.name,
+    'modeKeyboard': ?modeKeyboard,
+  };
+
+  factory ShellPresentationSettings.fromJson(Object? value) {
+    final json = _map(value);
+    const defaults = ShellPresentationSettings();
+    final mode = json['mode'];
+    return ShellPresentationSettings(
+      followKeyboard: json['followKeyboard'] is bool
+          ? json['followKeyboard'] as bool
+          : defaults.followKeyboard,
+      mode: ShellPresentationMode.values
+          .where((value) => value.name == mode)
+          .firstOrNull,
+      modeKeyboard: json['modeKeyboard'] is bool
+          ? json['modeKeyboard'] as bool
+          : null,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is ShellPresentationSettings &&
+        other.followKeyboard == followKeyboard &&
+        other.mode == mode &&
+        other.modeKeyboard == modeKeyboard;
+  }
+
+  @override
+  int get hashCode => Object.hash(followKeyboard, mode, modeKeyboard);
+}
+
 @immutable
 class ShellApplicationEnvironmentSettings {
   const ShellApplicationEnvironmentSettings({
@@ -1134,6 +1211,7 @@ class ShellSettings {
     this.power = const ShellPowerSettings(),
     this.notifications = const ShellNotificationSettings(),
     this.sound = const ShellSoundSettings(),
+    this.presentation = const ShellPresentationSettings(),
     this.applicationEnvironment = const ShellApplicationEnvironmentSettings(),
   });
 
@@ -1151,6 +1229,7 @@ class ShellSettings {
   final ShellPowerSettings power;
   final ShellNotificationSettings notifications;
   final ShellSoundSettings sound;
+  final ShellPresentationSettings presentation;
   final ShellApplicationEnvironmentSettings applicationEnvironment;
 
   ShellSettings copyWith({
@@ -1164,6 +1243,7 @@ class ShellSettings {
     ShellPowerSettings? power,
     ShellNotificationSettings? notifications,
     ShellSoundSettings? sound,
+    ShellPresentationSettings? presentation,
     ShellApplicationEnvironmentSettings? applicationEnvironment,
   }) {
     return ShellSettings(
@@ -1177,6 +1257,7 @@ class ShellSettings {
       power: power ?? this.power,
       notifications: notifications ?? this.notifications,
       sound: sound ?? this.sound,
+      presentation: presentation ?? this.presentation,
       applicationEnvironment:
           applicationEnvironment ?? this.applicationEnvironment,
     );
@@ -1472,6 +1553,19 @@ class ShellSettings {
       patch['sound'] = sound.toJson();
     }
 
+    if (presentation != previous.presentation) {
+      // Only what changed: a choice the shell records must not undo a
+      // switch made meanwhile in Settings, nor the other way round.
+      final before = previous.presentation;
+      patch['presentation'] = <String, Object?>{
+        if (presentation.followKeyboard != before.followKeyboard)
+          'followKeyboard': presentation.followKeyboard,
+        if (presentation.mode != before.mode) 'mode': presentation.mode?.name,
+        if (presentation.modeKeyboard != before.modeKeyboard)
+          'modeKeyboard': presentation.modeKeyboard,
+      };
+    }
+
     if (applicationEnvironment != previous.applicationEnvironment) {
       // This section is a complete desired map: absence means delete the
       // override, so it must never be recursively merged with an older map.
@@ -1573,6 +1667,7 @@ class ShellSettings {
       },
       'notifications': notifications.toJson(),
       'sound': sound.toJson(),
+      'presentation': presentation.toJson(),
       'inputDeck': inputDeck.toJson(),
       'applicationEnvironment': applicationEnvironment.toJson(),
     };
@@ -1984,6 +2079,7 @@ class ShellSettings {
       ),
       notifications: ShellNotificationSettings.fromJson(json['notifications']),
       sound: ShellSoundSettings.fromJson(json['sound']),
+      presentation: ShellPresentationSettings.fromJson(json['presentation']),
       inputDeck: InputDeckSettings.fromJson(json['inputDeck']),
       applicationEnvironment: ShellApplicationEnvironmentSettings.fromJson(
         json['applicationEnvironment'],
@@ -2004,6 +2100,7 @@ class ShellSettings {
         other.power == power &&
         other.notifications == notifications &&
         other.sound == sound &&
+        other.presentation == presentation &&
         other.applicationEnvironment == applicationEnvironment;
   }
 
@@ -2019,6 +2116,7 @@ class ShellSettings {
     power,
     notifications,
     sound,
+    presentation,
     applicationEnvironment,
   );
 }

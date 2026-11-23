@@ -2829,6 +2829,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsWindowLayoutTitle => 'Window layout';
 
   @override
+  String get settingsFollowKeyboardTitle => 'Follow the keyboard';
+
+  @override
+  String get settingsFollowKeyboardDescription =>
+      'Attaching a keyboard switches to Desktop view, detaching it to Mobile view. The Desktop view tile switches by hand until the next attach or detach.';
+
+  @override
   String get settingsScrollingLayoutWheelTitle => 'Super + mouse wheel';
 
   @override

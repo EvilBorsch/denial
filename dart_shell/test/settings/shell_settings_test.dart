@@ -193,6 +193,57 @@ void main() {
     );
   });
 
+  test('the presentation follows the keyboard by default and keeps the '
+      'last one chosen', () {
+    // Absent in documents written before it existed: following the
+    // keyboard, nothing chosen yet.
+    final before = ShellSettings.fromJson(<String, dynamic>{});
+    expect(before.presentation, const ShellPresentationSettings());
+    expect(before.presentation.followKeyboard, isTrue);
+    expect(before.presentation.mode, isNull);
+    expect(before.presentation.modeKeyboard, isNull);
+    expect(before.toJson()['presentation'], <String, Object>{
+      'followKeyboard': true,
+    });
+
+    final chosen = before.copyWith(
+      presentation: const ShellPresentationSettings(
+        followKeyboard: false,
+        mode: ShellPresentationMode.desktop,
+        modeKeyboard: false,
+      ),
+    );
+    final json = chosen.toJson();
+    expect(json['presentation'], <String, Object>{
+      'followKeyboard': false,
+      'mode': 'desktop',
+      'modeKeyboard': false,
+    });
+    expect(ShellSettings.fromJson(json).presentation, chosen.presentation);
+    expect(chosen.differenceFrom(before), <String, Object?>{
+      'presentation': <String, Object>{
+        'followKeyboard': false,
+        'mode': 'desktop',
+        'modeKeyboard': false,
+      },
+    });
+
+    // An unknown mode is none chosen; a malformed key its default.
+    final malformed = ShellSettings.fromJson(<String, dynamic>{
+      'presentation': <String, dynamic>{
+        'followKeyboard': 'no',
+        'mode': 'phone',
+        'modeKeyboard': 1,
+      },
+    }).presentation;
+    expect(malformed, const ShellPresentationSettings());
+    expect(
+      ShellSettings.fromJson(<String, dynamic>{'presentation': 'desktop'})
+          .presentation,
+      const ShellPresentationSettings(),
+    );
+  });
+
   test('malformed settings fail safe and bounded values are clamped', () {
     final settings = ShellSettings.fromJson(<String, dynamic>{
       'version': 999,

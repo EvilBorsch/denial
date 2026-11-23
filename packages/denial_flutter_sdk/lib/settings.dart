@@ -78,6 +78,8 @@ export 'src/settings/shell_settings.dart'
         ShellOverlaySettings,
         ShellOverlaySurface,
         ShellPowerSettings,
+        ShellPresentationMode,
+        ShellPresentationSettings,
         ShellSettings,
         WorkspaceSwitchingOrientation,
         applicationEnvironmentMaximumDesktopFileIdBytes,

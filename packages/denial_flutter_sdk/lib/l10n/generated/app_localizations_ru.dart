@@ -2857,6 +2857,13 @@ class AppLocalizationsRu extends AppLocalizations {
   String get settingsWindowLayoutTitle => 'Раскладка окон';
 
   @override
+  String get settingsFollowKeyboardTitle => 'Режим по клавиатуре';
+
+  @override
+  String get settingsFollowKeyboardDescription =>
+      'С подключённой клавиатурой — настольный режим, без неё — мобильный. Плитка «Настольный режим» переключает вручную до следующего подключения или отключения клавиатуры.';
+
+  @override
   String get settingsScrollingLayoutWheelTitle => 'Super + колесо мыши';
 
   @override

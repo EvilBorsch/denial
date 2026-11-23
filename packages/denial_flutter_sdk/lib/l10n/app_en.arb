@@ -3815,6 +3815,14 @@
   "@settingsWindowLayoutTitle": {
     "description": "Title for choosing how desktop windows are arranged."
   },
+  "settingsFollowKeyboardTitle": "Follow the keyboard",
+  "@settingsFollowKeyboardTitle": {
+    "description": "Switch that makes the presentation follow a physical keyboard: attached means Desktop view, detached means Mobile view."
+  },
+  "settingsFollowKeyboardDescription": "Attaching a keyboard switches to Desktop view, detaching it to Mobile view. The Desktop view tile switches by hand until the next attach or detach.",
+  "@settingsFollowKeyboardDescription": {
+    "description": "Explains the Follow the keyboard switch. Desktop view and Mobile view are the names of the two presentations (shellPresentationDesktop, shellPresentationMobile)."
+  },
   "settingsScrollingLayoutWheelTitle": "Super + mouse wheel",
   "@settingsScrollingLayoutWheelTitle": {
     "description": "Heading for mouse-wheel navigation in the scrolling window layout."
