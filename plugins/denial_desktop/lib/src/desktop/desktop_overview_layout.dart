@@ -40,9 +40,12 @@ abstract final class DesktopOverviewLayout {
         frame.height >= minimumPreviewHeight;
   }
 
+  /// [mostRecentFirst] reads the windows from the most recently focused
+  /// (highest z) instead of keeping their places on the desktop.
   static Map<int, Rect> arrange({
     required List<DesktopOverviewItem> items,
     required Rect bounds,
+    bool mostRecentFirst = false,
   }) {
     final usefulItems = items
         .where((item) => isUsefulPreview(item.frame))
@@ -61,7 +64,11 @@ abstract final class DesktopOverviewLayout {
     }
 
     final ordered = List<DesktopOverviewItem>.of(usefulItems);
-    _sortSpatially(ordered, available);
+    if (mostRecentFirst) {
+      ordered.sort((left, right) => right.z.compareTo(left.z));
+    } else {
+      _sortSpatially(ordered, available);
+    }
 
     _OverviewCandidate? best;
     for (var rowCount = 1; rowCount <= ordered.length; rowCount += 1) {

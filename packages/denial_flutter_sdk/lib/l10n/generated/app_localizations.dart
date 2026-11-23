@@ -10025,12 +10025,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Show each window of {app}'**
   String screensOverviewStackExpand(String app);
-
-  /// Shown by the app windows view when the focused app has no window to show.
-  ///
-  /// In en, this message translates to:
-  /// **'No windows'**
-  String get appWindowsEmpty;
 }
 
 class _AppLocalizationsDelegate

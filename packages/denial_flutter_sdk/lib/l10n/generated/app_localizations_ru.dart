@@ -5673,7 +5673,4 @@ class AppLocalizationsRu extends AppLocalizations {
   String screensOverviewStackExpand(String app) {
     return 'Показать каждое окно: $app';
   }
-
-  @override
-  String get appWindowsEmpty => 'Нет окон';
 }

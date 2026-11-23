@@ -294,6 +294,7 @@ class DesktopScene extends ConsumerStatefulWidget {
     required this.onCloseWindow,
     required this.onOverviewBarrierTap,
     required this.onSelectOverviewWorkspace,
+    this.onExpandScreenStack,
     required this.onBeginOverviewDrag,
     required this.onUpdateOverviewDrag,
     required this.onEndOverviewDrag,
@@ -333,6 +334,9 @@ class DesktopScene extends ConsumerStatefulWidget {
   final ValueChanged<DenialWindow> onCloseWindow;
   final ValueChanged<Offset> onOverviewBarrierTap;
   final void Function(int monitorId, int workspaceId) onSelectOverviewWorkspace;
+
+  /// Spreads a stack of the screens overview into a card for each screen.
+  final ValueChanged<String>? onExpandScreenStack;
   final ValueChanged<DenialWindow> onBeginOverviewDrag;
   final void Function(DenialWindow window, Offset delta) onUpdateOverviewDrag;
   final ValueChanged<DenialWindow> onEndOverviewDrag;
@@ -975,6 +979,7 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                 decoration: DesktopWorkspaceOverviewDeck(
                   desktop: desktop,
                   onSelectWorkspace: widget.onSelectOverviewWorkspace,
+                  onExpandScreenStack: widget.onExpandScreenStack,
                 ),
                 foregroundControls: <Widget>[
                   surfacePlane(ShellSurfaceLayer.desktopControls),

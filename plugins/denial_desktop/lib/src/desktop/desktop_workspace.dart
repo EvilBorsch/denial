@@ -10,6 +10,7 @@ import 'package:denial_flutter_sdk/models.dart';
 import 'package:denial_flutter_sdk/settings.dart';
 
 import 'desktop_overview_layout.dart';
+import 'desktop_screens_overview_layout.dart';
 import 'desktop_workspace_overview_layout.dart';
 import 'transient_family_order.dart';
 
@@ -243,6 +244,7 @@ class DesktopWorkspaceOverview {
     required List<DesktopWorkspaceOverviewCard> cards,
     required this.shelf,
     this.dropSlot,
+    this.screens,
   }) : cards = List.unmodifiable(cards);
 
   /// The output work area the cards miniaturize, in scene coordinates.
@@ -256,6 +258,11 @@ class DesktopWorkspaceOverview {
   /// Where the dragged window will land, as planned by the compositor's
   /// layout for the card under it.
   final Rect? dropSlot;
+
+  /// The screens overview of the full-screen apps layout: its cards are
+  /// screens (or stacks of them) instead of workspaces, `cards` holds their
+  /// geometry, and a card's id is its one-based place in the overview.
+  final DesktopScreensOverviewArrangement? screens;
 
   DesktopWorkspaceOverviewCard? cardFor(int workspaceId) {
     for (final card in cards) {
@@ -280,7 +287,23 @@ class DesktopWorkspaceOverview {
   /// while every other card lands beside the screen in its grid direction.
   Rect cameraRect(Rect overviewRect, int workspaceId) {
     final camera = cardFor(workspaceId) ?? (cards.isEmpty ? null : cards.first);
-    return camera?.unproject(overviewRect) ?? overviewRect;
+    if (camera == null) {
+      return overviewRect;
+    }
+    final screens = this.screens;
+    if (screens != null) {
+      // A screen comes to rest on the output wherever it lies in the strip
+      // now: the camera maps every card as the current screen's.
+      final current = cardFor(screens.currentCardId ?? camera.workspaceId);
+      return DesktopWorkspaceOverviewCard(
+        workspaceId: camera.workspaceId,
+        rect: camera.rect,
+        contentRect: camera.contentRect,
+        sourceRect: current?.sourceRect ?? viewport,
+        viewportRect: camera.viewportRect,
+      ).unproject(overviewRect);
+    }
+    return camera.unproject(overviewRect);
   }
 }
 
@@ -293,6 +316,7 @@ class DesktopOverviewState {
     required this.selectedObjectId,
     required Map<int, Rect> frames,
     this.workspaces,
+    this.appWindows,
   }) : frames = Map.unmodifiable(frames);
 
   const DesktopOverviewState._({
@@ -302,6 +326,7 @@ class DesktopOverviewState {
     required this.selectedObjectId,
     required this.frames,
     required this.workspaces,
+    required this.appWindows,
   });
 
   final int monitorId;
@@ -315,6 +340,10 @@ class DesktopOverviewState {
   /// Present when the overview shows workspace miniatures instead of the
   /// stacking spread.
   final DesktopWorkspaceOverview? workspaces;
+
+  /// Set when the overview shows only the windows of this app id, the most
+  /// recent first (the app windows of the full-screen apps layout).
+  final String? appWindows;
 
   bool contains(int objectId) => frames.containsKey(objectId);
 
@@ -331,6 +360,7 @@ class DesktopOverviewState {
           ? this.frames
           : Map.unmodifiable(frames),
       workspaces: workspaces,
+      appWindows: appWindows,
     );
   }
 }

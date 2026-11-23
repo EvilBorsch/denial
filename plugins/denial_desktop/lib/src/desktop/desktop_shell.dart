@@ -31,6 +31,7 @@ import '../color_tuning/color_tuning_action.dart';
 import '../color_tuning/color_tuning_controller.dart';
 import 'desktop_scene.dart';
 import 'desktop_scene_selection.dart';
+import 'desktop_screens_overview_layout.dart';
 import 'desktop_window_coordinator.dart';
 import 'desktop_workspace.dart';
 import 'system_tray_module.dart';
@@ -108,6 +109,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       case DenialShellAction.overview:
         _cancelWindowSwitcher();
         _toggleOverview(event.monitorId);
+      case DenialShellAction.appWindows:
+        _cancelWindowSwitcher();
+        _toggleAppWindows(event.monitorId);
       case DenialShellAction.focusLeft:
         _moveOverviewSelection(DesktopOverviewDirection.left);
       case DenialShellAction.focusRight:
@@ -403,6 +407,12 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     final workspaceState = ref.read(desktopWorkspaceProvider);
     final workspace = ref.read(desktopWorkspaceProvider.notifier);
     if (workspaceState.overviewActive) {
+      // Three fingers up close the app windows of the full-screen apps
+      // layout instead of choosing one of them.
+      if (workspaceState.overview!.appWindows != null) {
+        _dismissOverview();
+        return;
+      }
       _activateOverviewSelection();
       return;
     }
@@ -432,6 +442,17 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     }
 
     workspace.closePanels();
+    if (layout.windowLayout == DesktopWindowLayout.screens) {
+      _cancelPendingWorkspaceRequest();
+      workspace.openScreensOverview(
+        monitorId: target.monitorId,
+        bounds: target.bounds,
+        backgroundBounds: target.backgroundBounds,
+        viewport: target.workArea,
+        selectedObjectId: shellState.deskForegroundObjectId,
+      );
+      return;
+    }
     if (workspaceOverview) {
       _cancelPendingWorkspaceRequest();
       workspace.openWorkspaceOverview(
@@ -450,6 +471,63 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       backgroundBounds: target.backgroundBounds,
       objectIds: target.objectIds,
       selectedObjectId: shellState.deskForegroundObjectId,
+    );
+  }
+
+  /// Three fingers down in the full-screen apps layout: every window of the
+  /// focused app, the most recent first, wherever it is in the strip. While
+  /// the screens overview is open they close it instead.
+  void _toggleAppWindows(int? preferredMonitorId) {
+    final workspaceState = ref.read(desktopWorkspaceProvider);
+    if (workspaceState.overviewActive) {
+      _dismissOverview();
+      return;
+    }
+    ref.read(clipboardTrayProvider.notifier).close();
+    _panelHoverController.reset();
+    _applicationSearchFocusNode.unfocus();
+    final shellState = ref.read(referenceShellProvider);
+    final windows = shellState.desk.openAppWindows;
+    final focusedId = shellState.deskForegroundObjectId;
+    DenialWindow? focused;
+    for (final window in windows) {
+      if (window.objectId == focusedId) {
+        focused = window;
+      }
+    }
+    if (focused == null || focused.appId.isEmpty) {
+      return;
+    }
+    final appWindows = <int>{
+      for (final window in windows)
+        if (window.appId == focused.appId &&
+            window.monitorId == focused.monitorId)
+          window.objectId,
+    };
+    final viewSize = workspaceState.viewSize.isEmpty
+        ? MediaQuery.sizeOf(context)
+        : workspaceState.viewSize;
+    final target = DesktopOverviewTarget.resolve(
+      viewSize: viewSize,
+      displayLayout: ref.read(deskDisplayLayoutProvider),
+      windows: windows,
+      workspace: workspaceState,
+      foregroundObjectId: focusedId,
+      preferredMonitorId: preferredMonitorId ?? focused.monitorId,
+      allWorkspaces: true,
+    );
+    if (target == null) {
+      return;
+    }
+    final workspace = ref.read(desktopWorkspaceProvider.notifier);
+    workspace.closePanels();
+    workspace.toggleOverview(
+      monitorId: target.monitorId,
+      bounds: target.bounds,
+      backgroundBounds: target.backgroundBounds,
+      objectIds: appWindows,
+      selectedObjectId: focusedId,
+      appWindows: focused.appId,
     );
   }
 
@@ -491,6 +569,23 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   void _selectOverviewWorkspace(int monitorId, int workspaceId) {
     final workspace = ref.read(desktopWorkspaceProvider);
     if (workspace.overview?.workspaces == null) {
+      return;
+    }
+    // A screen card goes to its most recently focused window.
+    final screens = workspace.overview!.workspaces!.screens;
+    if (screens != null) {
+      final card = screens.cardFor(workspaceId);
+      final window = card == null
+          ? null
+          : ref
+                .read(referenceShellProvider)
+                .desk
+                .openAppWindowsByObjectId[card.frontObjectId];
+      if (window == null) {
+        _dismissOverview();
+      } else {
+        _activateWindow(window);
+      }
       return;
     }
     if (workspace.activeWorkspaceFor(monitorId) == workspaceId) {
@@ -772,6 +867,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     if (overview == null || overview.workspaces == null) {
       return;
     }
+    if (overview.workspaces!.screens != null) {
+      // The shell knows the screens' rules itself: only highlight.
+      ref
+          .read(desktopWorkspaceProvider.notifier)
+          .planScreensDrop(window.objectId);
+      return;
+    }
     final plan = ref
         .read(desktopWorkspaceProvider.notifier)
         .planOverviewDrop(window.objectId);
@@ -863,6 +965,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   bool _dropOverviewWindowOnWorkspace(DenialWindow window) {
     final workspace = ref.read(desktopWorkspaceProvider);
     final overview = workspace.overview;
+    if (overview?.workspaces?.screens != null) {
+      _dropOverviewWindowOnScreens(window);
+      return true;
+    }
     final preview = overview?.frames[window.objectId];
     if (overview == null ||
         overview.workspaces == null ||
@@ -894,6 +1000,32 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
           point: plan.point,
         );
     return true;
+  }
+
+  /// Ends a drag in the screens overview: joining a screen's split on the
+  /// side it landed on, or taking a screen of its own in a gap. The preview
+  /// returns to its card; the compositor's new arrangement moves it.
+  void _dropOverviewWindowOnScreens(DenialWindow window) {
+    final controller = ref.read(desktopWorkspaceProvider.notifier);
+    final drop = controller.planScreensDrop(window.objectId);
+    controller.cancelOverviewDrag(window.objectId);
+    if (drop == null) {
+      return;
+    }
+    final target = ref
+        .read(referenceShellProvider)
+        .desk
+        .openAppWindowsByObjectId[drop.targetObjectId];
+    if (target == null) {
+      return;
+    }
+    final bridge = ref.read(denialBridgeProvider);
+    switch (drop) {
+      case DesktopScreensJoin(:final side):
+        bridge.joinScreen(window, target, side: side);
+      case DesktopScreensMove(:final before):
+        bridge.moveToScreen(window, target, before: before);
+    }
   }
 
   void _cancelOverviewDrag(DenialWindow window) {
@@ -1029,6 +1161,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                   .closeWindow,
               onOverviewBarrierTap: _handleOverviewBarrierTap,
               onSelectOverviewWorkspace: _selectOverviewWorkspace,
+              onExpandScreenStack: ref
+                  .read(desktopWorkspaceProvider.notifier)
+                  .expandScreenStack,
               onBeginOverviewDrag: _beginOverviewDrag,
               onUpdateOverviewDrag: _updateOverviewDrag,
               onEndOverviewDrag: _endOverviewDrag,

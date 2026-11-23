@@ -265,7 +265,7 @@ final class DesktopShellServices implements ShellServices {
   ProviderListenable<bool> get desktopVisible => desktopVisibleProvider;
   @override
   Widget buildApplicationIcon(BuildContext context, String appId) =>
-      _ApplicationIcon(appId: appId);
+      DesktopApplicationIcon(appId: appId);
 
   @override
   Widget buildWindowPreview(BuildContext context, int windowId) =>
@@ -362,7 +362,7 @@ class _WindowPreview extends ConsumerWidget {
       return Center(
         child: SizedBox.square(
           dimension: 48,
-          child: _ApplicationIcon(appId: window.appId),
+          child: DesktopApplicationIcon(appId: window.appId),
         ),
       );
     }
@@ -389,8 +389,10 @@ class _WindowPreview extends ConsumerWidget {
   }
 }
 
-class _ApplicationIcon extends ConsumerWidget {
-  const _ApplicationIcon({required this.appId});
+/// The icon of the app [appId] names: a local Flutter app's own, else its
+/// desktop entry's.
+class DesktopApplicationIcon extends ConsumerWidget {
+  const DesktopApplicationIcon({super.key, required this.appId});
   final String appId;
 
   @override

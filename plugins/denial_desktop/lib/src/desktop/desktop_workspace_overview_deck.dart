@@ -5,6 +5,8 @@ import 'package:denial_flutter_sdk/shell_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import '../core/shell_plugin_services.dart' show DesktopApplicationIcon;
+import 'desktop_screens_overview_layout.dart';
 import 'desktop_workspace.dart';
 import 'desktop_workspace_overview_layout.dart';
 
@@ -20,10 +22,17 @@ class DesktopWorkspaceOverviewDeck extends StatefulWidget {
     super.key,
     required this.desktop,
     required this.onSelectWorkspace,
+    this.onExpandScreenStack,
   });
 
   final DesktopWorkspaceState desktop;
+
+  /// Selects a workspace card, or in the screens overview of the
+  /// full-screen apps layout a screen card by its id.
   final void Function(int monitorId, int workspaceId) onSelectWorkspace;
+
+  /// Spreads a stack of screens into a card for each.
+  final ValueChanged<String>? onExpandScreenStack;
 
   @override
   State<DesktopWorkspaceOverviewDeck> createState() =>
@@ -76,9 +85,9 @@ class _DesktopWorkspaceOverviewDeckState
     if (overview?.workspaces != null) {
       if (_presented == null || closing) {
         // The camera starts on the workspace the user is looking at.
-        _cameraWorkspace = widget.desktop.activeWorkspaceFor(
-          overview!.monitorId,
-        );
+        _cameraWorkspace =
+            overview!.workspaces!.screens?.currentCardId ??
+            widget.desktop.activeWorkspaceFor(overview.monitorId);
         _progress.animateTo(
           1.0,
           duration: reduceMotion ? Duration.zero : Motion.overviewOpen,
@@ -101,12 +110,31 @@ class _DesktopWorkspaceOverviewDeckState
     }
     // Windows of the active workspace return to their real frames, so the
     // cards must zoom into that workspace too, even if it changed while open.
-    _cameraWorkspace = widget.desktop.activeWorkspaceFor(presented.monitorId);
+    _cameraWorkspace = presented.workspaces?.screens != null
+        ? _closingScreenCard(presented)
+        : widget.desktop.activeWorkspaceFor(presented.monitorId);
     _progress.animateBack(
       0.0,
       duration: Motion.overviewClose,
       curve: Motion.overviewExitCurve,
     );
+  }
+
+  /// The screen card the closing overview zooms into: the one holding the
+  /// window in front now, which the user chose or was on.
+  int _closingScreenCard(DesktopOverviewState presented) {
+    final screens = presented.workspaces!.screens!;
+    DesktopWindowPlacement? front;
+    for (final placement in widget.desktop.placements.values) {
+      if (placement.monitorId == presented.monitorId &&
+          !placement.minimized &&
+          (front == null || placement.z > front.z)) {
+        front = placement;
+      }
+    }
+    return (front == null ? null : screens.cardOfWindow(front.objectId)?.id) ??
+        screens.currentCardId ??
+        1;
   }
 
   void _handleStatus(AnimationStatus status) {
@@ -125,9 +153,10 @@ class _DesktopWorkspaceOverviewDeckState
       return const SizedBox.shrink();
     }
     final interactive = widget.desktop.overview?.workspaces != null;
-    final activeWorkspace = widget.desktop.activeWorkspaceFor(
-      overview.monitorId,
-    );
+    final screens = workspaces.screens;
+    final activeWorkspace =
+        screens?.currentCardId ??
+        widget.desktop.activeWorkspaceFor(overview.monitorId);
     final origin = overview.backgroundBounds.topLeft;
     final scrim = context.shellColors.overviewScrim;
     // The zoom only moves and fades the deck. Its render objects read it in
@@ -178,6 +207,7 @@ class _DesktopWorkspaceOverviewDeckState
                           active: card.workspaceId == activeWorkspace,
                           labelled: workspaces.cards.length > 1,
                           monitorId: overview.monitorId,
+                          screen: screens?.cardFor(card.workspaceId),
                         ),
                       ),
                     if (!workspaces.shelf.isEmpty)
@@ -234,6 +264,7 @@ class _DesktopWorkspaceOverviewDeckState
     required bool active,
     required bool labelled,
     required int monitorId,
+    DesktopScreenCard? screen,
   }) {
     final theme = context.shellTheme;
     final colors = context.shellColors;
@@ -245,7 +276,28 @@ class _DesktopWorkspaceOverviewDeckState
       fit: StackFit.expand,
       clipBehavior: Clip.none,
       children: [
-        if (labelled)
+        if (screen != null)
+          _Placed(
+            motion: _zoom,
+            rect: () {
+              final rect = place(frames.rect);
+              return Rect.fromLTWH(
+                rect.left,
+                rect.top - DesktopScreensOverviewLayout.labelExtent,
+                rect.width,
+                DesktopScreensOverviewLayout.labelExtent,
+              );
+            },
+            child: FadeTransition(
+              opacity: _zoom,
+              child: _ScreenCardLabel(
+                screen: screen,
+                active: active,
+                onExpand: widget.onExpandScreenStack,
+              ),
+            ),
+          )
+        else if (labelled)
           _Placed(
             motion: _zoom,
             rect: () {
@@ -298,13 +350,103 @@ class _DesktopWorkspaceOverviewDeckState
                       place(frames.viewport).shift(-place(frames.rect).topLeft)
                 : null,
             viewportRadius: theme.windowRadius * card.scale,
-            semanticLabel: context.l10n.settingsShortcutActionSwitchWorkspace(
-              card.workspaceId,
-            ),
+            semanticLabel:
+                screen?.title ??
+                context.l10n.settingsShortcutActionSwitchWorkspace(
+                  card.workspaceId,
+                ),
             onTap: () => widget.onSelectWorkspace(monitorId, card.workspaceId),
           ),
         ),
       ],
+    );
+  }
+}
+
+/// A screen card's name: its front window's app icon and title, and for a
+/// stack the number of its windows, which spreads it into cards.
+class _ScreenCardLabel extends StatelessWidget {
+  const _ScreenCardLabel({
+    required this.screen,
+    required this.active,
+    required this.onExpand,
+  });
+
+  final DesktopScreenCard screen;
+  final bool active;
+  final ValueChanged<String>? onExpand;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.shellTheme;
+    final colors = context.shellColors;
+    final style = theme.text.systemBarCaption.copyWith(
+      color: active ? theme.accent : colors.textPrimary,
+      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+      decoration: TextDecoration.none,
+    );
+    final count = screen.screens.length;
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: 4, end: 4, bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          IgnorePointer(
+            child: SizedBox.square(
+              dimension: 22,
+              child: FittedBox(
+                child: DesktopApplicationIcon(appId: screen.appId),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: IgnorePointer(
+              child: Text(
+                screen.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              ),
+            ),
+          ),
+          if (screen.stacked) ...[
+            const SizedBox(width: 8),
+            Semantics(
+              button: true,
+              label: context.l10n.screensOverviewStackExpand(screen.title),
+              value: context.l10n.screensOverviewStackCount(count),
+              child: MouseRegion(
+                cursor: ShellMouseCursors.link,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onExpand == null
+                      ? null
+                      : () => onExpand!(screen.appId),
+                  child: Container(
+                    key: const ValueKey<String>('screens-overview-stack-badge'),
+                    constraints: const BoxConstraints(minWidth: 26),
+                    height: 22,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: theme.accent,
+                      borderRadius: BorderRadius.circular(11),
+                    ),
+                    child: Text(
+                      '$count',
+                      style: style.copyWith(
+                        color: theme.accentPalette.onPrimary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }

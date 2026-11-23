@@ -186,7 +186,7 @@ abstract final class DesktopWorkspaceOverviewLayout {
         area.right,
         area.bottom,
       );
-      shelf = _arrangeShelf(minimized, shelfBounds, frames);
+      shelf = arrangeShelf(minimized, shelfBounds, frames);
       area = Rect.fromLTRB(
         area.left,
         area.top,
@@ -313,7 +313,7 @@ abstract final class DesktopWorkspaceOverviewLayout {
     );
   }
 
-  static Rect _arrangeShelf(
+  static Rect arrangeShelf(
     List<DesktopWorkspaceOverviewItem> items,
     Rect bounds,
     Map<int, Rect> frames,

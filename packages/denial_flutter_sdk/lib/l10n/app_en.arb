@@ -7197,7 +7197,5 @@
   "screensOverviewStackCount": "{count, plural, one{{count} window} other{{count} windows}}",
   "@screensOverviewStackCount": {"description": "Badge of a stack of screens that show windows of one app in the screens overview; activating it shows them one by one.", "placeholders": {"count": {"type": "int"}}},
   "screensOverviewStackExpand": "Show each window of {app}",
-  "@screensOverviewStackExpand": {"description": "Accessible label of the count badge that expands a stack of screens of one app.", "placeholders": {"app": {"type": "String"}}},
-  "appWindowsEmpty": "No windows",
-  "@appWindowsEmpty": {"description": "Shown by the app windows view when the focused app has no window to show."}
+  "@screensOverviewStackExpand": {"description": "Accessible label of the count badge that expands a stack of screens of one app.", "placeholders": {"app": {"type": "String"}}}
 }

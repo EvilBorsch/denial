@@ -45,6 +45,10 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
   // for; presented as the landing slot.
   ({int objectId, int workspaceId, Rect frame})? _overviewDropSlot;
   int? _overviewDropWorkspace;
+  // Screens overview of the full-screen apps layout: the apps whose stack
+  // the user spread into separate cards, and the drop under a drag.
+  final Set<String> _expandedScreenStacks = <String>{};
+  DesktopScreensDrop? _screensDrop;
   List<DenialWindow>? _lastSyncedWindows;
   int _lastSyncedSnapshotSequence = -1;
   double _devicePixelRatio = 1.0;
@@ -507,6 +511,7 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
           DesktopOverviewLayout.arrange(
             items: overviewItems,
             bounds: nextOverview.bounds,
+            mostRecentFirst: nextOverview.appWindows != null,
           ),
         );
         for (final placement in next.values) {
@@ -531,6 +536,7 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
                     nextOverview.frames[nextOverview.selectedObjectId]?.center,
                   ),
             frames: frames,
+            appWindows: nextOverview.appWindows,
           );
         }
       }
@@ -606,6 +612,7 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
     required Rect backgroundBounds,
     Set<int>? objectIds,
     int? selectedObjectId,
+    String? appWindows,
   }) {
     if (state.overviewActive) {
       closeOverview();
@@ -633,7 +640,11 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
             z: placement.z,
           ),
     ];
-    final frames = DesktopOverviewLayout.arrange(items: items, bounds: bounds);
+    final frames = DesktopOverviewLayout.arrange(
+      items: items,
+      bounds: bounds,
+      mostRecentFirst: appWindows != null,
+    );
     if (frames.isEmpty) {
       return;
     }
@@ -653,6 +664,7 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
             ? selectedObjectId!
             : fallbackSelection,
         frames: frames,
+        appWindows: appWindows,
       ),
     );
   }
@@ -781,6 +793,21 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
     DesktopOverviewState previous,
   ) {
     final workspaces = previous.workspaces!;
+    if (workspaces.screens != null) {
+      return _screensOverviewFor(
+        placements: placements,
+        monitorId: previous.monitorId,
+        bounds: previous.bounds,
+        backgroundBounds: previous.backgroundBounds,
+        viewport: workspaces.viewport,
+        selectedObjectId: previous.selectedObjectId,
+        retainedFrames: <int, Rect>{
+          for (final placement in placements.values)
+            if (placement.dragging)
+              placement.objectId: ?previous.frames[placement.objectId],
+        },
+      );
+    }
     return _workspaceOverviewFor(
       placements: placements,
       monitorId: previous.monitorId,
@@ -865,6 +892,210 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
     _settlingOverviewFrames.clear();
     _overviewDropSlot = null;
     _overviewDropWorkspace = null;
+    _screensDrop = null;
+  }
+
+  /// Opens the screens overview of the full-screen apps layout: every
+  /// screen of [monitorId] as a card in strip order, single-window screens
+  /// of one app stacked, minimized windows on a shelf below.
+  void openScreensOverview({
+    required int monitorId,
+    required Rect bounds,
+    required Rect backgroundBounds,
+    required Rect viewport,
+    int? selectedObjectId,
+  }) {
+    if (state.overviewActive || bounds.isEmpty || viewport.isEmpty) {
+      return;
+    }
+    _moveRemainders.clear();
+    _overviewDragOrigins.clear();
+    _clearOverviewDropPreview();
+    _expandedScreenStacks.clear();
+    final settledPlacements = <int, DesktopWindowPlacement>{
+      for (final placement in state.placements.values)
+        placement.objectId: placement.dragging
+            ? placement.copyWith(dragging: false)
+            : placement,
+    };
+    final overview = _screensOverviewFor(
+      placements: settledPlacements,
+      monitorId: monitorId,
+      bounds: bounds,
+      backgroundBounds: backgroundBounds,
+      viewport: viewport,
+      selectedObjectId: selectedObjectId,
+    );
+    if (overview == null) {
+      return;
+    }
+    state = state.copyWith(
+      placements: settledPlacements,
+      panel: DesktopPanel.none,
+      overview: overview,
+    );
+  }
+
+  /// The windows of one monitor as the screens overview sees them.
+  List<DesktopScreensOverviewItem> _screensOverviewItems(
+    Map<int, DesktopWindowPlacement> placements,
+    int monitorId,
+    Rect backgroundBounds,
+  ) {
+    final windows = <int, DenialWindow>{
+      for (final window in _lastSyncedWindows ?? const <DenialWindow>[])
+        window.objectId: window,
+    };
+    return <DesktopScreensOverviewItem>[
+      for (final placement in placements.values)
+        if ((placement.monitorId == monitorId ||
+                (placement.monitorId < 0 &&
+                    backgroundBounds.contains(placement.frame.center))) &&
+            DesktopOverviewLayout.isUsefulPreview(placement.frame))
+          if (windows[placement.objectId] case final window?)
+            DesktopScreensOverviewItem(
+              objectId: placement.objectId,
+              frame: placement.frame,
+              z: placement.z,
+              screen: placement.minimized ? 0 : window.layoutScreen,
+              screenRect: placement.minimized ? null : window.layoutScreenRect,
+              appId: window.appId,
+              title: window.title,
+              floating: window.layoutScreenFloating,
+              minimized: placement.minimized,
+            ),
+    ];
+  }
+
+  DesktopOverviewState? _screensOverviewFor({
+    required Map<int, DesktopWindowPlacement> placements,
+    required int monitorId,
+    required Rect bounds,
+    required Rect backgroundBounds,
+    required Rect viewport,
+    required int? selectedObjectId,
+    Map<int, Rect> retainedFrames = const <int, Rect>{},
+  }) {
+    final items = _screensOverviewItems(
+      placements,
+      monitorId,
+      backgroundBounds,
+    );
+    // The current screen is the one on the output now.
+    int? currentScreen;
+    var covered = 0.0;
+    for (final item in items) {
+      final rect = item.screenRect;
+      if (rect == null) {
+        continue;
+      }
+      final overlap = rect.intersect(viewport);
+      final area = overlap.isEmpty ? 0.0 : overlap.width * overlap.height;
+      if (area > covered) {
+        covered = area;
+        currentScreen = item.screen;
+      }
+    }
+    final arrangement = DesktopScreensOverviewLayout.arrange(
+      bounds: bounds,
+      items: items,
+      expandedApps: _expandedScreenStacks,
+      currentScreen: currentScreen,
+    );
+    if (arrangement.cards.isEmpty && arrangement.shelf.isEmpty) {
+      return null;
+    }
+    final frames = Map<int, Rect>.of(arrangement.frames);
+    for (final entry in retainedFrames.entries) {
+      if (frames.containsKey(entry.key)) {
+        frames[entry.key] = entry.value;
+      }
+    }
+    int? fallbackSelection;
+    var front = -1;
+    for (final item in items) {
+      if (!item.minimized &&
+          item.z > front &&
+          frames.containsKey(item.objectId)) {
+        front = item.z;
+        fallbackSelection = item.objectId;
+      }
+    }
+    return DesktopOverviewState(
+      monitorId: monitorId,
+      bounds: bounds,
+      backgroundBounds: backgroundBounds,
+      selectedObjectId: frames.containsKey(selectedObjectId)
+          ? selectedObjectId
+          : fallbackSelection,
+      frames: frames,
+      workspaces: DesktopWorkspaceOverview(
+        viewport: viewport,
+        orientation: WorkspaceSwitchingOrientation.horizontal,
+        cards: [for (final card in arrangement.cards) card.geometry],
+        shelf: arrangement.shelf,
+        dropSlot: _screensDrop?.highlight,
+        screens: arrangement,
+      ),
+    );
+  }
+
+  /// Spreads the stack of [appId]'s screens into a card for each.
+  void expandScreenStack(String appId) {
+    final overview = state.overview;
+    if (overview?.workspaces?.screens == null ||
+        !_expandedScreenStacks.add(appId)) {
+      return;
+    }
+    state = state.copyWith(
+      overview:
+          _rearrangedWorkspaceOverview(state.placements, overview!) ?? overview,
+    );
+  }
+
+  /// Resolves what dropping [objectId]'s dragged preview now would do in
+  /// the screens overview, and highlights where it would land.
+  DesktopScreensDrop? planScreensDrop(int objectId) {
+    final overview = state.overview;
+    final arrangement = overview?.workspaces?.screens;
+    final preview = overview?.frames[objectId];
+    final dragging = state.placements[objectId]?.dragging ?? false;
+    final drop =
+        overview == null || arrangement == null || preview == null || !dragging
+        ? null
+        : DesktopScreensOverviewLayout.dropAt(
+            arrangement: arrangement,
+            frames: overview.frames,
+            items: _screensOverviewItems(
+              state.placements,
+              overview.monitorId,
+              overview.backgroundBounds,
+            ),
+            objectId: objectId,
+            point: preview.center,
+          );
+    if (drop != _screensDrop && overview?.workspaces != null) {
+      _screensDrop = drop;
+      final workspaces = overview!.workspaces!;
+      state = state.copyWith(
+        overview: DesktopOverviewState(
+          monitorId: overview.monitorId,
+          bounds: overview.bounds,
+          backgroundBounds: overview.backgroundBounds,
+          selectedObjectId: overview.selectedObjectId,
+          frames: overview.frames,
+          workspaces: DesktopWorkspaceOverview(
+            viewport: workspaces.viewport,
+            orientation: workspaces.orientation,
+            cards: workspaces.cards,
+            shelf: workspaces.shelf,
+            dropSlot: drop?.highlight,
+            screens: workspaces.screens,
+          ),
+        ),
+      );
+    }
+    return drop;
   }
 
   /// Prefers the topmost window on the active workspace, then any workspace,
@@ -998,6 +1229,7 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
     };
     _overviewDragOrigins.clear();
     _clearOverviewDropPreview();
+    _expandedScreenStacks.clear();
     state = state.copyWith(placements: next, clearOverview: true);
   }
 
