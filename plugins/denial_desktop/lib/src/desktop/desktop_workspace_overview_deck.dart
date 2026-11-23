@@ -379,26 +379,31 @@ class _ScreenCardLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.shellTheme;
     final colors = context.shellColors;
-    final style = theme.text.systemBarCaption.copyWith(
+    // Read from arm's length on the tablet: the shell's body face at a
+    // title's size, not the system bar's caption.
+    final style = theme.text.base.copyWith(
+      fontSize: 15,
+      height: 1.2,
       color: active ? theme.accent : colors.textPrimary,
-      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
       decoration: TextDecoration.none,
+      shadows: const [Shadow(color: Color(0x59000000), blurRadius: 6)],
     );
     final count = screen.screens.length;
     return Padding(
-      padding: const EdgeInsetsDirectional.only(start: 4, end: 4, bottom: 6),
+      padding: const EdgeInsetsDirectional.only(start: 2, end: 2, bottom: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           IgnorePointer(
             child: SizedBox.square(
-              dimension: 22,
+              dimension: 26,
               child: FittedBox(
                 child: DesktopApplicationIcon(appId: screen.appId),
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Flexible(
             child: IgnorePointer(
               child: Text(
@@ -424,19 +429,20 @@ class _ScreenCardLabel extends StatelessWidget {
                       : () => onExpand!(screen.appId),
                   child: Container(
                     key: const ValueKey<String>('screens-overview-stack-badge'),
-                    constraints: const BoxConstraints(minWidth: 26),
-                    height: 22,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    constraints: const BoxConstraints(minWidth: 28),
+                    height: 26,
+                    padding: const EdgeInsets.symmetric(horizontal: 9),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: theme.accent,
-                      borderRadius: BorderRadius.circular(11),
+                      borderRadius: BorderRadius.circular(13),
                     ),
                     child: Text(
                       '$count',
                       style: style.copyWith(
                         color: theme.accentPalette.onPrimary,
                         fontWeight: FontWeight.w700,
+                        shadows: const <Shadow>[],
                       ),
                     ),
                   ),
