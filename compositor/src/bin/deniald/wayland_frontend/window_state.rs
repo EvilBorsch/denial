@@ -108,7 +108,7 @@ impl WaylandFrontend {
         self.xwayland.raise_windows(&pinned_windows);
     }
 
-    fn transient_parent_window(&self, window: &Window) -> Option<Window> {
+    pub(super) fn transient_parent_window(&self, window: &Window) -> Option<Window> {
         if window.toplevel().is_some() {
             return xdg_transient_parent_surface(window)
                 .and_then(|parent| self.window_for_root_surface(&parent));
@@ -1760,6 +1760,9 @@ impl WaylandFrontend {
             #[cfg(feature = "flutter")]
             self.workspace_focus_history
                 .retain(|_, focused| *focused != stable_id);
+            // Its partner in Split View fills the screen again.
+            #[cfg(feature = "flutter")]
+            self.forget_split_view_window(stable_id);
         }
 
         if remove_identity && let Some(stable_id) = self.surface_ids.remove(&object_id) {

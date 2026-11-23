@@ -411,6 +411,57 @@ impl WireBridge {
                 self.pending_window_commands.push_back(command);
                 Ok(None)
             }
+            fb::WindowRequestKind::SplitView => {
+                if request_id != 0 {
+                    return Err(WireError::RequestId);
+                }
+                if self.pending_window_commands.len() >= MAX_PENDING_WINDOW_COMMANDS {
+                    return Err(WireError::Count);
+                }
+                let window_id = request.window_id();
+                let target_window_id = request.target_window_id();
+                if window_id == 0 || target_window_id == 0 || window_id == target_window_id {
+                    return Err(WireError::Identity);
+                }
+                if request.flags() != 0 {
+                    return Err(WireError::Flags);
+                }
+                let window_on_left = match request.screen_side() {
+                    0 => true,
+                    1 => false,
+                    _ => return Err(WireError::Flags),
+                };
+                let ratio = request.split_ratio();
+                if !ratio.is_finite() || ratio <= 0.0 || ratio >= 1.0 {
+                    return Err(WireError::Geometry);
+                }
+                self.pending_window_commands
+                    .push_back(WindowCommand::SplitView {
+                        window_id,
+                        target_window_id,
+                        window_on_left,
+                        ratio,
+                    });
+                Ok(None)
+            }
+            fb::WindowRequestKind::LeaveSplitView => {
+                if request_id != 0 {
+                    return Err(WireError::RequestId);
+                }
+                if self.pending_window_commands.len() >= MAX_PENDING_WINDOW_COMMANDS {
+                    return Err(WireError::Count);
+                }
+                let window_id = request.window_id();
+                if window_id == 0 {
+                    return Err(WireError::Identity);
+                }
+                if request.flags() != 0 {
+                    return Err(WireError::Flags);
+                }
+                self.pending_window_commands
+                    .push_back(WindowCommand::LeaveSplitView { window_id });
+                Ok(None)
+            }
             fb::WindowRequestKind::MoveWindowToOutput => {
                 if request_id != 0 {
                     return Err(WireError::RequestId);

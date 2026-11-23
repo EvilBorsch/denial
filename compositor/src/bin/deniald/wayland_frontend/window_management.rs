@@ -241,6 +241,12 @@ pub(super) fn activate_window(
         }
         #[cfg(not(feature = "flutter"))]
         let resumed = false;
+        // Back from minimized, a window in Split View brings its partner
+        // back too: the pair is what the user left.
+        #[cfg(feature = "flutter")]
+        if resumed {
+            restore_split_view_partner(frontend, window);
+        }
 
         frontend.raise_window(window, true);
         for candidate in frontend.space.elements() {
@@ -262,6 +268,56 @@ pub(super) fn activate_window(
     }
     state.scene_sync.mark_dirty();
     true
+}
+
+/// Restores the Split View partner of `window` from minimized, without
+/// taking the focus from `window`.
+#[cfg(feature = "flutter")]
+fn restore_split_view_partner(frontend: &mut WaylandFrontend, window: &Window) {
+    let Some(partner) = frontend
+        .split_view_pair(window)
+        .and_then(|pair| {
+            let id = frontend
+                .window_root_surface(window)
+                .and_then(|root| frontend.surface_id(&root))?;
+            pair.partner_of(id)
+        })
+        .and_then(|id| frontend.window_for_id(id))
+    else {
+        return;
+    };
+    let Some(root) = frontend.window_root_surface(&partner) else {
+        return;
+    };
+    if !frontend.surface_is_minimized(&root.id()) {
+        return;
+    }
+    if let Some(id) = frontend.surface_id(&root) {
+        frontend.restore_window_workspace(id);
+    }
+    if frontend.set_surface_minimized(root.id(), false) {
+        if let Some(managed) = ManagedWindow::new(&partner) {
+            managed.prepare_minimized(false, frontend.window_covered(&partner));
+        }
+        frontend.reconcile_window_layout(&partner);
+    }
+}
+
+/// Minimizes the Split View partner of `window`, which is being minimized.
+#[cfg(feature = "flutter")]
+fn minimize_split_view_partner(state: &mut RuntimeState, window: &Window) {
+    let partner = state.wayland.as_ref().and_then(|frontend| {
+        let id = frontend
+            .window_root_surface(window)
+            .and_then(|root| frontend.surface_id(&root))?;
+        let partner = frontend.split_view_pair(window)?.partner_of(id)?;
+        let partner = frontend.window_for_id(partner)?;
+        let root = frontend.window_root_surface(&partner)?;
+        (!frontend.surface_is_minimized(&root.id())).then_some(partner)
+    });
+    if let Some(partner) = partner {
+        apply_managed_minimize(state, &partner, true);
+    }
 }
 
 /// Gives focus to the topmost remaining managed client window.
@@ -431,6 +487,25 @@ fn apply_window_command(state: &mut RuntimeState, command: WindowCommand) {
                 |frontend, window, target| frontend.move_to_screen(window, target, before),
             );
         }
+        WindowCommand::SplitView {
+            window_id,
+            target_window_id,
+            window_on_left,
+            ratio,
+        } => {
+            if let Some(frontend) = state.wayland.as_mut()
+                && frontend.split_view(window_id, target_window_id, window_on_left, ratio)
+            {
+                state.scene_sync.mark_dirty();
+            }
+        }
+        WindowCommand::LeaveSplitView { window_id } => {
+            if let Some(frontend) = state.wayland.as_mut()
+                && frontend.leave_split_view(window_id)
+            {
+                state.scene_sync.mark_dirty();
+            }
+        }
         WindowCommand::HoldPet { pet_id, hold } => {
             if let Some(frontend) = state.wayland.as_mut()
                 && frontend.hold_pet(pet_id, hold)
@@ -537,6 +612,8 @@ fn apply_local_window_command(state: &mut RuntimeState, window_id: u64, command:
         | WindowCommand::PreviewWorkspaceDrop { .. }
         | WindowCommand::JoinScreen { .. }
         | WindowCommand::MoveToScreen { .. }
+        | WindowCommand::SplitView { .. }
+        | WindowCommand::LeaveSplitView { .. }
         | WindowCommand::HoldPet { .. }
         | WindowCommand::CarryPet { .. } => unreachable!(),
     }
@@ -583,6 +660,8 @@ fn apply_client_window_command(
         | WindowCommand::PreviewWorkspaceDrop { .. }
         | WindowCommand::JoinScreen { .. }
         | WindowCommand::MoveToScreen { .. }
+        | WindowCommand::SplitView { .. }
+        | WindowCommand::LeaveSplitView { .. }
         | WindowCommand::HoldPet { .. }
         | WindowCommand::CarryPet { .. } => unreachable!(),
     }
@@ -1164,6 +1243,8 @@ fn move_window_between_phone_and_desk(
     {
         return;
     }
+    // A desk has no Split View: the partner fills the phone again.
+    state.frontend_mut().forget_split_view_window(window_id);
     if activate {
         activate_window(state, &window, SERIAL_COUNTER.next_serial());
     }
@@ -2882,6 +2963,10 @@ pub(super) fn apply_managed_minimize(
     state
         .frontend_mut()
         .set_surface_minimized(root.id(), minimized);
+    // A pair in Split View leaves the screen as one.
+    if minimized {
+        minimize_split_view_partner(state, window);
+    }
     if minimized {
         state
             .frontend_mut()

@@ -3289,7 +3289,7 @@ fn resolved_split_axis(
     })
 }
 
-fn split_geometry_on_axis(
+pub(super) fn split_geometry_on_axis(
     geometry: Rectangle<i32, Logical>,
     requested_gap: i32,
     requested_ratio: f64,

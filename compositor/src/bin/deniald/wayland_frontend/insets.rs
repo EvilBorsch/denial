@@ -337,6 +337,7 @@ impl WaylandFrontend {
                 .into_iter()
                 .filter(|window| self.mobile_window_geometry(window).is_some())
                 .collect::<Vec<_>>();
+            self.clear_split_views();
             self.mobile_shell = false;
             for window in &windows {
                 if let Some(record) = self
@@ -427,13 +428,22 @@ impl WaylandFrontend {
             .or_else(|| self.phone_output())
             .map(|output| output.logical_geometry)
             .or_else(|| self.fallback_output_geometry())?;
-        let top = if self_managed(&root) || self.mobile_fullscreen(&root) {
+        let fullscreen = self.mobile_fullscreen(&root);
+        let top = if self_managed(&root) || fullscreen {
             0
         } else {
             MOBILE_STATUS_INSET.min((geometry.size.h - 1).max(0))
         };
         geometry.loc.y += top;
         geometry.size.h -= top;
+        // In Split View the window, or the split window whose dialog it is,
+        // takes its half; a full-screen one fills the screen while it is.
+        if !fullscreen
+            && let Some((owner, pair)) = self.split_view_owner(window)
+            && let Some(half) = pair.rect_of(owner, geometry)
+        {
+            geometry = half;
+        }
         Some(geometry)
     }
 
