@@ -1,6 +1,17 @@
 import 'package:denial_sdk/composition.dart';
 import 'package:flutter/widgets.dart';
 
+export 'src/launcher/shell_search.dart'
+    show
+        ShellSearchApplicationHit,
+        ShellSearchHit,
+        ShellSearchResults,
+        ShellSearchWindow,
+        ShellSearchWindowHit,
+        normalizeShellSearchText,
+        searchShell,
+        swapShellSearchKeyboardLayout;
+
 /// Launcher presentation selected when the shell application is compiled.
 /// The host owns placement, transitions, native input capture and launching.
 @ExtensionPoint(cardinality: ContributionCardinality.zeroOrOne)
