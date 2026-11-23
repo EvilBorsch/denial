@@ -108,6 +108,32 @@ fn claim_edge_swipe(
     true
 }
 
+/// Whether scrolling or a touchpad gesture at the pointer belongs to the
+/// Wayland client under it, or to a pointer grab, rather than to the shell.
+#[cfg(feature = "flutter")]
+pub(super) fn pointer_event_reaches_client(state: &mut RuntimeState) -> bool {
+    let secure_locked = state.secure_session_locked();
+    let pointer_grabbed = state
+        .frontend()
+        .seat
+        .get_pointer()
+        .expect("seat has no pointer")
+        .is_grabbed();
+    let flutter_captured = state.flutter_input.pointer_captured();
+    let flutter_target = {
+        let frontend = state.frontend_mut();
+        if secure_locked || flutter_captured {
+            true
+        } else if frontend.client_pointer_capture.is_some() {
+            false
+        } else {
+            let position = frontend.pointer_location;
+            frontend.input_route(position).is_none()
+        }
+    };
+    !(flutter_target && (secure_locked || !pointer_grabbed))
+}
+
 #[cfg(feature = "flutter")]
 pub(super) fn process_flutter_input_event(
     state: &mut RuntimeState,
@@ -168,25 +194,7 @@ pub(super) fn process_flutter_input_event(
         }
         InputEvent::PointerAxis { event: axis, .. } => {
             state.frontend_mut().set_pointer_cursor_visible(true);
-            let pointer_grabbed = state
-                .frontend()
-                .seat
-                .get_pointer()
-                .expect("seat has no pointer")
-                .is_grabbed();
-            let flutter_captured = state.flutter_input.pointer_captured();
-            let flutter_target = {
-                let frontend = state.frontend_mut();
-                if secure_locked || flutter_captured {
-                    true
-                } else if frontend.client_pointer_capture.is_some() {
-                    false
-                } else {
-                    let position = frontend.pointer_location;
-                    frontend.input_route(position).is_none()
-                }
-            };
-            if flutter_target && (secure_locked || !pointer_grabbed) {
+            if !pointer_event_reaches_client(state) {
                 state.synchronize_flutter_pointer_position();
                 let scroll_speed_factor = state.frontend().settings.touchpad().scroll_speed_factor;
                 state
