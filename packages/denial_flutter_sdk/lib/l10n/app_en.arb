@@ -1891,7 +1891,7 @@
   },
   "quickSettingsStayAwake": "Stay awake",
   "@quickSettingsStayAwake": {
-    "description": "Quick Settings tile that keeps the idle timeout from suspending the system while it is on. The screen still turns off and locks, and closing the lid still suspends."
+    "description": "Quick Settings tile that keeps the screen on and the session unlocked while it is on: inactivity neither turns the screen off, nor locks, nor suspends, the power button and closing the cover leave the screen on, and only the Screen off tile still turns it off."
   },
   "quickSettingsStayAwakeOn": "Stay awake is on",
   "@quickSettingsStayAwakeOn": {
@@ -1904,6 +1904,14 @@
   "quickSettingsBypassChargingOn": "Bypass charging is on",
   "@quickSettingsBypassChargingOn": {
     "description": "Spoken label of the mark shown in the status bar while Bypass charging is on."
+  },
+  "quickSettingsScreenOff": "Screen off",
+  "@quickSettingsScreenOff": {
+    "description": "Quick Settings tile that turns the screen off as a short press of the power button does: the session locks as for the button, unless Stay awake is on, and the system does not suspend."
+  },
+  "quickSettingsSleep": "Sleep",
+  "@quickSettingsSleep": {
+    "description": "Quick Settings tile that suspends the system now, even while Stay awake is on. The session is locked when the system wakes."
   },
   "quickSettingsScreenRecording": "Screen recording",
   "@quickSettingsScreenRecording": {

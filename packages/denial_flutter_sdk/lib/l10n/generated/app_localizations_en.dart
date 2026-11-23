@@ -1343,6 +1343,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get quickSettingsBypassChargingOn => 'Bypass charging is on';
 
   @override
+  String get quickSettingsScreenOff => 'Screen off';
+
+  @override
+  String get quickSettingsSleep => 'Sleep';
+
+  @override
   String get quickSettingsScreenRecording => 'Screen recording';
 
   @override

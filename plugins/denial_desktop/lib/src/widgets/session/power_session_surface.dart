@@ -19,16 +19,22 @@ import '../main_output_centered_surface.dart';
 
 void showPowerSessionSurface(WidgetRef ref) {
   unawaited(ref.read(sessionPowerProvider.notifier).refresh());
-  ref
-      .read(shellPopupControllerProvider.notifier)
-      .show(
-        keyName: 'power-and-session',
-        debugLabel: 'Power and session controls',
-        pointerPolicy: ShellPointerPolicy.fullScene,
-        keyboardPolicy: ShellKeyboardPolicy.capture,
-        dismissPolicy: ShellDismissPolicy.outsideTapAndEscape,
-        builder: (_, handle) => PowerSessionSurface(onClose: handle.close),
-      );
+  showPowerSessionControls(ref.read(shellPopupControllerProvider.notifier));
+}
+
+/// Shows the power and session controls as they stand, without asking
+/// logind again: the error of a request that just failed stays on show,
+/// and each action says what holds it back, such as the application whose
+/// inhibitor blocks a suspend.
+void showPowerSessionControls(ShellPopupController popups) {
+  popups.show(
+    keyName: 'power-and-session',
+    debugLabel: 'Power and session controls',
+    pointerPolicy: ShellPointerPolicy.fullScene,
+    keyboardPolicy: ShellKeyboardPolicy.capture,
+    dismissPolicy: ShellDismissPolicy.outsideTapAndEscape,
+    builder: (_, handle) => PowerSessionSurface(onClose: handle.close),
+  );
 }
 
 class PowerSessionSurface extends StatelessWidget {
