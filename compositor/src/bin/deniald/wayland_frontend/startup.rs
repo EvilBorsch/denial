@@ -47,6 +47,9 @@ impl WaylandFrontend {
             RelativePointerManagerState::new::<RuntimeState>(&display_handle);
         let pointer_constraints_state =
             PointerConstraintsState::new::<RuntimeState>(&display_handle);
+        // Touchpad pinch and hold for the client under the pointer; deniald
+        // keeps swipes for its own shortcuts.
+        let pointer_gestures_state = PointerGesturesState::new::<RuntimeState>(&display_handle);
         let viewporter_state = ViewporterState::new::<RuntimeState>(&display_handle);
         let alpha_modifier_state = AlphaModifierState::new::<RuntimeState>(&display_handle);
         let fractional_scale_manager_state =
@@ -322,6 +325,7 @@ impl WaylandFrontend {
             xwayland,
             _relative_pointer_manager_state: relative_pointer_manager_state,
             _pointer_constraints_state: pointer_constraints_state,
+            _pointer_gestures_state: pointer_gestures_state,
             _viewporter_state: viewporter_state,
             _alpha_modifier_state: alpha_modifier_state,
             _fractional_scale_manager_state: fractional_scale_manager_state,
@@ -398,6 +402,7 @@ impl WaylandFrontend {
             shell_keyboard_focus: None,
             #[cfg(feature = "flutter")]
             input_root_ids: HashMap::new(),
+            client_gestures: Default::default(),
             #[cfg(feature = "flutter")]
             input_visibility_known: false,
             #[cfg(feature = "flutter")]

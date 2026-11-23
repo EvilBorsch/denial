@@ -82,6 +82,7 @@ use smithay::wayland::fractional_scale::{
 };
 use smithay::wayland::output::{OutputHandler, OutputManagerState};
 use smithay::wayland::pointer_constraints::{PointerConstraintsHandler, PointerConstraintsState};
+use smithay::wayland::pointer_gestures::PointerGesturesState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::SelectionHandler;
@@ -449,6 +450,7 @@ pub(super) struct WaylandFrontend {
     pub(crate) xwayland: xwayland::XWaylandState,
     pub _relative_pointer_manager_state: RelativePointerManagerState,
     pub _pointer_constraints_state: PointerConstraintsState,
+    _pointer_gestures_state: PointerGesturesState,
     _viewporter_state: ViewporterState,
     _alpha_modifier_state: AlphaModifierState,
     _fractional_scale_manager_state: FractionalScaleManagerState,
@@ -528,6 +530,8 @@ pub(super) struct WaylandFrontend {
     shell_keyboard_focus: Option<KeyboardFocusTarget>,
     #[cfg(feature = "flutter")]
     input_root_ids: HashMap<ObjectId, u64>,
+    /// The touchpad gesture the client under the pointer has under way.
+    client_gestures: input::ClientGestures,
     #[cfg(feature = "flutter")]
     input_visibility_known: bool,
     #[cfg(feature = "flutter")]

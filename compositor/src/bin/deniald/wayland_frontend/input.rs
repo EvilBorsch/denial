@@ -76,6 +76,8 @@ use super::touch_gestures::{
     WINDOW_TOUCH_STRIP_HEIGHT,
 };
 
+#[path = "input/client_gestures.rs"]
+mod client_gestures;
 #[cfg(feature = "flutter")]
 #[path = "input/edge_swipe.rs"]
 pub(super) mod edge_swipe;
@@ -86,6 +88,8 @@ mod tablet;
 #[path = "input/wayland_route.rs"]
 mod wayland_route;
 
+pub(super) use client_gestures::ClientGestures;
+use client_gestures::{cancel_client_gesture, process_client_gesture};
 #[cfg(feature = "flutter")]
 use flutter_route::process_flutter_input_event;
 use flutter_route::process_wayland_keyboard_transition;
@@ -2375,6 +2379,12 @@ fn process_input_event(
         return flush_clients;
     }
 
+    // Touchpad pinches and holds go to the client under the pointer; the
+    // swipes, deniald's own, were taken above.
+    if let Some(flush_clients) = process_client_gesture(state, &event) {
+        return flush_clients;
+    }
+
     if tablet::process_event(state, &event) {
         return true;
     }
@@ -2591,6 +2601,10 @@ fn reset_input_devices(state: &mut RuntimeState, reset: InputDeviceReset) {
             finish_horizontal_layout_scroll(state, true, None);
         }
         state.native_escape_shortcut.cancel_gestures();
+    }
+    if reset.pointer {
+        // libinput ends no gesture of a device it removed or suspended.
+        cancel_client_gesture(state, InputTime::now());
     }
     #[cfg(feature = "flutter")]
     if state.flutter_active {

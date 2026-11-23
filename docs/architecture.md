@@ -168,6 +168,13 @@ four fingers toward a window's center does not count as closing it.
   events use the same published client hit-test. An explicit libinput output
   association wins; otherwise the tablet maps to the output under the pointer
   for that proximity sequence;
+- touchpad pinches and holds reach the client under the pointer through
+  `zwp_pointer_gestures_v1` (version 3), decided as scrolling is: not under
+  the secure lock, and not over the shell unless a pointer grab holds the
+  pointer; a gesture that loses the client's pointer focus ends there
+  cancelled. Firefox zooms with a pinch and GTK 4
+  with its zoom and rotate gestures; a hold stops kinetic scrolling. Swipes
+  remain the compositor's shortcuts above and never reach a client;
 - grabs, pointer constraints and drag-and-drop take precedence;
 - window move and resize remain compositor operations;
 - keyboard text from the built-in OSK returns through the native bridge;
