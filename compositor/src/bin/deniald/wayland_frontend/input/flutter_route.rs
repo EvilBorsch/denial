@@ -118,13 +118,14 @@ pub(super) fn process_flutter_input_event(
     match &event {
         InputEvent::PointerMotion { event: motion, .. } => {
             let flutter_captured = state.flutter_input.pointer_captured();
+            // Libinput's deltas move the pointer in logical pixels, as in other
+            // Wayland compositors: an output's scale decides how sharply the
+            // scene is drawn, not how far the pointer travels for a movement
+            // of the hand.
             let delta = motion.delta();
-            let delta_unaccel = motion.delta_unaccel();
             let (position, target, relative) = {
                 let frontend = state.frontend_mut();
                 frontend.set_pointer_cursor_visible(true);
-                let scale = frontend.atlas_scale.max(f64::EPSILON);
-                let delta = Point::from((delta.x / scale, delta.y / scale));
                 let position = frontend.clamp_pointer(frontend.pointer_location + delta);
                 let target =
                     if secure_locked || (flutter_captured && !frontend.clipboard_drag_active) {
@@ -136,7 +137,7 @@ pub(super) fn process_flutter_input_event(
                     };
                 let relative = RelativeMotionEvent {
                     delta,
-                    delta_unaccel: Point::from((delta_unaccel.x / scale, delta_unaccel.y / scale)),
+                    delta_unaccel: motion.delta_unaccel(),
                     time: motion.time(),
                 };
                 (position, target, relative)
