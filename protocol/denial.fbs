@@ -106,7 +106,10 @@ enum ShellActionKind : ubyte {
   // A full-screen screenshot was just captured; the shell may show it.
   ScreenshotCaptured = 18,
   // Settings asked for the tablet lock screen editor.
-  LockScreenEditor = 19
+  LockScreenEditor = 19,
+  // The windows of the focused app (full-screen apps layout, three fingers
+  // down). Appended: an older shell ignores it.
+  AppWindows = 20
 }
 
 enum KeyboardCommandKind : ubyte {

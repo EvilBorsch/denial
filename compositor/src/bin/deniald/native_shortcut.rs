@@ -165,6 +165,9 @@ struct ShortcutTrigger {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(super) enum ShortcutGesture {
     ThreeFingerSwipeUp,
+    /// No default binding. The full-screen apps layout opens the app
+    /// windows with it (`touchpad_gestures::screens_gesture`).
+    ThreeFingerSwipeDown,
     ThreeFingerSwipeLeft,
     ThreeFingerSwipeRight,
     FourFingerSwipeUp,
@@ -177,6 +180,7 @@ impl ShortcutGesture {
     const fn canonical_name(self) -> &'static str {
         match self {
             Self::ThreeFingerSwipeUp => "ThreeFingerSwipeUp",
+            Self::ThreeFingerSwipeDown => "ThreeFingerSwipeDown",
             Self::ThreeFingerSwipeLeft => "ThreeFingerSwipeLeft",
             Self::ThreeFingerSwipeRight => "ThreeFingerSwipeRight",
             Self::FourFingerSwipeUp => "FourFingerSwipeUp",
@@ -1403,6 +1407,7 @@ fn parse_gesture(name: &str) -> Option<ShortcutGesture> {
         .as_str()
     {
         "threefingerswipeup" | "3fingerswipeup" => Some(ShortcutGesture::ThreeFingerSwipeUp),
+        "threefingerswipedown" | "3fingerswipedown" => Some(ShortcutGesture::ThreeFingerSwipeDown),
         "threefingerswipeleft" | "3fingerswipeleft" => Some(ShortcutGesture::ThreeFingerSwipeLeft),
         "threefingerswiperight" | "3fingerswiperight" => {
             Some(ShortcutGesture::ThreeFingerSwipeRight)
@@ -1721,6 +1726,7 @@ pub(super) fn supported_inputs() -> Vec<ShortcutInputDefinition> {
     inputs.extend(
         [
             (ShortcutGesture::ThreeFingerSwipeUp, "3FingerSwipeUp"),
+            (ShortcutGesture::ThreeFingerSwipeDown, "3FingerSwipeDown"),
             (ShortcutGesture::ThreeFingerSwipeLeft, "3FingerSwipeLeft"),
             (ShortcutGesture::ThreeFingerSwipeRight, "3FingerSwipeRight"),
             (ShortcutGesture::FourFingerSwipeUp, "4FingerSwipeUp"),
@@ -2268,6 +2274,7 @@ fn vt_for_evdev_keycode(evdev_keycode: u32) -> Option<i32> {
 fn window_switcher_gesture_step(gesture: ShortcutGesture) -> ShortcutDisposition {
     match gesture {
         ShortcutGesture::ThreeFingerSwipeRight
+        | ShortcutGesture::ThreeFingerSwipeDown
         | ShortcutGesture::FourFingerSwipeRight
         | ShortcutGesture::FourFingerSwipeDown => {
             ShortcutDisposition::RequestWindowSwitcherPrevious

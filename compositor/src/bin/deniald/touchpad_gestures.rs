@@ -46,6 +46,12 @@ const SWIPE_BINDINGS: &[SwipeBinding] = &[
     },
     SwipeBinding {
         fingers: 3,
+        direction: SwipeDirection::Down,
+        minimum_distance: THREE_FINGER_SWIPE_DISTANCE,
+        gesture: ShortcutGesture::ThreeFingerSwipeDown,
+    },
+    SwipeBinding {
+        fingers: 3,
         direction: SwipeDirection::Left,
         minimum_distance: THREE_FINGER_SWIPE_DISTANCE,
         gesture: ShortcutGesture::ThreeFingerSwipeLeft,
@@ -81,6 +87,33 @@ const SWIPE_BINDINGS: &[SwipeBinding] = &[
         gesture: ShortcutGesture::FourFingerSwipeRight,
     },
 ];
+
+/// What a recognized swipe does in the full-screen apps layout, whatever
+/// the user's shortcuts say. Three fingers left and right never get here:
+/// they move the strip continuously (`HorizontalScrollDirections`), as in
+/// the scrolling layout.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum ScreensGesture {
+    /// The screens overview, or closing the app windows if they are open.
+    Overview,
+    /// The app windows, or closing the screens overview if it is open.
+    AppWindows,
+    Launcher,
+    Nothing,
+}
+
+pub(super) const fn screens_gesture(gesture: ShortcutGesture) -> ScreensGesture {
+    match gesture {
+        ShortcutGesture::ThreeFingerSwipeUp => ScreensGesture::Overview,
+        ShortcutGesture::ThreeFingerSwipeDown => ScreensGesture::AppWindows,
+        ShortcutGesture::FourFingerSwipeUp => ScreensGesture::Launcher,
+        ShortcutGesture::ThreeFingerSwipeLeft
+        | ShortcutGesture::ThreeFingerSwipeRight
+        | ShortcutGesture::FourFingerSwipeDown
+        | ShortcutGesture::FourFingerSwipeLeft
+        | ShortcutGesture::FourFingerSwipeRight => ScreensGesture::Nothing,
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum TouchpadGestureEvent {
@@ -501,6 +534,70 @@ mod tests {
         };
         assert!(projected_delta_x < -100.0);
         assert!(projected_delta_x > -200.0);
+    }
+
+    #[test]
+    fn three_fingers_down_is_recognized_like_three_fingers_up() {
+        let mut recognizer = TouchpadGestureRecognizer::default();
+        recognizer.begin_swipe("touchpad", 3, HorizontalScrollDirections::default());
+        assert_eq!(recognizer.update_swipe("touchpad", 1.0, 60.0, 10_000), None);
+        assert_eq!(
+            recognizer.update_swipe("touchpad", -1.0, 41.0, 20_000),
+            Some(TouchpadGestureEvent::Trigger(
+                ShortcutGesture::ThreeFingerSwipeDown
+            ))
+        );
+        assert_eq!(
+            recognizer.end_swipe("touchpad", false, 30_000),
+            Some(TouchpadGestureEvent::End(
+                ShortcutGesture::ThreeFingerSwipeDown
+            ))
+        );
+    }
+
+    #[test]
+    fn three_fingers_down_in_a_scrolling_strip_does_not_scroll_it() {
+        let mut recognizer = TouchpadGestureRecognizer::default();
+        recognizer.begin_swipe(
+            "touchpad",
+            3,
+            HorizontalScrollDirections {
+                left: true,
+                right: true,
+            },
+        );
+        assert_eq!(recognizer.update_swipe("touchpad", 2.0, 30.0, 10_000), None);
+        assert_eq!(
+            recognizer.update_swipe("touchpad", 0.0, 80.0, 20_000),
+            Some(TouchpadGestureEvent::Trigger(
+                ShortcutGesture::ThreeFingerSwipeDown
+            ))
+        );
+    }
+
+    #[test]
+    fn screens_layout_routes_swipes_to_its_views_and_the_launcher() {
+        assert_eq!(
+            screens_gesture(ShortcutGesture::ThreeFingerSwipeUp),
+            ScreensGesture::Overview
+        );
+        assert_eq!(
+            screens_gesture(ShortcutGesture::ThreeFingerSwipeDown),
+            ScreensGesture::AppWindows
+        );
+        assert_eq!(
+            screens_gesture(ShortcutGesture::FourFingerSwipeUp),
+            ScreensGesture::Launcher
+        );
+        for gesture in [
+            ShortcutGesture::ThreeFingerSwipeLeft,
+            ShortcutGesture::ThreeFingerSwipeRight,
+            ShortcutGesture::FourFingerSwipeDown,
+            ShortcutGesture::FourFingerSwipeLeft,
+            ShortcutGesture::FourFingerSwipeRight,
+        ] {
+            assert_eq!(screens_gesture(gesture), ScreensGesture::Nothing);
+        }
     }
 
     #[test]

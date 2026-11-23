@@ -343,7 +343,8 @@ enum ShellActionKind {
   FocusUp(16),
   FocusDown(17),
   ScreenshotCaptured(18),
-  LockScreenEditor(19);
+  LockScreenEditor(19),
+  AppWindows(20);
 
   final int value;
   const ShellActionKind(this.value);
@@ -370,6 +371,7 @@ enum ShellActionKind {
       case 17: return ShellActionKind.FocusDown;
       case 18: return ShellActionKind.ScreenshotCaptured;
       case 19: return ShellActionKind.LockScreenEditor;
+      case 20: return ShellActionKind.AppWindows;
       default: throw StateError('Invalid value $value for bit flag enum');
     }
   }
@@ -378,7 +380,7 @@ enum ShellActionKind {
       value == null ? null : ShellActionKind.fromValue(value);
 
   static const int minValue = 0;
-  static const int maxValue = 19;
+  static const int maxValue = 20;
   static const fb.Reader<ShellActionKind> reader = _ShellActionKindReader();
 }
 

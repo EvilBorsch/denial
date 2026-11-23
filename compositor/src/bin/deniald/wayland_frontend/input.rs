@@ -1906,6 +1906,19 @@ fn swipe_scroll_directions(
     if !scrolling_layout {
         return HorizontalScrollDirections::default();
     }
+    // The full-screen apps layout always moves its strip with three
+    // fingers; the scrolling layout does when the user's shortcuts bind them
+    // to the window switcher.
+    if state
+        .wayland
+        .as_ref()
+        .is_some_and(WaylandFrontend::screens_layout_active)
+    {
+        return HorizontalScrollDirections {
+            left: true,
+            right: true,
+        };
+    }
     HorizontalScrollDirections {
         left: state.native_escape_shortcut.gesture_invokes(
             ShortcutGesture::ThreeFingerSwipeLeft,
@@ -1959,6 +1972,14 @@ pub(super) fn dispatch_swipe_gesture(
         | TouchpadGestureEvent::End(_) => {}
     }
 
+    if state
+        .wayland
+        .as_ref()
+        .is_some_and(WaylandFrontend::screens_layout_active)
+    {
+        return dispatch_screens_gesture(state, gesture_event, position);
+    }
+
     let (gesture, disposition) = match gesture_event {
         TouchpadGestureEvent::Trigger(gesture) => (
             gesture,
@@ -1985,6 +2006,46 @@ pub(super) fn dispatch_swipe_gesture(
         );
     }
     handled
+}
+
+/// The full-screen apps layout answers swipes itself, whatever the user's
+/// shortcuts say, as the scrolling layout does for three fingers left and
+/// right: up opens the screens overview, down the app windows, four fingers
+/// up the launcher, and the other swipes do nothing.
+#[cfg(feature = "flutter")]
+fn dispatch_screens_gesture(
+    state: &mut RuntimeState,
+    gesture_event: super::super::touchpad_gestures::TouchpadGestureEvent,
+    position: Option<Point<f64, Logical>>,
+) -> bool {
+    use super::super::touchpad_gestures::{ScreensGesture, TouchpadGestureEvent, screens_gesture};
+
+    let gesture = match gesture_event {
+        TouchpadGestureEvent::Trigger(gesture) => gesture,
+        // The swipe was answered when it was recognized.
+        TouchpadGestureEvent::Repeat(_) | TouchpadGestureEvent::End(_) => return true,
+        TouchpadGestureEvent::HorizontalScrollBegin { .. }
+        | TouchpadGestureEvent::HorizontalScrollUpdate { .. }
+        | TouchpadGestureEvent::HorizontalScrollEnd { .. } => return false,
+    };
+    let route = screens_gesture(gesture);
+    info!(?gesture, ?route, "full-screen apps gesture");
+    match route {
+        ScreensGesture::Overview => {
+            execute_shortcut_disposition_at(state, ShortcutDisposition::RequestOverview, position)
+        }
+        ScreensGesture::AppWindows => {
+            let monitor_id = prepare_shell_overlay_action(state, position);
+            state.queue_shell_action(super::super::wire::ShellAction::AppWindows, monitor_id);
+            true
+        }
+        ScreensGesture::Launcher => execute_shortcut_disposition_at(
+            state,
+            ShortcutDisposition::RequestApplications,
+            position,
+        ),
+        ScreensGesture::Nothing => true,
+    }
 }
 
 #[cfg(feature = "flutter")]

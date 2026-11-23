@@ -413,6 +413,8 @@ pub enum ShellAction {
     FocusDown,
     ScreenshotCaptured,
     LockScreenEditor,
+    /// The windows of the focused app (full-screen apps layout).
+    AppWindows,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -452,6 +454,7 @@ impl ShellAction {
             Self::FocusDown => fb::ShellActionKind::FocusDown,
             Self::ScreenshotCaptured => fb::ShellActionKind::ScreenshotCaptured,
             Self::LockScreenEditor => fb::ShellActionKind::LockScreenEditor,
+            Self::AppWindows => fb::ShellActionKind::AppWindows,
         }
     }
 }
