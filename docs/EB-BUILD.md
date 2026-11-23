@@ -164,7 +164,8 @@ On `eb/mode-follow` 709 of 714 pass with the same 4 failing. On `eb/power-tiles`
 769, the same 4 failing; there
 `gpu_transfer::tests::source_wait_accepts_readiness_and_rejects_hangup`, whose
 5 ms deadline a busy qemu-user thread can miss, also failed in 2 of 5 full
-runs and passes alone.
+runs and passes alone. `eb/screens-layout` (eb17) passes 796 of 801 against
+764 of 769 on its base `ccadf12`, the same 4 failing.
 
 The portal's tests and the protocol's run the same way, the D-Bus ones on a
 private session bus:
@@ -252,7 +253,9 @@ phone or the network) and one fails here,
 runs `bsdtar`, under qemu-user. denial-apps' `eb/wifi-join` adds nine
 (`wifi::nm::join_tests`, `words_ru::tests`): 51 pass, the same one fails.
 denial-apps' `eb/integration` at `4c5d2bf` (eb12 and eb13) passes 59 and at
-`f1735eb` (with `eb/sleep-after-screen-off`, eb14) 63, the same one failing.
+`f1735eb` (with `eb/sleep-after-screen-off`, eb14) 63, the same one failing;
+`c1d0137` (eb12 to eb16) and `eb/screens-layout` at `97f2875` (eb17) 63, the
+same one failing.
 `denial-look`, the apps' shared look and words, is plain Rust; its tests run
 on the host:
 
@@ -348,7 +351,8 @@ On v0.6.8 this passes 188 tests and fails 12 that need Denial's engine
 223 with the same 12 failing, and `packages/denial_flutter_sdk` all 111;
 `eb/integration` at `d2baa59` 244, `eb/power-tiles` 256 and
 `eb/sleep-after-screen-off` 261, with the same 12 failing, and the SDK all
-111.
+111. `eb/main` at `ccadf12` passes 261 and `eb/screens-layout` (eb17) 278,
+with the same 12 failing, and the SDK all 111.
 
 ## Another Denial release
 
