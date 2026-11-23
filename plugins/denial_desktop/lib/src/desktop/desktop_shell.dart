@@ -22,6 +22,7 @@ import '../state/desktop_app_switcher.dart';
 import '../state/desktop_visibility.dart';
 import '../state/desktop_window_switcher.dart';
 import '../widgets/desktop_app_switcher.dart';
+import '../widgets/mobile_screenshot_flash.dart';
 import '../state/quick_settings.dart';
 import '../widgets/shell_frame_time_overlay.dart';
 import 'desktop_overview_keyboard.dart';
@@ -155,7 +156,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       case DenialShellAction.screenshotDone:
         ref.read(screenshotSelectionProvider.notifier).done(event.requestId);
       case DenialShellAction.screenshotCaptured:
-        // The mobile shell's flash; the desktop shows nothing.
+        // MobileScreenshotFlash, in the scene's stack, answers it.
         break;
       case DenialShellAction.lockScreenEditor:
         // The tablet lock screen editor belongs to the mobile shell.
@@ -1310,6 +1311,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
             switcher: appSwitcher,
             bounds: appSwitcherBounds,
           ),
+          // A screenshot of the whole screen (Alt+Shift+3 in the Mac keys)
+          // has no selection to see: the shutter flash tells it happened.
+          const MobileScreenshotFlash(),
         ],
       ),
     );
