@@ -104,6 +104,9 @@ macro_rules! forward_pointer_events {
             handle.relative_motion(data, focus, event);
         }
 
+        forward_pointer_events!(except relative motion);
+    };
+    (except relative motion) => {
         fn axis(
             &mut self,
             data: &mut RuntimeState,
@@ -875,6 +878,9 @@ pub(super) struct DividerGrab {
     hit: super::wayland_frontend::DividerHit,
     start_boundary: f64,
     start_along: f64,
+    /// False for the second press of a double click: it evened the split
+    /// out and only holds the divider until the button is released.
+    drags: bool,
     affected_windows: Vec<Window>,
 }
 
@@ -883,6 +889,7 @@ impl DividerGrab {
     pub(super) fn new(
         start_data: GrabStartData<RuntimeState>,
         hit: super::wayland_frontend::DividerHit,
+        drags: bool,
     ) -> Self {
         let start_along = hit.along(start_data.location);
         Self {
@@ -890,6 +897,7 @@ impl DividerGrab {
             start_along,
             start_data,
             hit,
+            drags,
             affected_windows: Vec::new(),
         }
     }
@@ -905,7 +913,7 @@ impl PointerGrab<RuntimeState> for DividerGrab {
         event: &MotionEvent,
     ) {
         handle.motion(data, None, event);
-        if !event.location.x.is_finite() || !event.location.y.is_finite() {
+        if !self.drags || !event.location.x.is_finite() || !event.location.y.is_finite() {
             return;
         }
         let boundary = self.start_boundary + self.hit.along(event.location) - self.start_along;
@@ -968,6 +976,271 @@ impl PointerGrab<RuntimeState> for DividerGrab {
                 WindowPlacementChange::Resize,
             );
         }
+        data.scene_sync.mark_dirty();
+    }
+}
+
+/// The middle mouse button held over an app window in the full-screen apps
+/// layout (`wayland_frontend::middle_drag`). Undecided, the app keeps seeing
+/// the pointer move but not the press; past the threshold the drag moves
+/// the strip or drives the shell's overview and app windows, and the app
+/// sees the pointer leave; released before that, the app gets the click
+/// where the button went down. Another button pressed while it is still a
+/// click hands the press to the app and the grab passes everything on;
+/// pressed during a drag, it is the drag's.
+#[cfg(feature = "flutter")]
+pub(super) struct MiddleButtonGrab {
+    start_data: GrabStartData<RuntimeState>,
+    /// Until the middle button comes up.
+    drag: Option<super::wayland_frontend::middle_drag::MiddleDrag>,
+    /// Where the app saw the pointer last while the press was undecided.
+    last_focus: Option<(PointerFocus, Point<f64, Logical>)>,
+    last_location: Point<f64, Logical>,
+    /// The press went to the app with another button: pass everything on.
+    passthrough: bool,
+}
+
+#[cfg(feature = "flutter")]
+impl MiddleButtonGrab {
+    pub(super) fn new(
+        start_data: GrabStartData<RuntimeState>,
+        time: smithay::backend::input::InputTime,
+    ) -> Self {
+        let drag = super::wayland_frontend::middle_drag::MiddleDrag::new(
+            start_data.location,
+            time.micros(),
+        );
+        Self {
+            last_focus: start_data.focus.clone(),
+            last_location: start_data.location,
+            start_data,
+            drag: Some(drag),
+            passthrough: false,
+        }
+    }
+
+    fn middle_button(
+        &self,
+        state: ButtonState,
+        time: smithay::backend::input::InputTime,
+    ) -> ButtonEvent {
+        ButtonEvent {
+            button: self.start_data.button,
+            state,
+            serial: smithay::utils::SERIAL_COUNTER.next_serial(),
+            time,
+        }
+    }
+
+    /// The middle button came up: the click reaches the app, or the drag
+    /// settles.
+    fn finish(
+        &mut self,
+        data: &mut RuntimeState,
+        handle: &mut PointerInnerHandle<'_, RuntimeState>,
+        drag: super::wayland_frontend::middle_drag::MiddleDrag,
+        event: &ButtonEvent,
+    ) {
+        use super::shell_gestures::ShellGestureSource;
+        use super::wayland_frontend::middle_drag::MiddleDragEnd;
+        match drag.release(event.time.micros()) {
+            MiddleDragEnd::Click { origin } => {
+                // Where the button went down, then back where the pointer is.
+                handle.motion(
+                    data,
+                    self.start_data.focus.clone(),
+                    &MotionEvent {
+                        location: origin,
+                        serial: smithay::utils::SERIAL_COUNTER.next_serial(),
+                        time: event.time,
+                    },
+                );
+                handle.button(data, &self.middle_button(ButtonState::Pressed, event.time));
+                handle.button(data, &self.middle_button(ButtonState::Released, event.time));
+                handle.motion(
+                    data,
+                    self.last_focus.clone(),
+                    &MotionEvent {
+                        location: self.last_location,
+                        serial: smithay::utils::SERIAL_COUNTER.next_serial(),
+                        time: event.time,
+                    },
+                );
+                tracing::info!("middle click passed to the app");
+            }
+            MiddleDragEnd::Strip { projected_delta_x } => {
+                tracing::info!(projected_delta_x, "middle-button drag released the screens");
+                super::wayland_frontend::middle_drag_releases_strip(data, false, projected_delta_x);
+            }
+            MiddleDragEnd::Shell {
+                travel,
+                velocity,
+                committed,
+            } => {
+                let full = super::wayland_frontend::shell_gesture_travel(
+                    data,
+                    Some(handle.current_location()),
+                );
+                super::wayland_frontend::end_shell_gesture(
+                    data,
+                    ShellGestureSource::MiddleButton,
+                    travel / full,
+                    velocity / full,
+                    committed,
+                );
+            }
+        }
+    }
+}
+
+#[cfg(feature = "flutter")]
+impl PointerGrab<RuntimeState> for MiddleButtonGrab {
+    fn motion(
+        &mut self,
+        data: &mut RuntimeState,
+        handle: &mut PointerInnerHandle<'_, RuntimeState>,
+        focus: Option<(PointerFocus, Point<f64, Logical>)>,
+        event: &MotionEvent,
+    ) {
+        use super::shell_gestures::ShellGestureSource;
+        use super::wayland_frontend::middle_drag::MiddleDragStep;
+        if self.passthrough {
+            // The app holds the press, as for any button: its surface keeps
+            // the pointer until every button is up.
+            handle.motion(data, self.start_data.focus.clone(), event);
+            return;
+        }
+        let Some(drag) = self.drag.as_mut() else {
+            handle.motion(data, None, event);
+            return;
+        };
+        let step = drag.motion(event.location, event.time.micros());
+        if step == MiddleDragStep::Undecided {
+            self.last_focus = focus.clone();
+            self.last_location = event.location;
+            handle.motion(data, focus, event);
+            return;
+        }
+        // The drag is the compositor's: the app sees the pointer leave.
+        handle.motion(data, None, event);
+        let full = super::wayland_frontend::shell_gesture_travel(data, Some(event.location));
+        match step {
+            MiddleDragStep::Undecided => {}
+            MiddleDragStep::StripBegin { delta_x } => {
+                tracing::info!(delta_x, "middle-button drag moves the screens");
+                let frontend = data.frontend_mut();
+                frontend.set_compositor_pointer_grab_active(true);
+                frontend.set_divider_cursor(Some("grabbing"));
+                super::wayland_frontend::middle_drag_moves_strip(data, delta_x);
+            }
+            MiddleDragStep::StripUpdate { delta_x } => {
+                super::wayland_frontend::middle_drag_moves_strip(data, delta_x);
+            }
+            MiddleDragStep::ShellBegin { kind, travel } => {
+                data.frontend_mut().set_compositor_pointer_grab_active(true);
+                super::wayland_frontend::begin_shell_gesture(
+                    data,
+                    ShellGestureSource::MiddleButton,
+                    kind,
+                    travel / full,
+                    Some(event.location),
+                );
+            }
+            MiddleDragStep::ShellUpdate { travel, velocity } => {
+                super::wayland_frontend::update_shell_gesture(
+                    data,
+                    ShellGestureSource::MiddleButton,
+                    travel / full,
+                    velocity / full,
+                );
+            }
+        }
+        data.scene_sync.mark_dirty();
+    }
+
+    fn button(
+        &mut self,
+        data: &mut RuntimeState,
+        handle: &mut PointerInnerHandle<'_, RuntimeState>,
+        event: &ButtonEvent,
+    ) {
+        let middle = self.start_data.button;
+        if self.passthrough {
+            handle.button(data, event);
+        } else if event.button == middle {
+            // Its press is the one held back; its release ends the drag.
+            if event.state == ButtonState::Released
+                && let Some(drag) = self.drag.take()
+            {
+                self.finish(data, handle, drag, event);
+            }
+        } else if event.state == ButtonState::Pressed
+            && self.drag.as_ref().is_some_and(|drag| !drag.decided())
+        {
+            // A chord while the press was still a click: the app gets the
+            // middle press, then this one, and every event after them.
+            tracing::info!(
+                button = event.button,
+                "a second button joined the middle press: both go to the app"
+            );
+            self.drag = None;
+            self.passthrough = true;
+            handle.button(data, &self.middle_button(ButtonState::Pressed, event.time));
+            handle.button(data, event);
+        }
+        // Any other button during a drag is the drag's, and so is its
+        // release.
+        if handle.current_pressed().is_empty() {
+            handle.unset_grab(self, data, event.serial, event.time, true);
+        }
+    }
+
+    /// The app sees relative motion while it still sees the pointer: not
+    /// during a drag.
+    fn relative_motion(
+        &mut self,
+        data: &mut RuntimeState,
+        handle: &mut PointerInnerHandle<'_, RuntimeState>,
+        focus: Option<(PointerFocus, Point<f64, Logical>)>,
+        event: &RelativeMotionEvent,
+    ) {
+        let focus = if self.passthrough {
+            self.start_data.focus.clone()
+        } else if self.drag.as_ref().is_some_and(|drag| !drag.decided()) {
+            focus
+        } else {
+            None
+        };
+        handle.relative_motion(data, focus, event);
+    }
+
+    forward_pointer_events!(except relative motion);
+
+    fn start_data(&self) -> &GrabStartData<RuntimeState> {
+        &self.start_data
+    }
+
+    fn unset(&mut self, data: &mut RuntimeState) {
+        use super::shell_gestures::ShellGestureSource;
+        // Ended before the middle button came up (the pointer devices were
+        // reset, the session locked): a held click is dropped, the strip
+        // goes back, the shell's view closes.
+        if let Some(drag) = self.drag.take()
+            && drag.decided()
+        {
+            if drag.moves_strip() {
+                super::wayland_frontend::middle_drag_releases_strip(data, true, 0.0);
+            } else {
+                super::wayland_frontend::cancel_shell_gesture(
+                    data,
+                    Some(ShellGestureSource::MiddleButton),
+                    "the middle-button drag was interrupted",
+                );
+            }
+        }
+        let frontend = data.frontend_mut();
+        frontend.set_compositor_pointer_grab_active(false);
+        frontend.set_divider_cursor(None);
         data.scene_sync.mark_dirty();
     }
 }

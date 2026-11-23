@@ -30,7 +30,14 @@ pub(super) fn synchronize_flutter_window_management(
     }
     if events.secure_session_locked() {
         events.plugin_actions.pending.clear();
-        events.pending_shell_actions.clear();
+        events
+            .pending_shell_actions
+            .retain(crate::runtime_state::PendingShellAction::survives_lock);
+        while let Some(action) = events.pending_shell_actions.pop_front() {
+            if let Some(gesture) = action.gesture {
+                runtime.send_shell_gesture(gesture)?;
+            }
+        }
         events.pending_shortcut_launches.clear();
         while runtime.take_application_launch().is_some() {}
     } else {
@@ -73,7 +80,11 @@ pub(super) fn synchronize_flutter_window_management(
             }
         }
         while let Some(action) = events.pending_shell_actions.pop_front() {
-            runtime.send_shell_action(action.action, action.monitor_id, action.workspace_id)?;
+            if let Some(gesture) = action.gesture {
+                runtime.send_shell_gesture(gesture)?;
+            } else {
+                runtime.send_shell_action(action.action, action.monitor_id, action.workspace_id)?;
+            }
         }
     }
     // Also drain here when handing off or replacing the Flutter runtime.

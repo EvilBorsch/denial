@@ -197,6 +197,9 @@ mod input_source;
 #[path = "wayland_frontend/layer_shell.rs"]
 mod layer_shell;
 #[cfg(feature = "flutter")]
+#[path = "wayland_frontend/middle_drag.rs"]
+pub(crate) mod middle_drag;
+#[cfg(feature = "flutter")]
 #[path = "wayland_frontend/minimized.rs"]
 mod minimized;
 #[path = "wayland_frontend/output_power.rs"]
@@ -216,7 +219,7 @@ mod screencopy;
 #[path = "wayland_frontend/screens.rs"]
 mod screens;
 #[cfg(feature = "flutter")]
-pub(crate) use dividers::{DividerHit, TouchDivider};
+pub(crate) use dividers::{DividerHit, DividerPress, TouchDivider, TouchDividers};
 #[path = "wayland_frontend/startup.rs"]
 mod startup;
 pub(crate) use startup::FrontendConfig;
@@ -277,12 +280,13 @@ use handlers::{MAX_WAYLAND_CLIENTS, WaylandClientBudget};
 use idle_inhibit::IdleInhibitors;
 #[cfg(feature = "flutter")]
 use input::{ClientInputRoute, RoutedPointerTarget};
-pub(super) use input::{init_libinput, reset_all_input_devices};
 #[cfg(feature = "flutter")]
 pub(super) use input::{
-    install_keyboard_settings, install_mouse_settings, install_touchpad_settings,
-    set_mac_keys_enabled,
+    begin_shell_gesture, cancel_shell_gesture, end_shell_gesture, install_keyboard_settings,
+    install_mouse_settings, install_touchpad_settings, middle_drag_moves_strip,
+    middle_drag_releases_strip, set_mac_keys_enabled, shell_gesture_travel, update_shell_gesture,
 };
+pub(super) use input::{init_libinput, reset_all_input_devices};
 #[cfg(feature = "flutter")]
 use input_method::EditorEndpoint;
 use input_method::InputMethodManager;
@@ -533,15 +537,12 @@ pub(super) struct WaylandFrontend {
     /// Floating windows of the full-screen apps layout and the screen each
     /// one stays over.
     screen_floats: HashMap<ObjectId, screens::ScreenFloat>,
-    /// The last press on a split divider, for double clicks and taps.
+    /// Presses on split dividers, for double clicks and taps.
     #[cfg(feature = "flutter")]
-    last_divider_press: Option<(
-        super::window_layout::LayoutDivider<ObjectId>,
-        std::time::Instant,
-    )>,
-    /// A finger dragging a split divider.
+    divider_presses: dividers::DividerPresses<ObjectId>,
+    /// The finger holding a split divider.
     #[cfg(feature = "flutter")]
-    pub(crate) touch_divider: Option<TouchDivider>,
+    pub(crate) touch_dividers: TouchDividers,
     /// The resize cursor of the divider under the pointer, shown over what
     /// the shell or a client asks for, and what they asked for meanwhile.
     #[cfg(feature = "flutter")]

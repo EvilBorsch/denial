@@ -242,6 +242,8 @@ mod absolute_touch_bounds_tests {
 #[cfg(feature = "flutter")]
 const BTN_LEFT: u32 = 0x110;
 #[cfg(feature = "flutter")]
+const BTN_MIDDLE: u32 = 0x112;
+#[cfg(feature = "flutter")]
 const BTN_RIGHT: u32 = 0x111;
 #[cfg(feature = "flutter")]
 const MAX_CLIENT_POINTER_PRESSES: usize = 16;
@@ -2036,9 +2038,7 @@ fn process_touchpad_gesture_event(
                 | InputEvent::GestureSwipeUpdate { .. }
                 | InputEvent::GestureSwipeEnd { .. }
         ) {
-            if state.touchpad_gestures.reset() {
-                finish_horizontal_layout_scroll(state, true, None);
-            }
+            settle_touchpad_swipe_reset(state, "the shell is locked or restarting");
             state.native_escape_shortcut.cancel_gestures();
             return Some(false);
         }
@@ -2048,12 +2048,10 @@ fn process_touchpad_gesture_event(
     let gesture_event = match event {
         InputEvent::GestureSwipeBegin { event } => {
             let device = event.device();
-            let horizontal_scroll_directions = swipe_scroll_directions(state, None);
-            state.touchpad_gestures.begin_swipe(
-                device.sysname(),
-                event.fingers(),
-                horizontal_scroll_directions,
-            );
+            let tracking = swipe_tracking(state, None);
+            state
+                .touchpad_gestures
+                .begin_swipe(device.sysname(), event.fingers(), tracking);
             None
         }
         InputEvent::GestureSwipeUpdate { event } => {
@@ -2079,8 +2077,28 @@ fn process_touchpad_gesture_event(
     Some(gesture_event.is_some_and(|event| dispatch_swipe_gesture(state, event, None)))
 }
 
+/// Which motions of a three-finger swipe starting now follow the fingers:
+/// sideways the strip of a scrolling or full-screen apps layout, up and down
+/// the full-screen apps layout's overview and app windows. `position`: where
+/// fingers on the touchscreen came down.
 #[cfg(feature = "flutter")]
-fn swipe_scroll_directions(
+fn swipe_tracking(
+    state: &RuntimeState,
+    position: Option<Point<f64, Logical>>,
+) -> super::super::touchpad_gestures::SwipeTracking {
+    use super::super::touchpad_gestures::SwipeTracking;
+    let vertical = state.wayland.as_ref().is_some_and(|frontend| {
+        frontend.screens_layout_active()
+            && position.is_none_or(|position| !frontend.point_on_phone(position))
+    });
+    SwipeTracking {
+        horizontal: horizontal_swipe_directions(state, position),
+        vertical,
+    }
+}
+
+#[cfg(feature = "flutter")]
+fn horizontal_swipe_directions(
     state: &RuntimeState,
     position: Option<Point<f64, Logical>>,
 ) -> super::super::touchpad_gestures::HorizontalScrollDirections {
@@ -2126,11 +2144,20 @@ pub(super) fn dispatch_swipe_gesture(
     use super::super::touchpad_gestures::TouchpadGestureEvent;
 
     if !state.flutter_active || state.secure_session_locked() {
-        if matches!(
-            gesture_event,
-            TouchpadGestureEvent::HorizontalScrollEnd { .. }
-        ) {
-            finish_horizontal_layout_scroll(state, true, None);
+        match gesture_event {
+            TouchpadGestureEvent::HorizontalScrollEnd { .. } => {
+                finish_horizontal_layout_scroll(state, true, None);
+            }
+            TouchpadGestureEvent::VerticalBegin { .. }
+            | TouchpadGestureEvent::VerticalUpdate { .. }
+            | TouchpadGestureEvent::VerticalEnd { .. } => {
+                cancel_shell_gesture(
+                    state,
+                    Some(shell_gesture_source(position)),
+                    "the shell is locked or restarting",
+                );
+            }
+            _ => {}
         }
         state.native_escape_shortcut.cancel_gestures();
         return false;
@@ -2157,6 +2184,11 @@ pub(super) fn dispatch_swipe_gesture(
                 Some(projected_delta_x),
                 position.is_some(),
             );
+        }
+        TouchpadGestureEvent::VerticalBegin { .. }
+        | TouchpadGestureEvent::VerticalUpdate { .. }
+        | TouchpadGestureEvent::VerticalEnd { .. } => {
+            return follow_vertical_swipe(state, gesture_event, position);
         }
         TouchpadGestureEvent::Trigger(_)
         | TouchpadGestureEvent::Repeat(_)
@@ -2185,8 +2217,11 @@ pub(super) fn dispatch_swipe_gesture(
         }
         TouchpadGestureEvent::HorizontalScrollBegin { .. }
         | TouchpadGestureEvent::HorizontalScrollUpdate { .. }
-        | TouchpadGestureEvent::HorizontalScrollEnd { .. } => {
-            unreachable!("continuous scroll events return before shortcut dispatch")
+        | TouchpadGestureEvent::HorizontalScrollEnd { .. }
+        | TouchpadGestureEvent::VerticalBegin { .. }
+        | TouchpadGestureEvent::VerticalUpdate { .. }
+        | TouchpadGestureEvent::VerticalEnd { .. } => {
+            unreachable!("continuous swipe events return before shortcut dispatch")
         }
     };
     let handled = execute_shortcut_disposition_at(state, disposition, position);
@@ -2197,6 +2232,213 @@ pub(super) fn dispatch_swipe_gesture(
         );
     }
     handled
+}
+
+/// Travel of three fingers on a touchpad that opens the full-screen apps
+/// layout's overview or app windows fully: the same hand movement that
+/// moves its strip by one screen (400 units, about 37 mm on the cover's
+/// touchpad; `TOUCHPAD_SCREEN_SWIPE_DISTANCE`).
+#[cfg(feature = "flutter")]
+const TOUCHPAD_SHELL_GESTURE_TRAVEL: f64 = 400.0;
+
+/// The same for three fingers on the touchscreen, as a share of the height
+/// of the output under them: 288 of the tablet's 960 logical px, about
+/// 55 mm of its 185 mm panel.
+#[cfg(feature = "flutter")]
+const TOUCHSCREEN_SHELL_GESTURE_SHARE: f64 = 0.3;
+
+/// Where a swipe comes from: the touchscreen (with where its fingers came
+/// down) or a touchpad.
+#[cfg(feature = "flutter")]
+const fn shell_gesture_source(
+    position: Option<Point<f64, Logical>>,
+) -> super::super::shell_gestures::ShellGestureSource {
+    use super::super::shell_gestures::ShellGestureSource;
+    if position.is_some() {
+        ShellGestureSource::Touchscreen
+    } else {
+        ShellGestureSource::Touchpad
+    }
+}
+
+/// The travel that opens a shell gesture's view fully, in the units of the
+/// swipe (see [`TOUCHPAD_SHELL_GESTURE_TRAVEL`] and
+/// [`TOUCHSCREEN_SHELL_GESTURE_SHARE`]).
+#[cfg(feature = "flutter")]
+pub(in super::super) fn shell_gesture_travel(
+    state: &RuntimeState,
+    position: Option<Point<f64, Logical>>,
+) -> f64 {
+    let Some(position) = position else {
+        return TOUCHPAD_SHELL_GESTURE_TRAVEL;
+    };
+    let height = state
+        .wayland
+        .as_ref()
+        .and_then(|frontend| {
+            frontend
+                .outputs
+                .iter()
+                .find(|output| output.logical_geometry.to_f64().contains(position))
+                .or_else(|| frontend.outputs.first())
+        })
+        .map_or(960.0, |output| f64::from(output.logical_geometry.size.h));
+    (height * TOUCHSCREEN_SHELL_GESTURE_SHARE).max(1.0)
+}
+
+#[cfg(feature = "flutter")]
+const fn shell_gesture_kind(
+    direction: super::super::touchpad_gestures::VerticalSwipe,
+) -> super::super::wire::ShellGestureKind {
+    use super::super::touchpad_gestures::VerticalSwipe;
+    use super::super::wire::ShellGestureKind;
+    match direction {
+        VerticalSwipe::Up => ShellGestureKind::Up,
+        VerticalSwipe::Down => ShellGestureKind::Down,
+    }
+}
+
+/// Three fingers up or down in the full-screen apps layout: the shell's
+/// overview or app windows follow them (`wire::ShellGesture`), instead of
+/// opening at once when the swipe is recognized.
+#[cfg(feature = "flutter")]
+fn follow_vertical_swipe(
+    state: &mut RuntimeState,
+    gesture_event: super::super::touchpad_gestures::TouchpadGestureEvent,
+    position: Option<Point<f64, Logical>>,
+) -> bool {
+    use super::super::touchpad_gestures::TouchpadGestureEvent;
+    let source = shell_gesture_source(position);
+    let full = shell_gesture_travel(state, position);
+    match gesture_event {
+        TouchpadGestureEvent::VerticalBegin { direction, travel } => begin_shell_gesture(
+            state,
+            source,
+            shell_gesture_kind(direction),
+            travel / full,
+            position,
+        ),
+        TouchpadGestureEvent::VerticalUpdate {
+            travel, velocity, ..
+        } => update_shell_gesture(state, source, travel / full, velocity / full),
+        TouchpadGestureEvent::VerticalEnd {
+            cancelled: true, ..
+        } => cancel_shell_gesture(state, Some(source), "the swipe was cancelled"),
+        TouchpadGestureEvent::VerticalEnd {
+            travel,
+            velocity,
+            committed,
+            ..
+        } => end_shell_gesture(state, source, travel / full, velocity / full, committed),
+        _ => false,
+    }
+}
+
+/// `source` starts a shell gesture toward `kind`; `position`: where on the
+/// touchscreen, if there. A gesture of another source under way keeps the
+/// shell. True: the input was the gesture's.
+#[cfg(feature = "flutter")]
+pub(in super::super) fn begin_shell_gesture(
+    state: &mut RuntimeState,
+    source: super::super::shell_gestures::ShellGestureSource,
+    kind: super::super::wire::ShellGestureKind,
+    progress: f64,
+    position: Option<Point<f64, Logical>>,
+) -> bool {
+    let Some(gesture) = state.shell_gestures.begin(source, kind, progress) else {
+        info!(
+            ?source,
+            ?kind,
+            "full-screen apps gesture ignored: another one drives the shell"
+        );
+        return true;
+    };
+    // As for the overview opened by a key: a constrained pointer (a game's)
+    // is let go while the shell's view is up.
+    let _ = prepare_shell_overlay_action(state, position);
+    info!(
+        ?source,
+        ?kind,
+        progress = gesture.progress,
+        "full-screen apps gesture follows"
+    );
+    state.queue_shell_gesture(gesture);
+    true
+}
+
+#[cfg(feature = "flutter")]
+pub(in super::super) fn update_shell_gesture(
+    state: &mut RuntimeState,
+    source: super::super::shell_gestures::ShellGestureSource,
+    progress: f64,
+    velocity: f64,
+) -> bool {
+    if let Some(gesture) = state.shell_gestures.update(source, progress, velocity) {
+        state.queue_shell_gesture(gesture);
+    }
+    true
+}
+
+#[cfg(feature = "flutter")]
+pub(in super::super) fn end_shell_gesture(
+    state: &mut RuntimeState,
+    source: super::super::shell_gestures::ShellGestureSource,
+    progress: f64,
+    velocity: f64,
+    committed: bool,
+) -> bool {
+    if let Some(gesture) = state
+        .shell_gestures
+        .end(source, progress, velocity, committed)
+    {
+        info!(
+            ?source,
+            kind = ?gesture.kind,
+            committed,
+            progress = gesture.progress,
+            velocity = gesture.velocity,
+            "full-screen apps gesture ended"
+        );
+        state.queue_shell_gesture(gesture);
+    }
+    true
+}
+
+/// Abandons the shell gesture of `source`, or any (`None`), telling the
+/// shell to settle its view back where it was before the gesture.
+#[cfg(feature = "flutter")]
+pub(in super::super) fn cancel_shell_gesture(
+    state: &mut RuntimeState,
+    source: Option<super::super::shell_gestures::ShellGestureSource>,
+    reason: &str,
+) -> bool {
+    if let Some(gesture) = state.shell_gestures.cancel(source) {
+        info!(
+            ?source,
+            kind = ?gesture.kind,
+            reason,
+            "full-screen apps gesture cancelled"
+        );
+        state.queue_shell_gesture(gesture);
+    }
+    true
+}
+
+/// Settles what a reset of the touchpad's swipes cut short: a strip moving
+/// with the fingers snaps back, a shell gesture is cancelled.
+#[cfg(feature = "flutter")]
+fn settle_touchpad_swipe_reset(state: &mut RuntimeState, reason: &str) {
+    let reset = state.touchpad_gestures.reset();
+    if reset.horizontal_scrolling {
+        finish_horizontal_layout_scroll(state, true, None);
+    }
+    if reset.vertical {
+        cancel_shell_gesture(
+            state,
+            Some(super::super::shell_gestures::ShellGestureSource::Touchpad),
+            reason,
+        );
+    }
 }
 
 /// The full-screen apps layout answers swipes itself, whatever the user's
@@ -2217,7 +2459,10 @@ fn dispatch_screens_gesture(
         TouchpadGestureEvent::Repeat(_) | TouchpadGestureEvent::End(_) => return true,
         TouchpadGestureEvent::HorizontalScrollBegin { .. }
         | TouchpadGestureEvent::HorizontalScrollUpdate { .. }
-        | TouchpadGestureEvent::HorizontalScrollEnd { .. } => return false,
+        | TouchpadGestureEvent::HorizontalScrollEnd { .. }
+        | TouchpadGestureEvent::VerticalBegin { .. }
+        | TouchpadGestureEvent::VerticalUpdate { .. }
+        | TouchpadGestureEvent::VerticalEnd { .. } => return false,
     };
     let route = screens_gesture(gesture);
     info!(?gesture, ?route, "full-screen apps gesture");
@@ -2264,6 +2509,25 @@ fn update_horizontal_layout_scroll(state: &mut RuntimeState, delta_x: f64, direc
         state.scene_sync.mark_dirty();
     }
     changed
+}
+
+/// A middle-button drag moves the full-screen apps layout's strip by
+/// `delta_x` logical px, exactly with the pointer.
+#[cfg(feature = "flutter")]
+pub(in super::super) fn middle_drag_moves_strip(state: &mut RuntimeState, delta_x: f64) -> bool {
+    update_horizontal_layout_scroll(state, delta_x, true)
+}
+
+/// A middle-button drag that moved the strip ended: it settles on the
+/// screen `projected_delta_x` reaches, or goes back where it was
+/// (`cancelled`).
+#[cfg(feature = "flutter")]
+pub(in super::super) fn middle_drag_releases_strip(
+    state: &mut RuntimeState,
+    cancelled: bool,
+    projected_delta_x: f64,
+) -> bool {
+    finish_horizontal_layout_scroll_from(state, cancelled, Some(projected_delta_x), true)
 }
 
 #[cfg(feature = "flutter")]
@@ -2895,6 +3159,15 @@ fn reset_input_devices(state: &mut RuntimeState, reset: InputDeviceReset) {
             .map(|frontend| frontend.touch_gestures.cancel_all())
             .unwrap_or_default();
         touch_gestures::apply_actions(state, actions);
+        // A finger holding a divider lifts no more: settle the drag, so the
+        // slot is free for the next finger.
+        if let Some(drag) = state
+            .wayland
+            .as_mut()
+            .and_then(|frontend| frontend.touch_dividers.release_all())
+        {
+            flutter_route::end_touch_divider(state, drag);
+        }
     }
     if reset.keyboard {
         state.native_escape_shortcut.reset();
@@ -2915,9 +3188,7 @@ fn reset_input_devices(state: &mut RuntimeState, reset: InputDeviceReset) {
     }
     #[cfg(feature = "flutter")]
     if reset.pointer {
-        if state.touchpad_gestures.reset() {
-            finish_horizontal_layout_scroll(state, true, None);
-        }
+        settle_touchpad_swipe_reset(state, "the pointer devices were reset");
         state.native_escape_shortcut.cancel_gestures();
     }
     if reset.pointer {

@@ -56,6 +56,9 @@ pub(super) fn synchronize_authentication_boundary(events: &mut RuntimeState) {
     // this also prevents the Enter used for PAM submission from leaking into
     // the previously focused application.
     wayland_frontend::reset_all_input_devices(events);
+    if locked {
+        wayland_frontend::cancel_shell_gesture(events, None, "the session locked");
+    }
     events.session_lock_applied = locked;
     if events
         .wayland
@@ -66,7 +69,9 @@ pub(super) fn synchronize_authentication_boundary(events: &mut RuntimeState) {
     }
     events.frontend_mut().set_windows_covered(locked);
     if locked {
-        events.pending_shell_actions.clear();
+        events
+            .pending_shell_actions
+            .retain(crate::runtime_state::PendingShellAction::survives_lock);
         events.plugin_actions.pending.clear();
     } else {
         // Fingerprint authentication can succeed without keyboard or pointer

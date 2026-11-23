@@ -20,8 +20,10 @@ class DesktopPanelOverlay extends ConsumerStatefulWidget {
     required this.panelDurationScale,
     required this.applicationSearchFocusNode,
     required this.onOpenLauncher,
+    required this.onHoverOpenLauncher,
     required this.onDismissPanel,
     required this.onOpenDashboard,
+    required this.onHoverOpenDashboard,
     required this.onOpenSettings,
     required this.onCancelPanelClose,
     required this.onSchedulePanelClose,
@@ -36,8 +38,15 @@ class DesktopPanelOverlay extends ConsumerStatefulWidget {
   final double panelDurationScale;
   final FocusNode applicationSearchFocusNode;
   final VoidCallback onOpenLauncher;
+
+  /// The pointer entered the launcher's hot edge: leaving the panel again
+  /// closes it, unlike a launcher opened another way.
+  final VoidCallback onHoverOpenLauncher;
   final VoidCallback onDismissPanel;
   final VoidCallback onOpenDashboard;
+
+  /// The pointer entered the dashboard's hot edge.
+  final VoidCallback onHoverOpenDashboard;
   final VoidCallback onOpenSettings;
   final VoidCallback onCancelPanelClose;
   final VoidCallback onSchedulePanelClose;
@@ -199,7 +208,7 @@ class _DesktopPanelOverlayState extends ConsumerState<DesktopPanelOverlay> {
             child: ShellInputRegion(
               debugLabel: 'Desktop launcher edge trigger',
               child: DesktopPanelEdgeTrigger(
-                onEnter: widget.onOpenLauncher,
+                onEnter: widget.onHoverOpenLauncher,
                 onExit: widget.onSchedulePanelClose,
               ),
             ),
@@ -210,7 +219,7 @@ class _DesktopPanelOverlayState extends ConsumerState<DesktopPanelOverlay> {
             child: ShellInputRegion(
               debugLabel: 'Desktop dashboard edge trigger',
               child: DesktopPanelEdgeTrigger(
-                onEnter: widget.onOpenDashboard,
+                onEnter: widget.onHoverOpenDashboard,
                 onExit: widget.onSchedulePanelClose,
               ),
             ),

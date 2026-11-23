@@ -149,6 +149,9 @@ mod sleep_transition;
 #[path = "deniald/startup.rs"]
 mod startup;
 #[cfg(feature = "flutter")]
+#[cfg(feature = "flutter")]
+#[path = "deniald/shell_gestures.rs"]
+mod shell_gestures;
 #[path = "deniald/surface_feedback.rs"]
 mod surface_feedback;
 #[path = "deniald/system_controls.rs"]

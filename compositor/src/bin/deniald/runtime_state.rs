@@ -171,6 +171,10 @@ pub(super) struct RuntimeState {
     pub(super) flutter_input: flutter_runtime::InputQueue,
     #[cfg(feature = "flutter")]
     pub(super) touchpad_gestures: touchpad_gestures::TouchpadGestureRecognizer,
+    /// The shell gesture that follows the fingers or the pointer, if one
+    /// does (the full-screen apps layout's overview and app windows).
+    #[cfg(feature = "flutter")]
+    pub(super) shell_gestures: shell_gestures::ShellGestures,
     #[cfg(feature = "flutter")]
     pub(super) input_deck: input_deck::Controller,
     pub(super) input_devices: InputDevices,
@@ -371,6 +375,7 @@ impl RuntimeState {
                 action,
                 monitor_id,
                 workspace_id: None,
+                gesture: None,
             });
         } else {
             warn!(
@@ -380,6 +385,27 @@ impl RuntimeState {
         }
     }
 
+    /// Queues a phase of a shell gesture. Updates arrive at the input's
+    /// rate: one still waiting is replaced by the next, so the shell sees
+    /// the latest progress and the queue never drops a gesture's end.
+    pub(super) fn queue_shell_gesture(&mut self, gesture: wire::ShellGesture) {
+        if gesture.phase == wire::ShellGesturePhase::Update
+            && let Some(waiting) = self.pending_shell_actions.back_mut()
+            && waiting.gesture.is_some_and(|waiting| {
+                waiting.phase == wire::ShellGesturePhase::Update && waiting.kind == gesture.kind
+            })
+        {
+            waiting.gesture = Some(gesture);
+            return;
+        }
+        self.pending_shell_actions.push_back(PendingShellAction {
+            action: wire::ShellAction::ShellGesture,
+            monitor_id: None,
+            workspace_id: None,
+            gesture: Some(gesture),
+        });
+    }
+
     pub(super) fn queue_workspace_action(&mut self, monitor_id: i64, workspace_id: u8) {
         const MAX_PENDING_SHELL_ACTIONS: usize = 64;
         if self.pending_shell_actions.len() < MAX_PENDING_SHELL_ACTIONS {
@@ -387,6 +413,7 @@ impl RuntimeState {
                 action: wire::ShellAction::WorkspaceChanged,
                 monitor_id: Some(monitor_id),
                 workspace_id: Some(workspace_id),
+                gesture: None,
             });
         } else {
             warn!(
@@ -519,6 +546,18 @@ pub(super) struct PendingShellAction {
     pub(super) action: wire::ShellAction,
     pub(super) monitor_id: Option<i64>,
     pub(super) workspace_id: Option<u8>,
+    /// For [`wire::ShellAction::ShellGesture`]: the gesture's phase and
+    /// progress, sent with `FlutterRuntime::send_shell_gesture`.
+    pub(super) gesture: Option<wire::ShellGesture>,
+}
+
+impl PendingShellAction {
+    /// Survives the lock: the shell must hear that a gesture it was
+    /// following is over.
+    pub(super) fn survives_lock(&self) -> bool {
+        self.gesture
+            .is_some_and(|gesture| gesture.phase == wire::ShellGesturePhase::Cancel)
+    }
 }
 
 impl RuntimeState {
@@ -581,5 +620,53 @@ mod tests {
 
         state.queue_replacement_flutter_rehydration_if_ready(true);
         assert!(!state.replacement_flutter_rehydration_pending);
+    }
+
+    fn gesture(phase: wire::ShellGesturePhase, progress: f32) -> wire::ShellGesture {
+        wire::ShellGesture {
+            kind: wire::ShellGestureKind::Up,
+            phase,
+            progress,
+            velocity: 0.0,
+            committed: false,
+        }
+    }
+
+    fn queued(state: &RuntimeState) -> Vec<(wire::ShellGesturePhase, f32)> {
+        state
+            .pending_shell_actions
+            .iter()
+            .map(|action| {
+                let gesture = action.gesture.expect("a gesture");
+                assert_eq!(action.action, wire::ShellAction::ShellGesture);
+                (gesture.phase, gesture.progress)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn waiting_gesture_updates_give_way_to_the_latest_and_never_crowd_out_the_end() {
+        use wire::ShellGesturePhase::{Begin, End, Update};
+        let mut state = RuntimeState::default();
+        state.queue_shell_gesture(gesture(Begin, 0.0));
+        for step in 1..=200 {
+            state.queue_shell_gesture(gesture(Update, step as f32 / 100.0));
+        }
+        state.queue_shell_gesture(gesture(End, 2.0));
+        assert_eq!(queued(&state), [(Begin, 0.0), (Update, 2.0), (End, 2.0)]);
+    }
+
+    #[test]
+    fn only_a_gesture_cancel_survives_the_lock() {
+        use wire::ShellGesturePhase::{Begin, Cancel, Update};
+        let mut state = RuntimeState::default();
+        state.queue_shell_action(wire::ShellAction::Overview, None);
+        state.queue_shell_gesture(gesture(Begin, 0.0));
+        state.queue_shell_gesture(gesture(Update, 0.3));
+        state.queue_shell_gesture(gesture(Cancel, 0.3));
+        state
+            .pending_shell_actions
+            .retain(PendingShellAction::survives_lock);
+        assert_eq!(queued(&state), [(Cancel, 0.3)]);
     }
 }

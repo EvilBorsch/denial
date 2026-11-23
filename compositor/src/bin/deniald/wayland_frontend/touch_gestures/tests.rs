@@ -1,4 +1,5 @@
 use super::super::super::native_shortcut::ShortcutGesture;
+use super::super::super::touchpad_gestures::{HorizontalScrollDirections, VerticalSwipe};
 use super::*;
 
 fn target(in_move_corner: bool, geometry_locked: bool) -> TouchWindowTarget {
@@ -288,6 +289,160 @@ fn scrolling_layout_touch_honors_enabled_directions_and_cancels_on_device_reset(
     assert!(gestures.contacts.is_empty());
     assert!(gestures.gesture.is_none());
     assert!(gestures.swipe.is_none());
+}
+
+fn screens_tracking() -> SwipeTracking {
+    SwipeTracking {
+        horizontal: HorizontalScrollDirections {
+            left: true,
+            right: true,
+        },
+        vertical: true,
+    }
+}
+
+fn swipe_events(actions: Vec<TouchWindowAction>) -> Vec<TouchpadGestureEvent> {
+    actions
+        .into_iter()
+        .map(|action| match action {
+            TouchWindowAction::Swipe { event, origin } => {
+                assert_eq!(origin, Point::from((300.0, 400.0)));
+                event
+            }
+            other => panic!("expected a swipe, got {other:?}"),
+        })
+        .collect()
+}
+
+#[test]
+fn three_fingers_up_on_the_screen_follow_the_fingers_to_a_committed_end() {
+    let mut gestures = TouchGestureState::default();
+    gestures.set_swipe_directions(screens_tracking());
+    begin_desktop_swipe(&mut gestures);
+    let mut events = Vec::new();
+    for (step, dy) in [(1_u64, -20.0), (2, -80.0), (3, -140.0)] {
+        for slot in 0..3 {
+            events.extend(swipe_events(
+                gestures
+                    .motion_at(
+                        slot,
+                        Point::from((200.0 + f64::from(slot) * 100.0, 400.0 + dy)),
+                        step * 30_000 + slot as u64 * 1_000,
+                    )
+                    .actions,
+            ));
+        }
+    }
+    let Some((TouchpadGestureEvent::VerticalBegin { direction, travel }, rest)) =
+        events.split_first()
+    else {
+        panic!("three fingers up did not begin a vertical swipe: {events:?}");
+    };
+    assert_eq!(*direction, VerticalSwipe::Up);
+    assert!(*travel > 0.0);
+    let travels = rest
+        .iter()
+        .map(|event| match event {
+            TouchpadGestureEvent::VerticalUpdate { travel, .. } => *travel,
+            other => panic!("expected an update, got {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert!(travels.windows(2).all(|pair| pair[0] <= pair[1]));
+    assert!((travels.last().unwrap() - 140.0).abs() < 1e-9);
+
+    // The fingers rest, then lift: 140 logical px commit.
+    let ended = swipe_events(gestures.up_at(0, 900_000).actions);
+    assert!(matches!(
+        ended.as_slice(),
+        [TouchpadGestureEvent::VerticalEnd {
+            direction: VerticalSwipe::Up,
+            committed: true,
+            cancelled: false,
+            ..
+        }]
+    ));
+    assert!(gestures.up_at(1, 900_000).actions.is_empty());
+    assert!(gestures.up_at(2, 900_000).actions.is_empty());
+}
+
+#[test]
+fn three_fingers_down_on_the_screen_that_stop_short_do_not_commit() {
+    let mut gestures = TouchGestureState::default();
+    gestures.set_swipe_directions(screens_tracking());
+    begin_desktop_swipe(&mut gestures);
+    let mut events = Vec::new();
+    for slot in 0..3 {
+        events.extend(swipe_events(
+            gestures
+                .motion_at(
+                    slot,
+                    Point::from((200.0 + f64::from(slot) * 100.0, 440.0)),
+                    100_000 + slot as u64 * 1_000,
+                )
+                .actions,
+        ));
+    }
+    assert!(matches!(
+        events.first(),
+        Some(TouchpadGestureEvent::VerticalBegin {
+            direction: VerticalSwipe::Down,
+            ..
+        })
+    ));
+    assert!(matches!(
+        swipe_events(gestures.up_at(1, 900_000).actions).as_slice(),
+        [TouchpadGestureEvent::VerticalEnd {
+            direction: VerticalSwipe::Down,
+            committed: false,
+            cancelled: false,
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn a_vertical_swipe_on_the_screen_is_cancelled_when_every_touch_ends() {
+    let mut gestures = TouchGestureState::default();
+    gestures.set_swipe_directions(screens_tracking());
+    begin_desktop_swipe(&mut gestures);
+    assert!(!move_three_contacts(&mut gestures, (0.0, -200.0)).is_empty());
+    assert!(matches!(
+        gestures.cancel_all().as_slice(),
+        [TouchWindowAction::Swipe {
+            event: TouchpadGestureEvent::VerticalEnd {
+                cancelled: true,
+                committed: false,
+                ..
+            },
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn two_fingers_on_the_screen_start_no_shell_gesture() {
+    let mut gestures = TouchGestureState::default();
+    gestures.set_swipe_directions(screens_tracking());
+    for slot in 0..2 {
+        gestures.down_on_desktop(slot, Point::from((200.0 + f64::from(slot) * 100.0, 400.0)));
+    }
+    for dy in [-50.0, -150.0, -300.0] {
+        for slot in 0..2 {
+            let update = gestures.motion(
+                slot,
+                Point::from((200.0 + f64::from(slot) * 100.0, 400.0 + dy)),
+            );
+            assert!(
+                update
+                    .actions
+                    .iter()
+                    .all(|action| !matches!(action, TouchWindowAction::Swipe { .. })),
+                "two fingers made a swipe: {:?}",
+                update.actions
+            );
+        }
+    }
+    assert!(gestures.cancel_all().is_empty());
 }
 
 #[test]
