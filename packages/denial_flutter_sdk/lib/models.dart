@@ -25,6 +25,7 @@ export 'src/models/denial_drag_icon.dart'
 export 'src/models/denial_window.dart'
     show
         DenialClientTexture,
+        DenialScreenSide,
         DenialSurfaceLayer,
         DenialSurfaceRole,
         DenialWindow,

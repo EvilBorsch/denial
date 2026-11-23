@@ -126,6 +126,7 @@ final class BridgeEventsClient {
             DenialShellAction.screenshotCaptured,
           wire.ShellActionKind.LockScreenEditor =>
             DenialShellAction.lockScreenEditor,
+          wire.ShellActionKind.AppWindows => DenialShellAction.appWindows,
         };
         if (!_shellActions.isClosed) {
           _shellActions.add(

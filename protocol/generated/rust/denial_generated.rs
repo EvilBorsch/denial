@@ -397,10 +397,10 @@ impl flatbuffers::SimpleToVerifyInSlice for WindowOpacityClass {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_WINDOW_REQUEST_KIND: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_WINDOW_REQUEST_KIND: u8 = 11;
+pub const ENUM_MAX_WINDOW_REQUEST_KIND: u8 = 13;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_WINDOW_REQUEST_KIND: [WindowRequestKind; 12] = [
+pub const ENUM_VALUES_WINDOW_REQUEST_KIND: [WindowRequestKind; 14] = [
   WindowRequestKind::ListWindows,
   WindowRequestKind::GetDisplayLayout,
   WindowRequestKind::CloseWindow,
@@ -413,6 +413,8 @@ pub const ENUM_VALUES_WINDOW_REQUEST_KIND: [WindowRequestKind; 12] = [
   WindowRequestKind::MinimizeWindow,
   WindowRequestKind::NavigateBack,
   WindowRequestKind::MoveWindowToOutput,
+  WindowRequestKind::JoinScreen,
+  WindowRequestKind::MoveToScreen,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -432,9 +434,11 @@ impl WindowRequestKind {
   pub const MinimizeWindow: Self = Self(9);
   pub const NavigateBack: Self = Self(10);
   pub const MoveWindowToOutput: Self = Self(11);
+  pub const JoinScreen: Self = Self(12);
+  pub const MoveToScreen: Self = Self(13);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 11;
+  pub const ENUM_MAX: u8 = 13;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::ListWindows,
     Self::GetDisplayLayout,
@@ -448,6 +452,8 @@ impl WindowRequestKind {
     Self::MinimizeWindow,
     Self::NavigateBack,
     Self::MoveWindowToOutput,
+    Self::JoinScreen,
+    Self::MoveToScreen,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -464,6 +470,8 @@ impl WindowRequestKind {
       Self::MinimizeWindow => Some("MinimizeWindow"),
       Self::NavigateBack => Some("NavigateBack"),
       Self::MoveWindowToOutput => Some("MoveWindowToOutput"),
+      Self::JoinScreen => Some("JoinScreen"),
+      Self::MoveToScreen => Some("MoveToScreen"),
       _ => None,
     }
   }
@@ -4749,6 +4757,8 @@ impl<'a> Window<'a> {
   pub const VT_PET_DRAGGED: flatbuffers::VOffsetT = 104;
   pub const VT_CLIENT_TEXTURE: flatbuffers::VOffsetT = 106;
   pub const VT_KEYBOARD_INSET: flatbuffers::VOffsetT = 108;
+  pub const VT_LAYOUT_SCREEN: flatbuffers::VOffsetT = 110;
+  pub const VT_LAYOUT_SCREEN_RECT: flatbuffers::VOffsetT = 112;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -4787,6 +4797,8 @@ impl<'a> Window<'a> {
     builder.add_window_id(args.window_id);
     builder.add_surface_id(args.surface_id);
     builder.add_object_id(args.object_id);
+    if let Some(x) = args.layout_screen_rect { builder.add_layout_screen_rect(x); }
+    builder.add_layout_screen(args.layout_screen);
     if let Some(x) = args.client_texture { builder.add_client_texture(x); }
     builder.add_pet_holds(args.pet_holds);
     builder.add_held_hold(args.held_hold);
@@ -5188,6 +5200,20 @@ impl<'a> Window<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<bool>(Window::VT_KEYBOARD_INSET, Some(false)).unwrap()}
   }
+  #[inline]
+  pub fn layout_screen(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(Window::VT_LAYOUT_SCREEN, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn layout_screen_rect(&self) -> Option<&'a WireRect> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<WireRect>(Window::VT_LAYOUT_SCREEN_RECT, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for Window<'_> {
@@ -5250,6 +5276,8 @@ impl flatbuffers::Verifiable for Window<'_> {
      .visit_field::<bool>("pet_dragged", Self::VT_PET_DRAGGED, false)?
      .visit_field::<flatbuffers::ForwardsUOffset<ClientTexture>>("client_texture", Self::VT_CLIENT_TEXTURE, false)?
      .visit_field::<bool>("keyboard_inset", Self::VT_KEYBOARD_INSET, false)?
+     .visit_field::<u32>("layout_screen", Self::VT_LAYOUT_SCREEN, false)?
+     .visit_field::<WireRect>("layout_screen_rect", Self::VT_LAYOUT_SCREEN_RECT, false)?
      .finish();
     Ok(())
   }
@@ -5308,6 +5336,8 @@ pub struct WindowArgs<'a> {
     pub pet_dragged: bool,
     pub client_texture: Option<flatbuffers::WIPOffset<ClientTexture<'a>>>,
     pub keyboard_inset: bool,
+    pub layout_screen: u32,
+    pub layout_screen_rect: Option<&'a WireRect>,
 }
 impl<'a> Default for WindowArgs<'a> {
   #[inline]
@@ -5366,6 +5396,8 @@ impl<'a> Default for WindowArgs<'a> {
       pet_dragged: false,
       client_texture: None,
       keyboard_inset: false,
+      layout_screen: 0,
+      layout_screen_rect: None,
     }
   }
 }
@@ -5588,6 +5620,14 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> WindowBuilder<'a, 'b, A> {
     self.fbb_.push_slot::<bool>(Window::VT_KEYBOARD_INSET, keyboard_inset, false);
   }
   #[inline]
+  pub fn add_layout_screen(&mut self, layout_screen: u32) {
+    self.fbb_.push_slot::<u32>(Window::VT_LAYOUT_SCREEN, layout_screen, 0);
+  }
+  #[inline]
+  pub fn add_layout_screen_rect(&mut self, layout_screen_rect: &WireRect) {
+    self.fbb_.push_slot_always::<&WireRect>(Window::VT_LAYOUT_SCREEN_RECT, layout_screen_rect);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> WindowBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     WindowBuilder {
@@ -5658,6 +5698,8 @@ impl core::fmt::Debug for Window<'_> {
       ds.field("pet_dragged", &self.pet_dragged());
       ds.field("client_texture", &self.client_texture());
       ds.field("keyboard_inset", &self.keyboard_inset());
+      ds.field("layout_screen", &self.layout_screen());
+      ds.field("layout_screen_rect", &self.layout_screen_rect());
       ds.finish()
   }
 }
@@ -6338,6 +6380,9 @@ impl<'a> WindowRequest<'a> {
   pub const VT_SYSTEM_BAR_THICKNESS: flatbuffers::VOffsetT = 24;
   pub const VT_MAXIMIZE_PADDING: flatbuffers::VOffsetT = 26;
   pub const VT_WINDOW_DELTAS: flatbuffers::VOffsetT = 28;
+  pub const VT_TARGET_WINDOW_ID: flatbuffers::VOffsetT = 30;
+  pub const VT_SCREEN_SIDE: flatbuffers::VOffsetT = 32;
+  pub const VT_BEFORE: flatbuffers::VOffsetT = 34;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -6349,16 +6394,19 @@ impl<'a> WindowRequest<'a> {
     args: &'args WindowRequestArgs<'args>
   ) -> flatbuffers::WIPOffset<WindowRequest<'bldr>> {
     let mut builder = WindowRequestBuilder::new(_fbb);
+    builder.add_target_window_id(args.target_window_id);
     builder.add_maximize_padding(args.maximize_padding);
     builder.add_system_bar_thickness(args.system_bar_thickness);
     builder.add_monitor_id(args.monitor_id);
     builder.add_window_id(args.window_id);
+    builder.add_screen_side(args.screen_side);
     builder.add_workspace_id(args.workspace_id);
     builder.add_flags(args.flags);
     if let Some(x) = args.system_bar_monitor_ids { builder.add_system_bar_monitor_ids(x); }
     if let Some(x) = args.title { builder.add_title(x); }
     if let Some(x) = args.app_id { builder.add_app_id(x); }
     if let Some(x) = args.geometry { builder.add_geometry(x); }
+    builder.add_before(args.before);
     builder.add_window_deltas(args.window_deltas);
     builder.add_system_bar_side(args.system_bar_side);
     builder.add_kind(args.kind);
@@ -6457,6 +6505,27 @@ impl<'a> WindowRequest<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<bool>(WindowRequest::VT_WINDOW_DELTAS, Some(false)).unwrap()}
   }
+  #[inline]
+  pub fn target_window_id(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(WindowRequest::VT_TARGET_WINDOW_ID, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn screen_side(&self) -> u32 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u32>(WindowRequest::VT_SCREEN_SIDE, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn before(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(WindowRequest::VT_BEFORE, Some(false)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for WindowRequest<'_> {
@@ -6479,6 +6548,9 @@ impl flatbuffers::Verifiable for WindowRequest<'_> {
      .visit_field::<f64>("system_bar_thickness", Self::VT_SYSTEM_BAR_THICKNESS, false)?
      .visit_field::<f64>("maximize_padding", Self::VT_MAXIMIZE_PADDING, false)?
      .visit_field::<bool>("window_deltas", Self::VT_WINDOW_DELTAS, false)?
+     .visit_field::<u64>("target_window_id", Self::VT_TARGET_WINDOW_ID, false)?
+     .visit_field::<u32>("screen_side", Self::VT_SCREEN_SIDE, false)?
+     .visit_field::<bool>("before", Self::VT_BEFORE, false)?
      .finish();
     Ok(())
   }
@@ -6497,6 +6569,9 @@ pub struct WindowRequestArgs<'a> {
     pub system_bar_thickness: f64,
     pub maximize_padding: f64,
     pub window_deltas: bool,
+    pub target_window_id: u64,
+    pub screen_side: u32,
+    pub before: bool,
 }
 impl<'a> Default for WindowRequestArgs<'a> {
   #[inline]
@@ -6515,6 +6590,9 @@ impl<'a> Default for WindowRequestArgs<'a> {
       system_bar_thickness: -1.0,
       maximize_padding: -1.0,
       window_deltas: false,
+      target_window_id: 0,
+      screen_side: 0,
+      before: false,
     }
   }
 }
@@ -6577,6 +6655,18 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> WindowRequestBuilder<'a, 'b, A>
     self.fbb_.push_slot::<bool>(WindowRequest::VT_WINDOW_DELTAS, window_deltas, false);
   }
   #[inline]
+  pub fn add_target_window_id(&mut self, target_window_id: u64) {
+    self.fbb_.push_slot::<u64>(WindowRequest::VT_TARGET_WINDOW_ID, target_window_id, 0);
+  }
+  #[inline]
+  pub fn add_screen_side(&mut self, screen_side: u32) {
+    self.fbb_.push_slot::<u32>(WindowRequest::VT_SCREEN_SIDE, screen_side, 0);
+  }
+  #[inline]
+  pub fn add_before(&mut self, before: bool) {
+    self.fbb_.push_slot::<bool>(WindowRequest::VT_BEFORE, before, false);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> WindowRequestBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     WindowRequestBuilder {
@@ -6607,6 +6697,9 @@ impl core::fmt::Debug for WindowRequest<'_> {
       ds.field("system_bar_thickness", &self.system_bar_thickness());
       ds.field("maximize_padding", &self.maximize_padding());
       ds.field("window_deltas", &self.window_deltas());
+      ds.field("target_window_id", &self.target_window_id());
+      ds.field("screen_side", &self.screen_side());
+      ds.field("before", &self.before());
       ds.finish()
   }
 }

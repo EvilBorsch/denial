@@ -299,12 +299,18 @@ class DenialWireCodec {
     int flags = 0,
     int monitorId = -1,
     int workspaceId = 1,
+    int targetWindowId = 0,
+    int screenSide = 0,
+    bool before = false,
   }) {
     return _encodeEnvelope(
       generated.PayloadTypeId.WindowRequest,
       generated.WindowRequestObjectBuilder(
         kind: kind,
         windowId: windowId,
+        targetWindowId: targetWindowId,
+        screenSide: screenSide,
+        before: before,
         geometry: geometry == null ? null : _rectBuilder(geometry),
         appId: appId,
         title: title,
@@ -1705,6 +1711,16 @@ class DenialWireCodec {
               )
             : null,
         keyboardInset: window.keyboardInset,
+        layoutScreen: window.layoutScreen,
+        layoutScreenRect: switch (window.layoutScreenRect) {
+          final rect? when window.layoutScreen > 0 => Rect.fromLTWH(
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+          ),
+          _ => null,
+        },
       );
       // FlatBuffers getters parse their field on each access. Validate the
       // materialized snapshot so geometry and layer fields are read only once.

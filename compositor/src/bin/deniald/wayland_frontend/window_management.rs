@@ -401,6 +401,36 @@ fn apply_window_command(state: &mut RuntimeState, command: WindowCommand) {
         } => {
             preview_window_drop_on_workspace(state, window_id, monitor_id, workspace_id, geometry);
         }
+        WindowCommand::JoinScreen {
+            window_id,
+            target_window_id,
+            side,
+        } => {
+            let direction = match side {
+                super::super::wire::ScreenSide::Left => LayoutDirection::Left,
+                super::super::wire::ScreenSide::Right => LayoutDirection::Right,
+                super::super::wire::ScreenSide::Up => LayoutDirection::Up,
+                super::super::wire::ScreenSide::Down => LayoutDirection::Down,
+            };
+            apply_screen_command(
+                state,
+                window_id,
+                target_window_id,
+                |frontend, window, target| frontend.join_screen(window, target, direction),
+            );
+        }
+        WindowCommand::MoveToScreen {
+            window_id,
+            target_window_id,
+            before,
+        } => {
+            apply_screen_command(
+                state,
+                window_id,
+                target_window_id,
+                |frontend, window, target| frontend.move_to_screen(window, target, before),
+            );
+        }
         WindowCommand::HoldPet { pet_id, hold } => {
             if let Some(frontend) = state.wayland.as_mut()
                 && frontend.hold_pet(pet_id, hold)
@@ -505,6 +535,8 @@ fn apply_local_window_command(state: &mut RuntimeState, window_id: u64, command:
         | WindowCommand::MoveToOutput { .. }
         | WindowCommand::DropOnWorkspace { .. }
         | WindowCommand::PreviewWorkspaceDrop { .. }
+        | WindowCommand::JoinScreen { .. }
+        | WindowCommand::MoveToScreen { .. }
         | WindowCommand::HoldPet { .. }
         | WindowCommand::CarryPet { .. } => unreachable!(),
     }
@@ -549,6 +581,8 @@ fn apply_client_window_command(
         | WindowCommand::MoveToOutput { .. }
         | WindowCommand::DropOnWorkspace { .. }
         | WindowCommand::PreviewWorkspaceDrop { .. }
+        | WindowCommand::JoinScreen { .. }
+        | WindowCommand::MoveToScreen { .. }
         | WindowCommand::HoldPet { .. }
         | WindowCommand::CarryPet { .. } => unreachable!(),
     }
@@ -987,6 +1021,32 @@ pub(super) fn clear_workspace_drop_preview(state: &mut RuntimeState) {
 /// the previewed position; windows the layout cannot hold only change
 /// workspace. Flutter's preview ends with every affected tile's final layout
 /// rectangle.
+/// Applies a screens-overview drop: one tiled window joins or leaves a
+/// screen. The moved window takes focus, so the strip comes to rest on it
+/// and the keyboard follows what the user just placed.
+#[cfg(feature = "flutter")]
+fn apply_screen_command(
+    state: &mut RuntimeState,
+    window_id: u64,
+    target_window_id: u64,
+    apply: impl FnOnce(&mut WaylandFrontend, &Window, &Window) -> bool,
+) {
+    let Some(frontend) = state.wayland.as_mut() else {
+        return;
+    };
+    let (Some(window), Some(target)) = (
+        frontend.window_for_id(window_id),
+        frontend.window_for_id(target_window_id),
+    ) else {
+        return;
+    };
+    if !apply(frontend, &window, &target) {
+        return;
+    }
+    activate_window(state, &window, SERIAL_COUNTER.next_serial());
+    state.scene_sync.mark_dirty();
+}
+
 #[cfg(feature = "flutter")]
 pub(super) fn drop_window_on_workspace(
     state: &mut RuntimeState,

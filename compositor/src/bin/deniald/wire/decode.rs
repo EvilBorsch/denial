@@ -373,6 +373,44 @@ impl WireBridge {
                 self.pending_window_commands.push_back(command);
                 Ok(None)
             }
+            kind @ (fb::WindowRequestKind::JoinScreen | fb::WindowRequestKind::MoveToScreen) => {
+                if request_id != 0 {
+                    return Err(WireError::RequestId);
+                }
+                if self.pending_window_commands.len() >= MAX_PENDING_WINDOW_COMMANDS {
+                    return Err(WireError::Count);
+                }
+                let window_id = request.window_id();
+                let target_window_id = request.target_window_id();
+                if window_id == 0 || target_window_id == 0 || window_id == target_window_id {
+                    return Err(WireError::Identity);
+                }
+                if request.flags() != 0 {
+                    return Err(WireError::Flags);
+                }
+                let command = if kind == fb::WindowRequestKind::JoinScreen {
+                    let side = match request.screen_side() {
+                        0 => ScreenSide::Left,
+                        1 => ScreenSide::Right,
+                        2 => ScreenSide::Up,
+                        3 => ScreenSide::Down,
+                        _ => return Err(WireError::Flags),
+                    };
+                    WindowCommand::JoinScreen {
+                        window_id,
+                        target_window_id,
+                        side,
+                    }
+                } else {
+                    WindowCommand::MoveToScreen {
+                        window_id,
+                        target_window_id,
+                        before: request.before(),
+                    }
+                };
+                self.pending_window_commands.push_back(command);
+                Ok(None)
+            }
             fb::WindowRequestKind::MoveWindowToOutput => {
                 if request_id != 0 {
                     return Err(WireError::RequestId);

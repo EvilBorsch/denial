@@ -4,6 +4,10 @@ import 'package:flutter/widgets.dart';
 import 'denial_pet.dart';
 import 'surface_occlusion.dart';
 
+/// The side of a tile a window takes when it joins a screen of the
+/// full-screen apps layout. The order is the wire's `screen_side`.
+enum DenialScreenSide { left, right, up, down }
+
 enum DenialWindowContentKind {
   surfaceTree,
   localFlutter,
@@ -238,6 +242,8 @@ class DenialWindow {
     this.opacityClass = DenialWindowOpacityClass.contentTranslucent,
     this.pet,
     this.keyboardInset = false,
+    this.layoutScreen = 0,
+    this.layoutScreenRect,
   });
 
   final int objectId;
@@ -292,6 +298,15 @@ class DenialWindow {
   /// (denial-insets-v1 keyboard inset), so the mobile shell leaves it in
   /// place while the keyboard is shown instead of lifting it.
   final bool keyboardInset;
+
+  /// Full-screen apps layout: the one-based place in its output's strip of
+  /// the screen this window is on or floats over; 0 in every other layout.
+  final int layoutScreen;
+
+  /// That screen in scene coordinates. Screens other than the current one
+  /// lie beside the output, so this is where the window's [geometryX] and
+  /// [geometryY] place it now, not necessarily on screen.
+  final Rect? layoutScreenRect;
 
   /// The window holding this layer surface, if it is a pet one holds. A held
   /// pet is drawn and hit with that window instead of in its layer's plane.
@@ -554,6 +569,8 @@ class DenialWindow {
         other.opacityClass == opacityClass &&
         other.pet == pet &&
         other.keyboardInset == keyboardInset &&
+        other.layoutScreen == layoutScreen &&
+        other.layoutScreenRect == layoutScreenRect &&
         listEquals(other.surfaceLayers, surfaceLayers);
   }
 
@@ -610,6 +627,8 @@ class DenialWindow {
     contentKind,
     pet,
     keyboardInset,
+    layoutScreen,
+    layoutScreenRect,
     ...surfaceLayers,
   ]);
 }

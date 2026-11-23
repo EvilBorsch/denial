@@ -1264,10 +1264,12 @@ impl WaylandFrontend {
         let input_method_popups = self.input_method.visible_popups();
         let mut window_count = 0;
         let scene_windows = self.space.elements().cloned().collect::<Vec<_>>();
+        let window_screens = self.window_screens();
         for window in &scene_windows {
             let Some(surface) = self.window_root_surface(window) else {
                 continue;
             };
+            let window_screen = window_screens.get(&surface.id()).copied();
             let Some(managed_window) = ManagedWindow::new(window) else {
                 continue;
             };
@@ -1583,6 +1585,13 @@ impl WaylandFrontend {
                 opacity_class,
                 pet: None,
                 keyboard_inset: self.keyboard_inset_surface(&surface),
+                layout_screen: window_screen.map_or(0, |screen| screen.index),
+                layout_screen_rect: window_screen.map(|screen| WindowGeometry {
+                    x: f64::from(screen.rect.loc.x) - self.atlas_origin.x,
+                    y: f64::from(screen.rect.loc.y) - self.atlas_origin.y,
+                    width: f64::from(screen.rect.size.w),
+                    height: f64::from(screen.rect.size.h),
+                }),
             };
             if let Some(previous) = windows.get_mut(window_count) {
                 *previous = description;
@@ -1692,6 +1701,8 @@ impl WaylandFrontend {
                 opacity_class: WindowOpacityClass::FullyOpaque,
                 pet: None,
                 keyboard_inset: false,
+                layout_screen: 0,
+                layout_screen_rect: None,
             };
             if let Some(previous) = windows.get_mut(window_count) {
                 *previous = description;
@@ -1874,6 +1885,8 @@ impl WaylandFrontend {
                     opacity_class: WindowOpacityClass::ContentTranslucent,
                     pet,
                     keyboard_inset: false,
+                    layout_screen: 0,
+                    layout_screen_rect: None,
                 };
                 if let Some(previous) = windows.get_mut(window_count) {
                     *previous = description;
@@ -2026,6 +2039,8 @@ impl WaylandFrontend {
                     opacity_class: WindowOpacityClass::ContentTranslucent,
                     pet: None,
                     keyboard_inset: false,
+                    layout_screen: 0,
+                    layout_screen_rect: None,
                 };
                 if let Some(previous) = windows.get_mut(window_count) {
                     *previous = description;

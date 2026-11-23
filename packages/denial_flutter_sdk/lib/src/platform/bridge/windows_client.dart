@@ -209,6 +209,52 @@ final class BridgeWindowsClient {
     );
   }
 
+  /// Full-screen apps layout: [window] joins the screen of [target],
+  /// taking [side] of that tile. Native refuses a screen that already holds
+  /// four tiles and keeps [window] where it was.
+  void joinScreen(
+    DenialWindow window,
+    DenialWindow target, {
+    required DenialScreenSide side,
+  }) {
+    if (window.windowId <= 0 ||
+        target.windowId <= 0 ||
+        window.windowId == target.windowId) {
+      return;
+    }
+    _context.sendWire(
+      _context.codec.encodeWindowRequest(
+        wire.WindowRequestKind.JoinScreen,
+        windowId: window.windowId,
+        targetWindowId: target.windowId,
+        screenSide: side.index,
+      ),
+    );
+  }
+
+  /// Full-screen apps layout: [window] becomes a screen of its own just
+  /// [before] or after the screen of [target]. This separates a split and
+  /// reorders screens.
+  void moveToScreen(
+    DenialWindow window,
+    DenialWindow target, {
+    required bool before,
+  }) {
+    if (window.windowId <= 0 ||
+        target.windowId <= 0 ||
+        window.windowId == target.windowId) {
+      return;
+    }
+    _context.sendWire(
+      _context.codec.encodeWindowRequest(
+        wire.WindowRequestKind.MoveToScreen,
+        windowId: window.windowId,
+        targetWindowId: target.windowId,
+        before: before,
+      ),
+    );
+  }
+
   /// Commits an overview drop of [window] onto [workspaceId] of
   /// [monitorId], which may be hidden. [point] is the drop position in that
   /// workspace's own scene coordinates; native resolves it to a tile

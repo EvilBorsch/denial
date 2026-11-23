@@ -186,6 +186,20 @@ pub enum WindowCommand {
         workspace_id: u8,
         geometry: Option<WindowGeometry>,
     },
+    /// Full-screen apps layout: `window_id` joins the screen of
+    /// `target_window_id`, taking `side` of that tile.
+    JoinScreen {
+        window_id: u64,
+        target_window_id: u64,
+        side: ScreenSide,
+    },
+    /// Full-screen apps layout: `window_id` becomes a screen of its own just
+    /// before or after the screen of `target_window_id`.
+    MoveToScreen {
+        window_id: u64,
+        target_window_id: u64,
+        before: bool,
+    },
     /// The hold a desktop pet the user drags would take if let go now: the
     /// window's object id, one protocol hold value and the share along an
     /// edge. None leaves it free.
@@ -199,6 +213,15 @@ pub enum WindowCommand {
         velocity_x: f64,
         velocity_y: f64,
     },
+}
+
+/// The side of a tile a window joins in the full-screen apps layout.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScreenSide {
+    Left,
+    Right,
+    Up,
+    Down,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -369,7 +392,9 @@ impl WindowCommand {
             | Self::MoveToWorkspace { window_id, .. }
             | Self::MoveToOutput { window_id, .. }
             | Self::DropOnWorkspace { window_id, .. }
-            | Self::PreviewWorkspaceDrop { window_id, .. } => Some(*window_id),
+            | Self::PreviewWorkspaceDrop { window_id, .. }
+            | Self::JoinScreen { window_id, .. }
+            | Self::MoveToScreen { window_id, .. } => Some(*window_id),
         }
     }
 }
@@ -808,6 +833,10 @@ pub struct WindowDescription {
     /// The client lays the window out around the on-screen keyboard
     /// (denial-insets-v1), so the mobile shell does not lift it.
     pub keyboard_inset: bool,
+    /// Full-screen apps layout: the one-based place of the window's screen
+    /// in its strip and that screen's scene rectangle. 0 and `None` else.
+    pub layout_screen: u32,
+    pub layout_screen_rect: Option<WindowGeometry>,
 }
 
 /// A desktop pet (denial-pet-v1) as the shell knows it. A held pet is drawn

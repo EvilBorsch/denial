@@ -25,6 +25,10 @@ enum DenialShellAction {
 
   /// Settings asked for the tablet lock screen editor.
   lockScreenEditor,
+
+  /// Show the windows of the focused app (full-screen apps layout, three
+  /// fingers down).
+  appWindows,
 }
 
 class DenialShellActionEvent {

@@ -788,6 +788,11 @@ fn create_window_snapshot<'a>(
                 pet_holds: description.pet.map_or(0, |pet| pet.holds),
                 pet_dragged: description.pet.is_some_and(|pet| pet.dragged),
                 keyboard_inset: description.keyboard_inset,
+                layout_screen: description.layout_screen,
+                layout_screen_rect: description
+                    .layout_screen_rect
+                    .map(|rect| fb::WireRect::new(rect.x, rect.y, rect.width, rect.height))
+                    .as_ref(),
                 ..Default::default()
             },
         ));

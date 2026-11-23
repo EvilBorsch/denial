@@ -1352,6 +1352,8 @@ fn scene_window(id: u64) -> WindowDescription {
         opacity_class: WindowOpacityClass::FullyOpaque,
         pet: None,
         keyboard_inset: false,
+        layout_screen: 0,
+        layout_screen_rect: None,
     }
 }
 
@@ -2161,4 +2163,139 @@ fn shell_touchpad_request_keeps_the_settings_it_does_not_carry() {
             ..current
         }
     );
+}
+
+fn screen_request(
+    kind: fb::WindowRequestKind,
+    window_id: u64,
+    target_window_id: u64,
+    screen_side: u32,
+    before: bool,
+) -> Vec<u8> {
+    let mut builder = FlatBufferBuilder::new();
+    let request = fb::WindowRequest::create(
+        &mut builder,
+        &fb::WindowRequestArgs {
+            kind,
+            window_id,
+            target_window_id,
+            screen_side,
+            before,
+            ..Default::default()
+        },
+    );
+    let envelope = fb::Envelope::create(
+        &mut builder,
+        &fb::EnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            sequence: 4,
+            payload_type: fb::Payload::WindowRequest,
+            payload: Some(request.as_union_value()),
+            ..Default::default()
+        },
+    );
+    fb::finish_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+#[test]
+fn screens_overview_drops_name_the_dragged_window_and_its_target() {
+    let mut bridge = bridge();
+    for (side, expected) in [
+        (0, ScreenSide::Left),
+        (1, ScreenSide::Right),
+        (2, ScreenSide::Up),
+        (3, ScreenSide::Down),
+    ] {
+        assert!(
+            bridge
+                .handle(&screen_request(
+                    fb::WindowRequestKind::JoinScreen,
+                    4,
+                    9,
+                    side,
+                    false
+                ))
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(
+            bridge.drain_window_commands().collect::<Vec<_>>(),
+            vec![WindowCommand::JoinScreen {
+                window_id: 4,
+                target_window_id: 9,
+                side: expected,
+            }]
+        );
+    }
+    for before in [true, false] {
+        assert!(
+            bridge
+                .handle(&screen_request(
+                    fb::WindowRequestKind::MoveToScreen,
+                    4,
+                    9,
+                    0,
+                    before
+                ))
+                .unwrap()
+                .is_none()
+        );
+        let commands = bridge.drain_window_commands().collect::<Vec<_>>();
+        assert_eq!(
+            commands,
+            vec![WindowCommand::MoveToScreen {
+                window_id: 4,
+                target_window_id: 9,
+                before,
+            }]
+        );
+        assert_eq!(commands[0].window_id(), Some(4));
+    }
+    for request in [
+        screen_request(fb::WindowRequestKind::JoinScreen, 0, 9, 0, false),
+        screen_request(fb::WindowRequestKind::JoinScreen, 4, 0, 0, false),
+        screen_request(fb::WindowRequestKind::MoveToScreen, 4, 4, 0, true),
+    ] {
+        assert!(matches!(bridge.handle(&request), Err(WireError::Identity)));
+    }
+    assert!(matches!(
+        bridge.handle(&screen_request(
+            fb::WindowRequestKind::JoinScreen,
+            4,
+            9,
+            4,
+            false
+        )),
+        Err(WireError::Flags)
+    ));
+}
+
+#[test]
+fn windows_carry_their_screen_only_in_the_screens_layout() {
+    let mut bridge = bridge();
+    let mut on_screen = scene_window(1);
+    on_screen.layout_screen = 3;
+    on_screen.layout_screen_rect = Some(WindowGeometry {
+        x: 2_016.0,
+        y: 40.0,
+        width: 1_000.0,
+        height: 600.0,
+    });
+    let (bytes, _) = bridge
+        .update_windows(1, vec![on_screen, scene_window(2)], &BTreeSet::new())
+        .unwrap();
+    let snapshot = fb::root_as_envelope(bytes.unwrap())
+        .unwrap()
+        .payload_as_window_snapshot()
+        .unwrap();
+    let windows = snapshot.windows().unwrap();
+    assert_eq!(windows.get(0).layout_screen(), 3);
+    let rect = windows.get(0).layout_screen_rect().unwrap();
+    assert_eq!(
+        (rect.x(), rect.y(), rect.width(), rect.height()),
+        (2_016.0, 40.0, 1_000.0, 600.0)
+    );
+    assert_eq!(windows.get(1).layout_screen(), 0);
+    assert!(windows.get(1).layout_screen_rect().is_none());
 }

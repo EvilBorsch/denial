@@ -13,7 +13,9 @@ use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::backend::ObjectId;
 use smithay::utils::{Logical, Point, Rectangle};
 
-use super::super::window_layout::{LayoutScreen, LayoutSpace, WindowLayoutKind};
+use super::super::window_layout::{
+    LayoutDirection, LayoutScreen, LayoutSpace, WindowLayout, WindowLayoutKind,
+};
 use super::WaylandFrontend;
 use super::managed_window::ManagedWindow;
 
@@ -227,6 +229,59 @@ impl WaylandFrontend {
         }
         self.screen_floats = kept;
         changed
+    }
+
+    /// Joins `window` to the screen of `target`, splitting that tile on
+    /// `side`. Refused outside the full-screen apps layout, for windows the
+    /// layout does not hold, and for a screen that already has four tiles.
+    pub(crate) fn join_screen(
+        &mut self,
+        window: &Window,
+        target: &Window,
+        side: LayoutDirection,
+    ) -> bool {
+        self.change_screens(window, target, |layout, window, target| {
+            layout.move_beside(window, target, side)
+        })
+    }
+
+    /// Gives `window` a screen of its own just before or after the screen
+    /// of `target`: separates a split, or moves a screen along the strip.
+    pub(crate) fn move_to_screen(
+        &mut self,
+        window: &Window,
+        target: &Window,
+        before: bool,
+    ) -> bool {
+        self.change_screens(window, target, |layout, window, target| {
+            layout.move_to_column(window, target, before)
+        })
+    }
+
+    fn change_screens(
+        &mut self,
+        window: &Window,
+        target: &Window,
+        change: impl FnOnce(&mut dyn WindowLayout<ObjectId>, &ObjectId, &ObjectId) -> bool,
+    ) -> bool {
+        if self.window_layout.kind() != WindowLayoutKind::Screens {
+            return false;
+        }
+        let (Some(window), Some(target)) = (
+            self.window_root_surface(window).map(|root| root.id()),
+            self.window_root_surface(target).map(|root| root.id()),
+        ) else {
+            return false;
+        };
+        if !self.window_layout.contains(&window)
+            || !self.window_layout.contains(&target)
+            || !change(self.window_layout.as_mut(), &window, &target)
+        {
+            return false;
+        }
+        self.window_layout.activate(&window);
+        self.arrange_layout_windows();
+        true
     }
 
     /// Ranks every window for a layout switch: by output, then workspace,

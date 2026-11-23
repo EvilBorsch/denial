@@ -381,6 +381,22 @@ class DenialBridge {
     point: point,
   );
 
+  /// Full-screen apps layout: [window] joins the screen of [target] on
+  /// [side] of that tile.
+  void joinScreen(
+    DenialWindow window,
+    DenialWindow target, {
+    required DenialScreenSide side,
+  }) => _windows.joinScreen(window, target, side: side);
+
+  /// Full-screen apps layout: [window] becomes its own screen just [before]
+  /// or after the screen of [target].
+  void moveToScreen(
+    DenialWindow window,
+    DenialWindow target, {
+    required bool before,
+  }) => _windows.moveToScreen(window, target, before: before);
+
   /// Plans [dropWindowOnWorkspace]; a null [point] ends the preview.
   void previewWindowDropOnWorkspace(
     DenialWindow window, {

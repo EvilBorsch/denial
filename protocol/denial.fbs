@@ -59,7 +59,13 @@ enum WindowRequestKind : ubyte {
   // The system Back action for one client window.
   NavigateBack = 10,
   // Moves one window between the phone and a desk output (monitor_id).
-  MoveWindowToOutput = 11
+  MoveWindowToOutput = 11,
+  // Full-screen apps layout: window_id joins the screen of
+  // target_window_id, splitting that tile on screen_side.
+  JoinScreen = 12,
+  // Full-screen apps layout: window_id becomes a screen of its own, just
+  // before (before) or after the screen of target_window_id.
+  MoveToScreen = 13
 }
 
 enum WindowResponseKind : ubyte {
@@ -498,6 +504,13 @@ table Window {
   // on-screen keyboard (denial-insets-v1 get_keyboard_inset), so the mobile
   // shell must not lift it while the keyboard is shown.
   keyboard_inset:bool;
+  // Appended for compatibility. Full-screen apps layout only: the one-based
+  // place in its output's strip of the screen this window is on, or floats
+  // over, and that screen's rectangle in the scene coordinates of
+  // geometry_x/y, beside the output unless it is the current screen. Zero
+  // and absent in every other layout and for minimized windows.
+  layout_screen:uint;
+  layout_screen_rect:WireRect;
 }
 
 table WindowSnapshot {
@@ -580,6 +593,13 @@ table WindowRequest {
   // ListWindows only: accept incremental WindowSnapshot publications after
   // the full response. Older shells leave this false and receive full lists.
   window_deltas:bool;
+  // JoinScreen and MoveToScreen only. The window whose tile the dragged
+  // window_id joins, or whose screen it is placed beside; for JoinScreen the
+  // side of that tile it takes, 0 left, 1 right, 2 above, 3 below; for
+  // MoveToScreen whether it goes before that screen.
+  target_window_id:ulong;
+  screen_side:uint;
+  before:bool;
 }
 
 table WindowResponse {
