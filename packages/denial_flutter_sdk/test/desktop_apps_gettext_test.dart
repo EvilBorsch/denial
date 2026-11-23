@@ -411,6 +411,31 @@ void main() {
       expect(byId?.name, 'Файлы');
     });
 
+    test('and keeps its English words for search', () async {
+      desktop('org.gnome.Nautilus', <String>[
+        ...nautilus,
+        'GenericName=File Manager',
+      ]);
+      translations('langpack', 'ru', 'nautilus', const <String, String>{
+        'Files': 'Файлы',
+        'folder;manager;explore;': 'папка;менеджер;обзор;',
+      });
+      final files = await app('org.gnome.Nautilus');
+      expect(files.name, 'Файлы');
+      expect(files.untranslatedNames, <String>[
+        'Files',
+        'File Manager',
+        'folder',
+        'manager',
+        'explore',
+      ]);
+      expect(files.searchableText, contains('files'));
+      expect(files.searchableText, contains('папка'));
+      // In English nothing is repeated.
+      final english = await app('org.gnome.Nautilus', lang: 'en_US.UTF-8');
+      expect(english.untranslatedNames, <String>['File Manager']);
+    });
+
     test('by the catalogue of the territory before the language', () async {
       desktop('org.gnome.Nautilus', nautilus);
       translations('langpack', 'ru', 'nautilus', const <String, String>{

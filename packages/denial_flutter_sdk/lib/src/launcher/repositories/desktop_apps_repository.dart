@@ -256,10 +256,17 @@ class DesktopAppsRepository {
     final keywords = _desktopStringList(
       _localizedDesktopValue(fields, 'Keywords', catalogs),
     );
+    final localizedName = _unescapeDesktopValue(name.trim());
+    final untranslatedNames = <String>{
+      for (final key in const ['Name', 'GenericName'])
+        if (fields[key]?.trim() case final value? when value.isNotEmpty)
+          _unescapeDesktopValue(value),
+      ..._desktopStringList(fields['Keywords']),
+    }.where((word) => word != localizedName && !keywords.contains(word));
 
     return DesktopApp(
       id: id,
-      name: _unescapeDesktopValue(name.trim()),
+      name: localizedName,
       exec: exec,
       desktopPath: file.path,
       categories: categories,
@@ -267,6 +274,7 @@ class DesktopAppsRepository {
       icon: icon,
       iconPath: iconPath,
       startupWmClass: fields['StartupWMClass']?.trim(),
+      untranslatedNames: List.unmodifiable(untranslatedNames),
     );
   }
 
