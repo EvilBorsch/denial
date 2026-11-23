@@ -843,6 +843,50 @@ mod startup_launch_tests {
             .trim();
         assert_eq!(u64::from_str_radix(blocked, 16).unwrap(), 0);
     }
+
+    #[test]
+    fn launched_application_leads_its_own_session_without_a_terminal() {
+        let cat = std::env::var("DENIAL_TEST_CAT").unwrap_or_else(|_| "cat".to_owned());
+        let arguments = [cat, "/proc/self/stat".to_owned()];
+        let session = SessionEnvironment {
+            wayland_display: OsStr::new("wayland-test"),
+            x11_display: None,
+            output_control_socket: None,
+            cursor_size: 24,
+            application: Default::default(),
+        };
+        let mut command = application_command(
+            ApplicationLaunch {
+                arguments: &arguments,
+                desktop_file_id: None,
+                launch_request_id: None,
+                activation_token: None,
+            },
+            &session,
+            None,
+            None,
+        );
+        let output = match command.stdout(Stdio::piped()).output() {
+            Ok(output) => output,
+            // Nix's build sandbox blocks the scheduling reset in the hook.
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => return,
+            Err(error) => panic!("could not execute the session test child: {error}"),
+        };
+        assert!(output.status.success());
+        let stat = String::from_utf8(output.stdout).unwrap();
+        // proc_pid_stat(5): pid (comm) state ppid pgrp session tty_nr ...;
+        // comm may contain spaces, so split after its closing parenthesis.
+        let (pid, fields) = stat.split_once(" (").unwrap();
+        let fields: Vec<&str> = fields.rsplit_once(") ").unwrap().1.split(' ').collect();
+        let (process_group, session_id, terminal) = (fields[2], fields[3], fields[4]);
+        // The child leads a new session and process group, so it has no
+        // controlling terminal: an interactive shell it starts (Electron apps
+        // run `bash -ilc` for the login environment) cannot find the
+        // compositor's VT in the foreground and stop the app with SIGTTIN.
+        assert_eq!(session_id, pid);
+        assert_eq!(process_group, pid);
+        assert_eq!(terminal, "0");
+    }
 }
 
 fn application_command(
@@ -885,10 +929,16 @@ fn application_command(
         )
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        // Do not place applications in the compositor's signal group. The
-        // login-session owner remains responsible for terminating them.
-        .process_group(0);
+        .stderr(Stdio::null());
+    // Applications get their own session and process group (setsid in the
+    // pre_exec hook below), not only their own group: the session that runs
+    // the compositor owns the VT as its controlling terminal, and an
+    // application left in it inherits that terminal. An interactive shell it
+    // starts then finds another group in the terminal's foreground and stops
+    // its whole group with SIGTTIN; Electron apps (ChatGPT, VS Code) run
+    // `bash -ilc` at startup for the login environment and never show a
+    // window. The login-session owner remains responsible for terminating
+    // them (their cgroup is unchanged).
     for variable in APPLICATION_ENVIRONMENT_REMOVALS {
         command.env_remove(variable);
     }
@@ -918,11 +968,17 @@ fn application_command(
     // such as xvfb-run wait for SIGUSR1 and would otherwise hang. Also
     // enforce ordinary CPU scheduling even if the compositor's kernel
     // reset-on-fork guard or normal-scheduler fallback changes in the future.
-    // SAFETY: the closure uses only libc signal-mask and scheduling syscalls
-    // which are valid in the post-fork child, touches no shared Rust state,
-    // and returns before exec on every error.
+    // SAFETY: the closure uses only libc session, signal-mask and scheduling
+    // syscalls which are valid in the post-fork child, touches no shared Rust
+    // state, and returns before exec on every error.
     unsafe {
         command.pre_exec(|| {
+            // The forked child is never a group leader, so setsid succeeds;
+            // the new group's ID is the child PID, which
+            // terminate_application_group relies on.
+            if libc::setsid() == -1 {
+                return Err(io::Error::last_os_error());
+            }
             let mut signals = MaybeUninit::<libc::sigset_t>::uninit();
             if libc::sigemptyset(signals.as_mut_ptr()) != 0 {
                 return Err(io::Error::last_os_error());
@@ -1092,8 +1148,9 @@ fn terminate_application_group(child: &mut Child) -> io::Result<()> {
     if let Ok(process_group) = i32::try_from(child.id())
         && process_group > 0
     {
-        // SAFETY: application_command created a fresh process group whose ID
-        // is the child PID. A negative kill target addresses that group only.
+        // SAFETY: application_command created a fresh session and process
+        // group whose ID is the child PID. A negative kill target addresses
+        // that group only.
         if unsafe { libc::kill(-process_group, libc::SIGKILL) } == 0 {
             return Ok(());
         }
