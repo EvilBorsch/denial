@@ -156,7 +156,7 @@ The owner installed eb17, and the agent tested it on the tablet (`D:\androidlinu
   - A search field at the top takes typing immediately. Typing filters screens and windows by app name and window title.
   - Below the open windows, matching apps from the launcher catalog can be started (Spotlight-like). Enter goes to the first match or starts it.
   - The background is dimmed and blurred, labels are larger and carry icons. The overview follows the fingers as it opens (Mission Control feel).
-- **Global search** ("Alt+F … through our Spotlight"): the same search, as an overlay over the current screen, on Alt+F in the Mac preset. In the default (Super) preset Super+F is fullscreen and Super+Space switches the layout, so search gets a free Super combination of the builder's choice (documented).
+- **Global search** (desktop presentation; "Alt+F … through our Spotlight"): the same search, as an overlay over the current screen, on Alt+F in the Mac preset. In the default (Super) preset Super+F is fullscreen and Super+Space switches the layout, so search gets a free Super combination of the builder's choice (documented).
 - **"Alt+Tab must work":**
   - An app switcher like ⌘Tab. Hold the modifier and Tab cycles apps (all windows of an app are one icon); Shift+Tab goes back; releasing switches. Grave (`) cycles the windows of the current app.
   - In the default preset it is Alt+Tab as well (a PC habit). It replaces nothing the owner uses (Super+Tab stays the window switcher).
@@ -174,33 +174,40 @@ The owner installed eb17, and the agent tested it on the tablet (`D:\androidlinu
   - The owner's choice on the search key stands: Alt+F searches, so find-in-app is Ctrl+F. All of these bindings remain editable in Shortcuts.
 - **"Beautiful animations":** the overview, app windows, the switcher and search open and close smoothly. Gesture-driven ones track the fingers and settle with a spring. Strip moves already follow the fingers.
 
-## Mobile presentation ("move the useful parts there too", a full track)
+## Presentation follows the keyboard cover (owner's rule, 2026-11-23 night)
 
-The owner wants the mobile presentation to get as much of this work as helps to run the tablet, for the best UI/UX on this tablet. It is a full track of this iteration, worked in parallel with the desktop track, not an afterthought.
+Owner, quoted: "keyboard attached = we are in desktop mode (and in the new layout if the user chose it in Settings); detached = tablet mode (or if you switch with the toggle on purpose). Tablet mode is purely for fingers on a small screen; desktop mode is for mouse and trackpad gestures, on the tablet's screen or a big screen, but touch still works there. Proper scaling, proper animations and usability are always the baseline. In tablet mode you work only with a finger, without keyboard or mouse, so there is no point improving keyboard things for it."
 
-1. **Audit first.** Compare the mobile shell (home grid, drawer, Recents, bottom pill, edges, shade) with the desktop features of eb17/eb18. Cover both cases: the tablet alone, and with the keyboard cover (keyboard and touchpad). Write the gaps and the chosen ports to `docs/superpowers/specs/2026-11-23-mobile-ports.md`.
+- **Automatic switching.**
+  - Attaching a physical keyboard switches the shell to the desktop presentation, with the window layout chosen in Settings (for the owner, the screens layout). Physical keyboards are the cover, USB and Bluetooth; virtual uinput devices such as `erhai test keyboard` do not count, so tests do not flip the mode.
+  - Detaching the last physical keyboard switches to the tablet (mobile) presentation.
+  - deniald already tracks `keyboard_attached` (`settings.rs` ~1997, `flutter_settings_sync.rs` ~744, `docs/APPS_FOLLOW_MODE.md`). Build on that.
+- **Manual override.**
+  - The «Настольный режим» tile still switches by hand, and the choice holds until the next attach or detach event.
+  - A Settings switch "Режим по клавиатуре" / "Follow the keyboard" turns the automation off, on by default.
+  - With it off, the last chosen presentation is remembered across session restarts (this also fixes the eb17 bug).
+- **Desktop presentation:** made for mouse, trackpad and keyboard, while touch keeps working (the existing touch window gestures, tapping, scrolling).
+- **Scaling, animations and usability are the baseline in both presentations.**
+  - Audit scaling of the shell UI, Wayland apps, X11 apps and Android (Droidloom) apps in each presentation on the 3392×2400 12.1" panel (the owner has `apps.scale = 2.0`), and on an external monitor if one appears.
+  - Fix what looks wrong: text too small or large, blurry X11, mismatched shell vs apps.
+  - Mode switches must be smooth and must not lose windows.
+
+## Tablet (mobile) presentation: fingers only, a full track
+
+The owner wants the useful parts of this work in the tablet presentation, for the best finger UX on this tablet. In it the owner uses only fingers, so **no keyboard or touchpad work goes into it** (no Alt+Tab, no Mac preset, no touchpad swipes there; those live in the desktop presentation, which the keyboard brings up anyway).
+
+1. **Audit first.** Compare the mobile shell (home grid, drawer, Recents, bottom pill, edges, shade) with the finger-relevant features of eb17/eb18. Write the gaps and the chosen ports to `docs/superpowers/specs/2026-11-23-mobile-ports.md`.
 2. **Ports, at least:**
-   - **Search:**
-     - the search overlay from a keyboard shortcut when a keyboard is attached;
-     - a search field in the app drawer;
-     - a gesture: pulling down on the home screen opens search, as on iPadOS;
-     - the drawer on by default, if that does not disturb existing home layouts.
-   - **App switcher:** Alt+Tab when a keyboard is attached.
-   - **Mac preset key translation:** it is compositor-wide.
-   - **Touchpad swipes:**
-     - three fingers sideways switch to the neighbouring app, like the bottom pill;
-     - three up open Recents;
-     - three down open the windows of the current app;
-     - four up open the drawer or search.
+   - **Search by finger:** a search field in the app drawer, and pulling down on the home screen opens search, as on iPadOS. The search is shared with the desktop overview: apps and open windows.
+   - **Drawer on by default,** if that does not disturb existing home layouts.
    - **Recents:** windows of one app grouped, with the app name and window titles.
-3. **Split View in the mobile presentation** (two apps side by side on the tablet, as on iPadOS):
-   - choose "split with the current app" from Recents (long press or drag);
-   - drag the divider with a finger;
-   - drag an app off to make it full screen again.
-   - Reuse the compositor's screen/join logic where it fits.
-
-   This comes after the ports in 2. Ship it if it is solid, otherwise report how far it got.
-4. Anything else from this work that clearly helps on the tablet, at the builder's judgement. List it in the report.
+3. **Split View in the tablet presentation:** two apps side by side, as on iPadOS.
+   - Choose "split with the current app" from Recents (long press or drag).
+   - Drag the divider with a finger.
+   - Drag an app off to make it full screen again.
+   - Reuse the compositor's screen and join logic where it fits.
+   - This comes after the ports in 2. Ship it if it is solid, otherwise report how far it got.
+4. Anything else from this work that clearly helps finger use on the tablet, at the builder's judgement. List it in the report.
 
 ## Delivery
 
