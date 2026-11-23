@@ -65,7 +65,17 @@ enum WindowRequestKind : ubyte {
   JoinScreen = 12,
   // Full-screen apps layout: window_id becomes a screen of its own, just
   // before (before) or after the screen of target_window_id.
-  MoveToScreen = 13
+  MoveToScreen = 13,
+  // Split View in the mobile (tablet) presentation: window_id and
+  // target_window_id share the phone's screen side by side, window_id on the
+  // left when screen_side is 0 and on the right when it is 1. split_ratio is
+  // the left window's share of the width. Sent again for the same pair it
+  // changes the share or swaps the sides; a window in another pair leaves
+  // that pair first.
+  SplitView = 14,
+  // Split View: the pair of window_id comes apart, and both windows fill the
+  // screen again.
+  LeaveSplitView = 15
 }
 
 enum WindowResponseKind : ubyte {
@@ -549,6 +559,12 @@ table Window {
   // The window floats over that screen (fixed-size and parentless) instead
   // of being one of its tiles.
   layout_screen_floating:bool;
+  // Appended for compatibility. Split View in the mobile presentation: the
+  // object id of the window this one shares the phone's screen with (zero
+  // when none), and the left window's share of the width. geometry_x/y and
+  // geometry_width/height give the half deniald configured.
+  split_view_partner_id:ulong;
+  split_view_ratio:double;
 }
 
 table WindowSnapshot {
@@ -638,6 +654,9 @@ table WindowRequest {
   target_window_id:ulong;
   screen_side:uint;
   before:bool;
+  // SplitView only (appended): the left window's share of the width, in
+  // (0, 1).
+  split_ratio:double;
 }
 
 table WindowResponse {
