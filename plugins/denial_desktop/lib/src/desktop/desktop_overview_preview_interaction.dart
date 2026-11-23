@@ -1,11 +1,13 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:denial_flutter_sdk/motion.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 import 'package:denial_flutter_sdk/rendering.dart';
 
 import '../widgets/desktop_visibility_transition.dart';
+import 'desktop_workspace.dart';
 
 /// Publishes whether a window has finished moving into overview.
 ///
@@ -34,7 +36,11 @@ class DesktopOverviewTransitionStatus
 /// have to be measured in global coordinates: Flutter's local [DragUpdateDetails.delta]
 /// is transformed back through the preview scale and would make a scaled-down
 /// window move farther than the pointer.
-class DesktopOverviewPreviewInteraction extends StatefulWidget {
+///
+/// In the screens overview of the full-screen apps layout a finger drags a
+/// window only after a long press, so a touch can still tap; a mouse drags
+/// at once, as in every overview.
+class DesktopOverviewPreviewInteraction extends ConsumerStatefulWidget {
   const DesktopOverviewPreviewInteraction({
     super.key,
     required this.overviewActive,
@@ -67,12 +73,20 @@ class DesktopOverviewPreviewInteraction extends StatefulWidget {
   final Widget child;
 
   @override
-  State<DesktopOverviewPreviewInteraction> createState() =>
+  ConsumerState<DesktopOverviewPreviewInteraction> createState() =>
       _DesktopOverviewPreviewInteractionState();
 }
 
 class _DesktopOverviewPreviewInteractionState
-    extends State<DesktopOverviewPreviewInteraction> {
+    extends ConsumerState<DesktopOverviewPreviewInteraction> {
+  static const Set<PointerDeviceKind> _pointerDevices = <PointerDeviceKind>{
+    PointerDeviceKind.mouse,
+    PointerDeviceKind.trackpad,
+    PointerDeviceKind.stylus,
+    PointerDeviceKind.invertedStylus,
+    PointerDeviceKind.unknown,
+  };
+
   static const double _emphasizedScale = 1.018;
 
   bool _hovered = false;
@@ -96,18 +110,81 @@ class _DesktopOverviewPreviewInteractionState
     setState(() => _hovered = hovered);
   }
 
-  void _startDrag(DragStartDetails details) {
-    _lastGlobalDragPosition = details.globalPosition;
+  void _startDrag(DragStartDetails details) => _startAt(details.globalPosition);
+
+  void _updateDrag(DragUpdateDetails details) =>
+      _moveTo(details.globalPosition);
+
+  void _startAt(Offset globalPosition) {
+    _lastGlobalDragPosition = globalPosition;
     widget.onDragStart();
   }
 
-  void _updateDrag(DragUpdateDetails details) {
+  void _moveTo(Offset globalPosition) {
     final previousPosition = _lastGlobalDragPosition;
-    final globalPosition = details.globalPosition;
     _lastGlobalDragPosition = globalPosition;
     if (previousPosition != null) {
       widget.onDragUpdate(globalPosition - previousPosition);
     }
+  }
+
+  Widget _gestures({
+    required bool screensOverview,
+    required bool interactive,
+    required Widget child,
+  }) {
+    if (screensOverview) {
+      return _screensGestures(interactive: interactive, child: child);
+    }
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: interactive ? widget.onTap : null,
+      onPanStart: widget.overview ? _startDrag : null,
+      onPanUpdate: widget.overview ? _updateDrag : null,
+      onPanEnd: widget.overview ? (_) => _endDrag() : null,
+      onPanCancel: widget.overview ? _cancelDrag : null,
+      child: child,
+    );
+  }
+
+  /// A mouse pans at once; a finger presses long first.
+  Widget _screensGestures({required bool interactive, required Widget child}) {
+    return RawGestureDetector(
+      behavior: HitTestBehavior.opaque,
+      gestures: <Type, GestureRecognizerFactory>{
+        TapGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+              TapGestureRecognizer.new,
+              (recognizer) =>
+                  recognizer.onTap = interactive ? widget.onTap : null,
+            ),
+        PanGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<PanGestureRecognizer>(
+              () => PanGestureRecognizer(supportedDevices: _pointerDevices),
+              (recognizer) => recognizer
+                ..onStart = _startDrag
+                ..onUpdate = _updateDrag
+                ..onEnd = ((_) => _endDrag())
+                ..onCancel = _cancelDrag,
+            ),
+        LongPressGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+              () => LongPressGestureRecognizer(
+                supportedDevices: const <PointerDeviceKind>{
+                  PointerDeviceKind.touch,
+                },
+              ),
+              (recognizer) => recognizer
+                ..onLongPressStart = ((details) =>
+                    _startAt(details.globalPosition))
+                ..onLongPressMoveUpdate = ((details) =>
+                    _moveTo(details.globalPosition))
+                ..onLongPressEnd = ((_) => _endDrag())
+                ..onLongPressCancel = _cancelDrag,
+            ),
+      },
+      child: child,
+    );
   }
 
   void _endDrag() {
@@ -142,6 +219,13 @@ class _DesktopOverviewPreviewInteractionState
     final interactive =
         (widget.overviewActive && widget.overview) ||
         (!widget.overviewActive && widget.desktopWidget);
+    final screensOverview =
+        widget.overview &&
+        ref.watch(
+          desktopWorkspaceProvider.select(
+            (state) => state.overview?.workspaces?.screens != null,
+          ),
+        );
     return Semantics(
       button: interactive,
       selected: widget.overview ? widget.selected : null,
@@ -152,13 +236,9 @@ class _DesktopOverviewPreviewInteractionState
         onExit: interactive ? (_) => _setHovered(false) : null,
         child: Listener(
           onPointerDown: _handlePointerDown,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: interactive ? widget.onTap : null,
-            onPanStart: widget.overview ? _startDrag : null,
-            onPanUpdate: widget.overview ? _updateDrag : null,
-            onPanEnd: widget.overview ? (_) => _endDrag() : null,
-            onPanCancel: widget.overview ? _cancelDrag : null,
+          child: _gestures(
+            screensOverview: screensOverview,
+            interactive: interactive,
             child: AnimatedScale(
               duration: Motion.tile,
               curve: emphasized
