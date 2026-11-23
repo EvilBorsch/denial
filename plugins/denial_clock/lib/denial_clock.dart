@@ -30,7 +30,12 @@ final class DesktopClockPlugin implements ShellSurface {
         math.min(area.width, height * 2),
         height,
       ),
-      visible: !environment.locked && !environment.wallpaperSelectorVisible,
+      // The overview dims the desktop behind its cards and its search; the
+      // clock is not part of it.
+      visible:
+          !environment.locked &&
+          !environment.wallpaperSelectorVisible &&
+          !environment.overview,
       occupiesDesktop: true,
     );
   }
