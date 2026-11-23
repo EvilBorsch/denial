@@ -472,6 +472,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     if (next == null || previous?.sessionId == next.sessionId) {
       return;
     }
+    // As Spotlight gives way to Cmd+Tab: the switcher replaces the search.
+    ref.read(desktopSearchOverlayProvider.notifier).close();
     _cancelWindowSwitcher();
     _appSwitcherCleanupTimer?.cancel();
     _appSwitcherCleanupTimer = null;
