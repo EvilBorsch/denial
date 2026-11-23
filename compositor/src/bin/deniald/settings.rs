@@ -912,6 +912,13 @@ impl SettingsManager {
         parse_scrolling_layout_preserve_swap_sizes(&self.document).unwrap_or(true)
     }
 
+    /// Whether a middle-button drag moves between the full-screen apps
+    /// layout's screens and opens its overview and app windows
+    /// (`layout.screensMiddleButtonGestures`, on unless turned off).
+    pub(super) fn screens_middle_button_gestures(&self) -> bool {
+        parse_screens_middle_button_gestures(&self.document).unwrap_or(true)
+    }
+
     pub(super) fn scrolling_layout_wheel_settings(&self) -> ScrollingLayoutWheelSettings {
         parse_scrolling_layout_wheel_settings(&self.document).unwrap_or_default()
     }
@@ -1031,6 +1038,21 @@ impl SettingsManager {
         }
         self.capture_rotation_lock(&mut incoming)?;
 
+        // A client that writes the layout section without the middle-button
+        // switch (one that does not know it) must not turn it back on.
+        if let Some(enabled) = self
+            .document
+            .get("layout")
+            .and_then(Value::as_object)
+            .and_then(|layout| layout.get(SCREENS_MIDDLE_BUTTON_GESTURES))
+            .cloned()
+            && let Some(layout) = incoming.get_mut("layout").and_then(Value::as_object_mut)
+        {
+            layout
+                .entry(SCREENS_MIDDLE_BUTTON_GESTURES)
+                .or_insert(enabled);
+        }
+
         // Native-owned fields can be echoed by Flutter but can never be
         // replaced through the shell-document request.
         incoming.remove("revision");
@@ -1067,6 +1089,7 @@ impl SettingsManager {
         parse_keyboard_resize_step(&incoming)?;
         parse_scrolling_layout_wheel_settings(&incoming)?;
         parse_scrolling_layout_preserve_swap_sizes(&incoming)?;
+        parse_screens_middle_button_gestures(&incoming)?;
         parse_workspace_settings(&incoming)?;
         self.prepare(
             incoming,
@@ -1595,6 +1618,12 @@ fn parse_document(bytes: &[u8]) -> Result<ParsedSettingsDocument, SettingsError>
         true
     };
     set_scrolling_layout_preserve_swap_sizes(&mut document, preserve_swap_sizes)?;
+    let had_screens_middle_button_gestures = document
+        .get("layout")
+        .and_then(Value::as_object)
+        .is_some_and(|layout| layout.contains_key(SCREENS_MIDDLE_BUTTON_GESTURES));
+    let screens_middle_button_gestures = parse_screens_middle_button_gestures(&document)?;
+    set_screens_middle_button_gestures(&mut document, screens_middle_button_gestures)?;
     let had_scrolling_layout_wheel_settings = document
         .get("layout")
         .and_then(Value::as_object)
@@ -1636,6 +1665,7 @@ fn parse_document(bytes: &[u8]) -> Result<ParsedSettingsDocument, SettingsError>
         || !had_cursor_size
         || !had_window_layout
         || !had_scrolling_layout_preserve_swap_sizes
+        || !had_screens_middle_button_gestures
         || !had_scrolling_layout_wheel_settings
         || !had_workspace_settings;
     document.insert("version".to_owned(), Value::from(SETTINGS_SCHEMA_VERSION));
@@ -1727,6 +1757,8 @@ fn default_document(mobile: bool) -> (Map<String, Value>, u64, TypedSettings) {
         .expect("default window layout setting serializes");
     set_scrolling_layout_preserve_swap_sizes(&mut document, true)
         .expect("default scrolling swap setting serializes");
+    set_screens_middle_button_gestures(&mut document, true)
+        .expect("default middle-button setting serializes");
     set_scrolling_layout_wheel_settings(&mut document, ScrollingLayoutWheelSettings::default())
         .expect("default scrolling-layout wheel settings serialize");
     set_workspace_settings(&mut document, WorkspaceSettings::default())
@@ -2151,6 +2183,47 @@ fn set_scrolling_layout_preserve_swap_sizes(
     layout.insert(
         "scrollingLayoutPreserveSwapSizes".to_owned(),
         Value::Bool(preserve_sizes),
+    );
+    Ok(())
+}
+
+/// `layout.screensMiddleButtonGestures`: a middle-button drag in the
+/// full-screen apps layout moves its strip and opens its overview and app
+/// windows. It lives in the `layout` section, which every release reads key
+/// by key and keeps whole, never in the typed `mouse` section, whose
+/// releases up to eb17 reject a field they do not know (and with it the
+/// file): rolled back, they keep the switch and ignore it.
+const SCREENS_MIDDLE_BUTTON_GESTURES: &str = "screensMiddleButtonGestures";
+
+/// The switch, on when the document does not say.
+fn parse_screens_middle_button_gestures(
+    document: &Map<String, Value>,
+) -> Result<bool, SettingsError> {
+    match document
+        .get("layout")
+        .and_then(Value::as_object)
+        .and_then(|layout| layout.get(SCREENS_MIDDLE_BUTTON_GESTURES))
+    {
+        None => Ok(true),
+        Some(Value::Bool(enabled)) => Ok(*enabled),
+        Some(_) => Err(SettingsError::Document(format!(
+            "layout.{SCREENS_MIDDLE_BUTTON_GESTURES} must be a boolean"
+        ))),
+    }
+}
+
+fn set_screens_middle_button_gestures(
+    document: &mut Map<String, Value>,
+    enabled: bool,
+) -> Result<(), SettingsError> {
+    let layout = document
+        .entry("layout")
+        .or_insert_with(|| Value::Object(Map::new()))
+        .as_object_mut()
+        .ok_or_else(|| SettingsError::Document("settings layout must be an object".to_owned()))?;
+    layout.insert(
+        SCREENS_MIDDLE_BUTTON_GESTURES.to_owned(),
+        Value::Bool(enabled),
     );
     Ok(())
 }

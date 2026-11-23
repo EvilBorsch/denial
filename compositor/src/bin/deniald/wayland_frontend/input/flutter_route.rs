@@ -1269,6 +1269,63 @@ pub(in super::super) fn end_touch_divider(
     state.scene_sync.mark_dirty();
 }
 
+/// A middle press on an app window in the full-screen apps layout, with
+/// `layout.screensMiddleButtonGestures` on, may be the mouse's three-finger
+/// swipe: it is held back until it is a drag or a click
+/// (`wayland_frontend::middle_drag`, `window_grab::MiddleButtonGrab`).
+/// The shell keeps its own presses (the top bar, the overview), and so does
+/// a client that holds the pointer (a game's locked or confined pointer) or
+/// one already pressed with another button.
+#[cfg(feature = "flutter")]
+fn begin_middle_drag(
+    state: &mut RuntimeState,
+    target: &InputTarget,
+    button: u32,
+    serial: Serial,
+    time: InputTime,
+) -> bool {
+    if button != BTN_MIDDLE {
+        return false;
+    }
+    let InputTarget::Client(route) = target else {
+        return false;
+    };
+    let frontend = state.frontend();
+    let pointer = frontend.seat.get_pointer().expect("seat has no pointer");
+    let press = super::super::middle_drag::MiddlePress {
+        screens_layout: frontend.screens_layout_active(),
+        switch_on: frontend.settings.screens_middle_button_gestures(),
+        // Layer surfaces and input method popups are no apps to swipe
+        // between.
+        over_app_window: route.window.is_some(),
+        other_buttons_down: !frontend.wayland_pointer_buttons.is_empty(),
+        pointer_held_by_app: pointer.current_focus().is_some_and(|focus| {
+            with_pointer_constraint(&focus, &pointer, |constraint| {
+                constraint.is_some_and(|constraint| constraint.is_active())
+            })
+        }),
+    };
+    if !press.may_drag() {
+        if press.screens_layout && press.switch_on && press.pointer_held_by_app {
+            info!("middle button left to the app: it holds the pointer");
+        }
+        return false;
+    }
+    let position = frontend.pointer_location;
+    let start_data = GrabStartData {
+        focus: Some(route.focus_at(position)),
+        button,
+        location: position,
+    };
+    pointer.set_grab(
+        state,
+        super::super::super::window_grab::MiddleButtonGrab::new(start_data, time),
+        serial,
+        Focus::Keep,
+    );
+    true
+}
+
 /// Starts dragging the split divider under the pointer, if there is one.
 /// A second press on it within a double-click time evens the split out
 /// first.
@@ -1593,7 +1650,16 @@ pub(in super::super) fn route_pointer_button(
         && button_code == BTN_LEFT
         && state.frontend().client_pointer_capture.is_none()
         && begin_divider_grab(state, button_code, serial);
-    if began_super_grab || began_divider_grab {
+    let began_middle_drag = !began_super_grab
+        && !began_divider_grab
+        && !pointer_grabbed
+        && !logo
+        && !secure_locked
+        && !flutter_captured
+        && button_state == ButtonState::Pressed
+        && state.frontend().client_pointer_capture.is_none()
+        && begin_middle_drag(state, &target, button_code, serial, time);
+    if began_super_grab || began_divider_grab || began_middle_drag {
         update_pressed_buttons(
             &mut state.frontend_mut().wayland_pointer_buttons,
             button_code,

@@ -235,6 +235,8 @@ mod absolute_touch_bounds_tests {
 #[cfg(feature = "flutter")]
 const BTN_LEFT: u32 = 0x110;
 #[cfg(feature = "flutter")]
+const BTN_MIDDLE: u32 = 0x112;
+#[cfg(feature = "flutter")]
 const BTN_RIGHT: u32 = 0x111;
 #[cfg(feature = "flutter")]
 const MAX_CLIENT_POINTER_PRESSES: usize = 16;
@@ -2094,7 +2096,10 @@ const fn shell_gesture_source(
 /// swipe (see [`TOUCHPAD_SHELL_GESTURE_TRAVEL`] and
 /// [`TOUCHSCREEN_SHELL_GESTURE_SHARE`]).
 #[cfg(feature = "flutter")]
-fn shell_gesture_travel(state: &RuntimeState, position: Option<Point<f64, Logical>>) -> f64 {
+pub(in super::super) fn shell_gesture_travel(
+    state: &RuntimeState,
+    position: Option<Point<f64, Logical>>,
+) -> f64 {
     let Some(position) = position else {
         return TOUCHPAD_SHELL_GESTURE_TRAVEL;
     };
@@ -2164,7 +2169,7 @@ fn follow_vertical_swipe(
 /// touchscreen, if there. A gesture of another source under way keeps the
 /// shell. True: the input was the gesture's.
 #[cfg(feature = "flutter")]
-pub(super) fn begin_shell_gesture(
+pub(in super::super) fn begin_shell_gesture(
     state: &mut RuntimeState,
     source: super::super::shell_gestures::ShellGestureSource,
     kind: super::super::wire::ShellGestureKind,
@@ -2193,7 +2198,7 @@ pub(super) fn begin_shell_gesture(
 }
 
 #[cfg(feature = "flutter")]
-pub(super) fn update_shell_gesture(
+pub(in super::super) fn update_shell_gesture(
     state: &mut RuntimeState,
     source: super::super::shell_gestures::ShellGestureSource,
     progress: f64,
@@ -2206,7 +2211,7 @@ pub(super) fn update_shell_gesture(
 }
 
 #[cfg(feature = "flutter")]
-pub(super) fn end_shell_gesture(
+pub(in super::super) fn end_shell_gesture(
     state: &mut RuntimeState,
     source: super::super::shell_gestures::ShellGestureSource,
     progress: f64,
@@ -2335,6 +2340,25 @@ fn update_horizontal_layout_scroll(state: &mut RuntimeState, delta_x: f64, direc
         state.scene_sync.mark_dirty();
     }
     changed
+}
+
+/// A middle-button drag moves the full-screen apps layout's strip by
+/// `delta_x` logical px, exactly with the pointer.
+#[cfg(feature = "flutter")]
+pub(in super::super) fn middle_drag_moves_strip(state: &mut RuntimeState, delta_x: f64) -> bool {
+    update_horizontal_layout_scroll(state, delta_x, true)
+}
+
+/// A middle-button drag that moved the strip ended: it settles on the
+/// screen `projected_delta_x` reaches, or goes back where it was
+/// (`cancelled`).
+#[cfg(feature = "flutter")]
+pub(in super::super) fn middle_drag_releases_strip(
+    state: &mut RuntimeState,
+    cancelled: bool,
+    projected_delta_x: f64,
+) -> bool {
+    finish_horizontal_layout_scroll_from(state, cancelled, Some(projected_delta_x), true)
 }
 
 #[cfg(feature = "flutter")]

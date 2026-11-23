@@ -230,15 +230,17 @@ struct MotionSample {
 }
 
 /// Motion along one axis: where it got to, how fast it went lately, and
-/// where that speed would carry it.
+/// where that speed would carry it. Swipes and the middle-button drag
+/// (`wayland_frontend::middle_drag`) share it.
 #[derive(Debug, Default)]
-struct MotionTracker {
+pub(super) struct MotionTracker {
     history: VecDeque<MotionSample>,
-    total: f64,
+    /// The motion since the start.
+    pub(super) total: f64,
 }
 
 impl MotionTracker {
-    fn push(&mut self, delta: f64, timestamp_micros: u64) {
+    pub(super) fn push(&mut self, delta: f64, timestamp_micros: u64) {
         if self
             .history
             .back()
@@ -259,7 +261,8 @@ impl MotionTracker {
         }
     }
 
-    fn velocity(&self) -> f64 {
+    /// Motion per second over the last 150 ms.
+    pub(super) fn velocity(&self) -> f64 {
         let (Some(first), Some(last)) = (self.history.front(), self.history.back()) else {
             return 0.0;
         };
@@ -273,7 +276,7 @@ impl MotionTracker {
 
     /// Where the motion would stop if it slowed down as a strip's fling
     /// does.
-    fn projected(&self) -> f64 {
+    pub(super) fn projected(&self) -> f64 {
         let projected =
             self.total - self.velocity() / (1_000.0 * HORIZONTAL_SCROLL_DECELERATION.ln());
         if projected.is_finite() {

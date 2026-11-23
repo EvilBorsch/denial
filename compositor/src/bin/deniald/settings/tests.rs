@@ -981,6 +981,125 @@ fn scrolling_swap_size_setting_is_validated_and_persisted() {
 }
 
 #[test]
+fn the_middle_button_switch_is_on_by_default_validated_and_persisted() {
+    let temporary = TemporaryDirectory::new("settings-middle-button");
+    let path = temporary.settings_path();
+    let mut manager = SettingsManager::load_path(path.clone()).unwrap();
+    assert!(manager.screens_middle_button_gestures());
+    let served: Value = serde_json::from_str(&manager.document_json().unwrap()).unwrap();
+    assert_eq!(served["layout"]["screensMiddleButtonGestures"], true);
+    for enabled in [false, true] {
+        let update = manager
+            .prepare_shell_update(
+                manager.revision(),
+                &shell_document(serde_json::json!({
+                    "appearance": {"colorSchemePreference": "preferDark"},
+                    "layout": {"screensMiddleButtonGestures": enabled}
+                })),
+            )
+            .unwrap();
+        manager.commit(update).unwrap();
+        assert_eq!(manager.screens_middle_button_gestures(), enabled);
+        assert_eq!(
+            SettingsManager::load_path(path.clone())
+                .unwrap()
+                .screens_middle_button_gestures(),
+            enabled
+        );
+    }
+    for invalid in [Value::Null, Value::from(1), Value::from("false")] {
+        let document = shell_document(serde_json::json!({
+            "appearance": {"colorSchemePreference": "preferDark"},
+            "layout": {"screensMiddleButtonGestures": invalid}
+        }));
+        assert!(matches!(
+            manager.prepare_shell_update(manager.revision(), &document),
+            Err(SettingsError::Document(_))
+        ));
+    }
+}
+
+#[test]
+fn a_save_that_leaves_out_the_middle_button_switch_keeps_it() {
+    let temporary = TemporaryDirectory::new("settings-middle-button-kept");
+    let path = temporary.settings_path();
+    let mut manager = SettingsManager::load_path(path).unwrap();
+    commit_window_layout(
+        &mut manager,
+        serde_json::json!({"screensMiddleButtonGestures": false}),
+    );
+    // A client that does not know the switch writes the layout section
+    // without it.
+    let document = shell_document(serde_json::json!({
+        "appearance": {"colorSchemePreference": "preferDark"},
+        "layout": {"windowLayout": "screens"}
+    }));
+    assert!(!document.contains("screensMiddleButtonGestures"));
+    let update = manager
+        .prepare_shell_update(manager.revision(), &document)
+        .unwrap();
+    manager.commit(update).unwrap();
+    assert_eq!(manager.window_layout_kind(), WindowLayoutKind::Screens);
+    assert!(!manager.screens_middle_button_gestures());
+}
+
+/// The fields of the typed sections as eb16.tp1 and eb17 know them: they
+/// reject a file whose `mouse` or `touchpad` holds any other field.
+const OLDER_MOUSE_FIELDS: &[&str] = &["speed", "accelerationEnabled", "naturalScrollEnabled"];
+const OLDER_TOUCHPAD_FIELDS: &[&str] = &[
+    "tapToClickEnabled",
+    "naturalScrollEnabled",
+    "scrollSpeedFactor",
+    "scrollingLayoutSwipeSpeedFactor",
+    "speed",
+    "accelerationEnabled",
+    "clickMethod",
+];
+
+fn section_fields(file: &Value, section: &str) -> Vec<String> {
+    file[section].as_object().unwrap().keys().cloned().collect()
+}
+
+#[test]
+fn the_middle_button_switch_is_stored_so_an_older_deniald_still_loads_the_file() {
+    let temporary = TemporaryDirectory::new("settings-middle-button-rollback");
+    let path = temporary.settings_path();
+    let mut manager = SettingsManager::load_path(path.clone()).unwrap();
+    commit_window_layout(
+        &mut manager,
+        serde_json::json!({"windowLayout": "screens", "screensMiddleButtonGestures": false}),
+    );
+    let file: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    // eb16.tp1 and eb17 read `layout` key by key and keep what they do not
+    // know; the switch is there, and the typed sections hold only fields
+    // they know.
+    assert_eq!(file["layout"]["screensMiddleButtonGestures"], false);
+    assert!(older_deniald_accepts(&file));
+    assert!(
+        section_fields(&file, "mouse")
+            .iter()
+            .all(|field| OLDER_MOUSE_FIELDS.contains(&field.as_str()))
+    );
+    assert!(
+        section_fields(&file, "touchpad")
+            .iter()
+            .all(|field| OLDER_TOUCHPAD_FIELDS.contains(&field.as_str()))
+    );
+    // A file an older release wrote without the switch reads as on.
+    let mut older = file.clone();
+    older["layout"]
+        .as_object_mut()
+        .unwrap()
+        .remove("screensMiddleButtonGestures");
+    fs::write(&path, serde_json::to_vec(&older).unwrap()).unwrap();
+    assert!(
+        SettingsManager::load_path(path)
+            .unwrap()
+            .screens_middle_button_gestures()
+    );
+}
+
+#[test]
 fn keyboard_resize_step_defaults_and_validates_on_load_and_update() {
     use super::super::keyboard_resize::ResizeStep;
     let temporary = TemporaryDirectory::new("keyboard-resize-step");

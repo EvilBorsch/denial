@@ -197,6 +197,9 @@ mod input_source;
 #[path = "wayland_frontend/layer_shell.rs"]
 mod layer_shell;
 #[cfg(feature = "flutter")]
+#[path = "wayland_frontend/middle_drag.rs"]
+pub(crate) mod middle_drag;
+#[cfg(feature = "flutter")]
 #[path = "wayland_frontend/minimized.rs"]
 mod minimized;
 #[path = "wayland_frontend/output_power.rs"]
@@ -279,8 +282,9 @@ use idle_inhibit::IdleInhibitors;
 use input::{ClientInputRoute, RoutedPointerTarget};
 #[cfg(feature = "flutter")]
 pub(super) use input::{
-    cancel_shell_gesture, install_keyboard_settings, install_mouse_settings,
-    install_touchpad_settings,
+    begin_shell_gesture, cancel_shell_gesture, end_shell_gesture, install_keyboard_settings,
+    install_mouse_settings, install_touchpad_settings, middle_drag_moves_strip,
+    middle_drag_releases_strip, shell_gesture_travel, update_shell_gesture,
 };
 pub(super) use input::{init_libinput, reset_all_input_devices};
 #[cfg(feature = "flutter")]
