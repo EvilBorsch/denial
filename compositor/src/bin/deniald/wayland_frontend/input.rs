@@ -2311,13 +2311,25 @@ fn follow_vertical_swipe(
     let source = shell_gesture_source(position);
     let full = shell_gesture_travel(state, position);
     match gesture_event {
-        TouchpadGestureEvent::VerticalBegin { direction, travel } => begin_shell_gesture(
-            state,
-            source,
-            shell_gesture_kind(direction),
-            travel / full,
-            position,
-        ),
+        TouchpadGestureEvent::VerticalBegin { direction, travel } => {
+            // As for the overview opened by a key: a constrained pointer (a
+            // game's) is let go while the shell's view is up. Not inside
+            // begin_shell_gesture, which a pointer grab calls.
+            if state
+                .shell_gestures
+                .active()
+                .is_none_or(|(_, active)| active == source)
+            {
+                let _ = prepare_shell_overlay_action(state, position);
+            }
+            begin_shell_gesture(
+                state,
+                source,
+                shell_gesture_kind(direction),
+                travel / full,
+                position,
+            )
+        }
         TouchpadGestureEvent::VerticalUpdate {
             travel, velocity, ..
         } => update_shell_gesture(state, source, travel / full, velocity / full),
@@ -2337,6 +2349,13 @@ fn follow_vertical_swipe(
 /// `source` starts a shell gesture toward `kind`; `position`: where on the
 /// touchscreen, if there. A gesture of another source under way keeps the
 /// shell. True: the input was the gesture's.
+///
+/// It must not touch the seat's pointer: the middle-button drag calls it
+/// from its pointer grab, while smithay holds the pointer's lock, and
+/// asking the pointer for its focus there deadlocks the compositor. Callers
+/// outside a grab release a constrained pointer first
+/// ([`prepare_shell_overlay_action`]); the middle-button drag never starts
+/// while an app holds the pointer.
 #[cfg(feature = "flutter")]
 pub(in super::super) fn begin_shell_gesture(
     state: &mut RuntimeState,
@@ -2353,9 +2372,6 @@ pub(in super::super) fn begin_shell_gesture(
         );
         return true;
     };
-    // As for the overview opened by a key: a constrained pointer (a game's)
-    // is let go while the shell's view is up.
-    let _ = prepare_shell_overlay_action(state, position);
     info!(
         ?source,
         ?kind,
