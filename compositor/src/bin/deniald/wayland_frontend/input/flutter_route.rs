@@ -657,7 +657,9 @@ pub(in super::super) fn route_pointer_motion(
         .expect("seat has no pointer");
     if !pointer.is_grabbed() {
         let frontend = state.frontend_mut();
-        let shape = frontend.layout_divider_at(position).map(|hit| hit.cursor());
+        let shape = frontend
+            .layout_divider_at(position, super::super::DividerPress::Pointer)
+            .map(|hit| hit.cursor());
         if frontend.set_divider_cursor(shape) {
             state.scene_sync.mark_dirty();
         }
@@ -1176,7 +1178,7 @@ fn begin_touch_divider(state: &mut RuntimeState, slot: i32, position: Point<f64,
     if !frontend.touch_dividers.may_take(others_down) {
         return false;
     }
-    let Some(hit) = frontend.layout_divider_at(position) else {
+    let Some(hit) = frontend.layout_divider_at(position, super::super::DividerPress::Finger) else {
         return false;
     };
     let double = frontend.note_divider_press(&hit, std::time::Instant::now());
@@ -1273,7 +1275,10 @@ pub(in super::super) fn end_touch_divider(
 #[cfg(feature = "flutter")]
 fn begin_divider_grab(state: &mut RuntimeState, button: u32, serial: Serial) -> bool {
     let position = state.frontend().pointer_location;
-    let Some(hit) = state.frontend().layout_divider_at(position) else {
+    let Some(hit) = state
+        .frontend()
+        .layout_divider_at(position, super::super::DividerPress::Pointer)
+    else {
         return false;
     };
     let double = state

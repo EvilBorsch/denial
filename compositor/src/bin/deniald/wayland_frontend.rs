@@ -216,7 +216,7 @@ mod screencopy;
 #[path = "wayland_frontend/screens.rs"]
 mod screens;
 #[cfg(feature = "flutter")]
-pub(crate) use dividers::{DividerHit, TouchDivider, TouchDividers};
+pub(crate) use dividers::{DividerHit, DividerPress, TouchDivider, TouchDividers};
 #[path = "wayland_frontend/startup.rs"]
 mod startup;
 pub(crate) use startup::FrontendConfig;

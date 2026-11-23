@@ -23,8 +23,31 @@ use smithay::utils::{Logical, Point, Rectangle, Size};
 use super::super::window_layout::{LayoutAxis, LayoutDivider, LayoutSpace};
 use super::WaylandFrontend;
 
-/// The narrowest a divider's zone gets, in logical pixels.
+/// The narrowest a divider's zone gets for the pointer, in logical pixels
+/// (3 mm on the tablet's 1357 px wide scene; the visible gap is 8 px).
 pub(crate) const DIVIDER_ZONE: i32 = 16;
+
+/// The narrowest it gets for a finger: about 4.6 mm on the tablet, reaching
+/// 8 px (1.5 mm) into the tiles beside the default gap. A finger lands less
+/// precisely than the pointer, but a wider zone would take taps meant for
+/// the controls at the tiles' edges.
+pub(crate) const FINGER_DIVIDER_ZONE: i32 = 24;
+
+/// What presses a divider: the zone it takes is wider for a finger.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DividerPress {
+    Pointer,
+    Finger,
+}
+
+impl DividerPress {
+    const fn zone(self) -> i32 {
+        match self {
+            Self::Pointer => DIVIDER_ZONE,
+            Self::Finger => FINGER_DIVIDER_ZONE,
+        }
+    }
+}
 
 /// Two presses on one divider within this time are a double click or tap.
 const DOUBLE_PRESS: Duration = Duration::from_millis(400);
@@ -179,19 +202,22 @@ fn boundary<WindowId>(divider: &LayoutDivider<WindowId>) -> f64 {
 }
 
 /// The zone a press on `divider` takes: its gap, widened across the
-/// boundary to [`DIVIDER_ZONE`].
-pub(super) fn divider_zone<WindowId>(divider: &LayoutDivider<WindowId>) -> Rectangle<i32, Logical> {
+/// boundary to `zone` ([`DIVIDER_ZONE`], [`FINGER_DIVIDER_ZONE`]).
+pub(super) fn divider_zone<WindowId>(
+    divider: &LayoutDivider<WindowId>,
+    zone: i32,
+) -> Rectangle<i32, Logical> {
     let rect = divider.rect;
     match divider.axis {
         LayoutAxis::Horizontal => {
-            let width = rect.size.w.max(DIVIDER_ZONE);
+            let width = rect.size.w.max(zone);
             Rectangle::new(
                 Point::from((rect.loc.x - (width - rect.size.w) / 2, rect.loc.y)),
                 Size::from((width, rect.size.h)),
             )
         }
         LayoutAxis::Vertical => {
-            let height = rect.size.h.max(DIVIDER_ZONE);
+            let height = rect.size.h.max(zone);
             Rectangle::new(
                 Point::from((rect.loc.x, rect.loc.y - (height - rect.size.h) / 2)),
                 Size::from((rect.size.w, height)),
@@ -205,10 +231,11 @@ pub(super) fn divider_zone<WindowId>(divider: &LayoutDivider<WindowId>) -> Recta
 pub(super) fn divider_at<WindowId>(
     dividers: &[LayoutDivider<WindowId>],
     point: Point<i32, Logical>,
+    press: DividerPress,
 ) -> Option<&LayoutDivider<WindowId>> {
     dividers
         .iter()
-        .filter(|divider| divider_zone(*divider).contains(point))
+        .filter(|divider| divider_zone(*divider, press.zone()).contains(point))
         .min_by_key(|divider| {
             let along = match divider.axis {
                 LayoutAxis::Horizontal => point.x,
@@ -330,7 +357,11 @@ impl WaylandFrontend {
     /// the tiles of the layout lies above its zone there
     /// ([`divider_press_reachable`]), and the shell does not hold the whole
     /// scene (an overview, the lock, a full-scene shell surface).
-    pub(crate) fn layout_divider_at(&self, position: Point<f64, Logical>) -> Option<DividerHit> {
+    pub(crate) fn layout_divider_at(
+        &self,
+        position: Point<f64, Logical>,
+        press: DividerPress,
+    ) -> Option<DividerHit> {
         if !self.window_layout.manages_geometry() || (self.mobile_shell && !self.phone_with_desk())
         {
             return None;
@@ -350,7 +381,7 @@ impl WaylandFrontend {
         let dividers = self
             .window_layout
             .dividers(space, work_area, self.layout_gap());
-        let divider = divider_at(&dividers, point)?;
+        let divider = divider_at(&dividers, point, press)?;
         divider_press_reachable(divider, position, |at| self.divider_cover_at(layout, at)).then(
             || DividerHit {
                 space,
@@ -498,12 +529,17 @@ mod tests {
     #[test]
     fn a_divider_zone_is_at_least_sixteen_pixels_across_its_gap() {
         let upright = divider(LayoutAxis::Horizontal, rect(496, 40, 8, 600), vec![]);
-        assert_eq!(divider_zone(&upright), rect(492, 40, 16, 600));
+        assert_eq!(divider_zone(&upright, DIVIDER_ZONE), rect(492, 40, 16, 600));
         let level = divider(LayoutAxis::Vertical, rect(0, 336, 1000, 8), vec![]);
-        assert_eq!(divider_zone(&level), rect(0, 332, 1000, 16));
+        assert_eq!(divider_zone(&level, DIVIDER_ZONE), rect(0, 332, 1000, 16));
         // A wider gap is its own zone.
         let wide = divider(LayoutAxis::Horizontal, rect(490, 40, 20, 600), vec![]);
-        assert_eq!(divider_zone(&wide), rect(490, 40, 20, 600));
+        assert_eq!(divider_zone(&wide, DIVIDER_ZONE), rect(490, 40, 20, 600));
+        // A finger's zone is wider.
+        assert_eq!(
+            divider_zone(&upright, FINGER_DIVIDER_ZONE),
+            rect(488, 40, 24, 600)
+        );
     }
 
     #[test]
@@ -514,7 +550,10 @@ mod tests {
             divider(LayoutAxis::Vertical, rect(0, 336, 496, 8), vec![false]),
             divider(LayoutAxis::Vertical, rect(504, 336, 496, 8), vec![true]),
         ];
-        let at = |x, y| divider_at(&dividers, Point::from((x, y))).map(|d| d.path.clone());
+        let at = |x, y| {
+            divider_at(&dividers, Point::from((x, y)), DividerPress::Pointer)
+                .map(|d| d.path.clone())
+        };
         assert_eq!(at(493, 100), Some(vec![]));
         assert_eq!(at(506, 100), Some(vec![]));
         assert_eq!(at(200, 333), Some(vec![false]));
@@ -742,6 +781,24 @@ mod tests {
         assert!(fingers.release_all().is_some());
         assert!(fingers.may_take(false));
         assert!(fingers.release_all().is_none());
+    }
+
+    #[test]
+    fn a_finger_takes_a_divider_from_further_into_the_tiles_than_the_pointer() {
+        let dividers = vec![divider(
+            LayoutAxis::Horizontal,
+            rect(561, 40, 8, 760),
+            vec![],
+        )];
+        let at = |x, press| divider_at(&dividers, Point::from((x, 400)), press).is_some();
+        // 6 px into the left tile: a finger's, not the pointer's.
+        assert!(at(555, DividerPress::Finger));
+        assert!(!at(555, DividerPress::Pointer));
+        assert!(at(557, DividerPress::Pointer));
+        // 8 px into the right tile is the finger zone's last pixel.
+        assert!(at(576, DividerPress::Finger));
+        assert!(!at(577, DividerPress::Finger));
+        assert!(!at(552, DividerPress::Finger));
     }
 
     #[test]
