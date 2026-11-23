@@ -1157,6 +1157,15 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         }
       },
     );
+    // The lock screen ends a search over the desktop.
+    ref.listen<bool>(referenceShellProvider.select((state) => state.locked), (
+      _,
+      locked,
+    ) {
+      if (locked) {
+        ref.read(desktopSearchOverlayProvider.notifier).close();
+      }
+    });
     ref.listen<int?>(
       referenceShellProvider.select((state) => state.deskForegroundObjectId),
       (previous, next) {
