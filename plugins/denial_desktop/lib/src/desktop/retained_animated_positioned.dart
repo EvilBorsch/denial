@@ -17,6 +17,8 @@ class RetainedAnimatedPositioned extends ImplicitlyAnimatedWidget {
     this.animationOrigin,
     this.globalClipRect,
     this.layoutDuringAnimation = false,
+    this.driver,
+    this.driverHome,
     required super.duration,
     super.curve,
     super.onEnd,
@@ -41,6 +43,16 @@ class RetainedAnimatedPositioned extends ImplicitlyAnimatedWidget {
   final Rect? globalClipRect;
   final bool layoutDuringAnimation;
 
+  /// Moves the child between [driverHome] (at 0) and [rect] (at 1) as the
+  /// driver's value changes, without rebuilding: a gesture or a spring that
+  /// many windows share. Changes of [rect] still ease as usual and the
+  /// driver applies to the eased rectangle. When the driver goes away, the
+  /// next animation starts from where it left the child.
+  final Animation<double>? driver;
+  final Rect? driverHome;
+
+  bool get _driven => driver != null && driverHome != null;
+
   @override
   AnimatedWidgetBaseState<RetainedAnimatedPositioned> createState() =>
       _RetainedAnimatedPositionedState();
@@ -52,6 +64,20 @@ class _RetainedAnimatedPositionedState
 
   @override
   void didUpdateWidget(covariant RetainedAnimatedPositioned oldWidget) {
+    if (oldWidget._driven && !widget._driven) {
+      // Hand the driven rectangle over to the next animation.
+      final eased = _rect?.evaluate(animation) ?? oldWidget.rect;
+      final presented = Rect.lerp(
+        oldWidget.driverHome,
+        eased,
+        oldWidget.driver!.value,
+      )!;
+      _rect = RectTween(begin: presented, end: presented);
+    } else if (!oldWidget._driven && widget._driven) {
+      // The driver starts at home and carries the child to its new place
+      // itself; an eased move there on top of it would arrive twice.
+      _rect = RectTween(begin: widget.rect, end: widget.rect);
+    }
     final origin = widget.animationOrigin;
     if (origin != null && origin != oldWidget.animationOrigin) {
       // Make the presentation origin the tween's current value. This also
@@ -86,6 +112,8 @@ class _RetainedAnimatedPositionedState
       child: _RetainedTransformBox(
         retainedSize: layoutRect.size,
         visualRect: visualRect,
+        driver: widget._driven ? widget.driver : null,
+        driverHome: widget._driven ? widget.driverHome : null,
         globalClipRect: widget.globalClipRect,
         child: widget.child,
       ),
@@ -105,12 +133,16 @@ class _RetainedTransformBox extends SingleChildRenderObjectWidget {
   const _RetainedTransformBox({
     required this.retainedSize,
     required this.visualRect,
+    required this.driver,
+    required this.driverHome,
     required this.globalClipRect,
     required super.child,
   });
 
   final Size retainedSize;
   final Rect visualRect;
+  final Animation<double>? driver;
+  final Rect? driverHome;
   final Rect? globalClipRect;
 
   @override
@@ -118,6 +150,8 @@ class _RetainedTransformBox extends SingleChildRenderObjectWidget {
       _RenderRetainedTransformBox(
         retainedSize: retainedSize,
         visualRect: visualRect,
+        driver: driver,
+        driverHome: driverHome,
         globalClipRect: globalClipRect,
       );
 
@@ -129,6 +163,8 @@ class _RetainedTransformBox extends SingleChildRenderObjectWidget {
     renderObject
       ..retainedSize = retainedSize
       ..visualRect = visualRect
+      ..driver = driver
+      ..driverHome = driverHome
       ..globalClipRect = globalClipRect;
   }
 }
@@ -137,6 +173,8 @@ class _RenderRetainedTransformBox extends RenderProxyBox {
   _RenderRetainedTransformBox({
     required this._retainedSize,
     required this._visualRect,
+    required this._driver,
+    required this._driverHome,
     required this._globalClipRect,
   });
 
@@ -157,12 +195,63 @@ class _RenderRetainedTransformBox extends RenderProxyBox {
       return;
     }
     _visualRect = value;
+    _visualRectChanged();
+  }
+
+  Animation<double>? _driver;
+
+  set driver(Animation<double>? value) {
+    if (identical(_driver, value)) {
+      return;
+    }
+    if (attached) {
+      _driver?.removeListener(_visualRectChanged);
+      value?.addListener(_visualRectChanged);
+    }
+    _driver = value;
+    _visualRectChanged();
+  }
+
+  Rect? _driverHome;
+
+  set driverHome(Rect? value) {
+    if (_driverHome == value) {
+      return;
+    }
+    _driverHome = value;
+    _visualRectChanged();
+  }
+
+  /// Where the child is shown: [_visualRect], or a driver's point between
+  /// its home and [_visualRect].
+  Rect get _presentedRect {
+    final driver = _driver;
+    final home = _driverHome;
+    if (driver == null || home == null) {
+      return _visualRect;
+    }
+    return Rect.lerp(home, _visualRect, driver.value)!;
+  }
+
+  void _visualRectChanged() {
     if (isRepaintBoundary) {
       markNeedsCompositedLayerUpdate();
     } else {
       markNeedsPaint();
     }
     markNeedsSemanticsUpdate();
+  }
+
+  @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _driver?.addListener(_visualRectChanged);
+  }
+
+  @override
+  void detach() {
+    _driver?.removeListener(_visualRectChanged);
+    super.detach();
   }
 
   Rect? _globalClipRect;
@@ -192,14 +281,15 @@ class _RenderRetainedTransformBox extends RenderProxyBox {
   }) => (oldLayer ?? TransformLayer())..transform = _visualTransform;
 
   Matrix4 get _visualTransform {
+    final rect = _presentedRect;
     final scaleX = _retainedSize.width > 0
-        ? _visualRect.width / _retainedSize.width
+        ? rect.width / _retainedSize.width
         : 1.0;
     final scaleY = _retainedSize.height > 0
-        ? _visualRect.height / _retainedSize.height
+        ? rect.height / _retainedSize.height
         : 1.0;
     return Matrix4.diagonal3Values(scaleX, scaleY, 1)
-      ..setTranslationRaw(_visualRect.left, _visualRect.top, 0);
+      ..setTranslationRaw(rect.left, rect.top, 0);
   }
 
   @override

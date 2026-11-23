@@ -8,6 +8,7 @@ import '../widgets/desktop_window_reveal.dart';
 import '../widgets/desktop_window_switcher.dart';
 import 'desktop_home_layout.dart';
 import 'desktop_minimize_layer_handoff.dart';
+import 'desktop_overview_motion.dart';
 import 'desktop_pixel_alignment.dart';
 import 'desktop_popup_surface_layers.dart';
 import 'desktop_window_frame.dart';
@@ -16,6 +17,10 @@ import 'desktop_workspace.dart';
 /// [heldLayers] are the pets each window holds, keyed by the window's object
 /// id (see `desktopHeldLayersByWindow`). Each window's frame draws its own,
 /// inside the transforms that move it.
+///
+/// [overviewMotion] carries the windows of an overview that follows it
+/// between their places with the overview closed and open
+/// ([desktopOverviewFollowsMotion]).
 List<Widget> buildDesktopWindowLayers({
   bool desktopVisible = false,
   required List<DesktopWindowPlacement> placements,
@@ -44,11 +49,14 @@ List<Widget> buildDesktopWindowLayers({
   onUpdateOverviewDrag,
   required ValueChanged<DenialWindow> onEndOverviewDrag,
   required ValueChanged<DenialWindow> onCancelOverviewDrag,
-  Map<int, Rect> overviewEntryFrames = const <int, Rect>{},
   Map<int, Rect> overviewDepartingFrames = const <int, Rect>{},
   Map<int, List<DenialWindow>> heldLayers = const <int, List<DenialWindow>>{},
+  Animation<double>? overviewMotion,
 }) {
   final layers = <Widget>[];
+  final presentedOverview = desktop.overview;
+  final overviewFollowsMotion =
+      overviewMotion != null && desktopOverviewFollowsMotion(presentedOverview);
   for (final placement in placements) {
     final overview = desktop.isInOverview(placement.objectId);
     // Windows of other workspaces leave a closing workspace overview with the
@@ -105,8 +113,6 @@ List<Widget> buildDesktopWindowLayers({
     }
     final arrangedFrame = departing
         ? departingFrame
-        : overview && overviewEntryFrames.containsKey(placement.objectId)
-        ? overviewEntryFrames[placement.objectId]
         : minimizingForeground
         ? DesktopHomeLayout.offscreenFrame(
             bounds: minimizeOffscreenBounds,
@@ -139,6 +145,24 @@ List<Widget> buildDesktopWindowLayers({
       enabled: !overview && !departing && !switching && !minimizedIdle,
       alignSize: true,
     );
+    // Minimized windows travel to and from the shelf with their own easing.
+    final overviewHome =
+        overview && overviewFollowsMotion && !placement.minimized
+        ? desktopOverviewHome(
+            overview: presentedOverview!,
+            desktop: desktop,
+            frame: frame,
+            desktopFrame: desktopPixelAlignedWindowFrame(
+              frame: placement.frame,
+              contentInset: placement.frameBorder,
+              devicePixelRatio: outputPixelGrid?.scale ?? devicePixelRatio,
+              pixelGridOrigin:
+                  outputPixelGrid?.logicalRect.topLeft ?? Offset.zero,
+              enabled: true,
+              alignSize: true,
+            ),
+          )
+        : null;
     final visible =
         departing ||
         minimizingForeground ||
@@ -203,6 +227,8 @@ List<Widget> buildDesktopWindowLayers({
         onOverviewDragEnd: () => onEndOverviewDrag(window),
         onOverviewDragCancel: () => onCancelOverviewDrag(window),
         heldPets: held,
+        overviewMotion: overviewHome == null ? null : overviewMotion,
+        overviewHome: overviewHome,
       ),
     );
     if (!desktopWidget && !departing) {
@@ -218,6 +244,8 @@ List<Widget> buildDesktopWindowLayers({
           overview: overview,
           switching: switching,
           motionDuration: motionDuration,
+          overviewMotion: overviewHome == null ? null : overviewMotion,
+          overviewHome: overviewHome,
         ),
       );
     }

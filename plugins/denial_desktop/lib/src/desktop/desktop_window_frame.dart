@@ -168,6 +168,8 @@ class DesktopWindowFrame extends ConsumerWidget {
     required this.onOverviewDragEnd,
     required this.onOverviewDragCancel,
     this.heldPets = const <DenialWindow>[],
+    this.overviewMotion,
+    this.overviewHome,
   });
 
   final DenialWindow window;
@@ -201,6 +203,12 @@ class DesktopWindowFrame extends ConsumerWidget {
   /// The pets the window holds (denial-pet-v1), back to front. They are drawn
   /// with the window, inside every transform that moves it.
   final List<DenialWindow> heldPets;
+
+  /// The overview's openness and the window's place with the overview
+  /// closed: in an overview that follows one motion, the window is drawn
+  /// between [overviewHome] and [frame] as the motion moves.
+  final Animation<double>? overviewMotion;
+  final Rect? overviewHome;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -330,6 +338,8 @@ class DesktopWindowFrame extends ConsumerWidget {
       pixelGridOrigin: pixelGridOrigin,
       alignSizeToDevicePixels: true,
       globalClipRect: outputClip,
+      overviewMotion: overview ? overviewMotion : null,
+      overviewHome: overview ? overviewHome : null,
       child: DesktopWorkspaceWindowTransition(
         placement: placement,
         transition: workspaceTransition,
@@ -665,6 +675,8 @@ class DesktopAnimatedWindowPosition extends ConsumerStatefulWidget {
     this.alignSizeToDevicePixels = false,
     this.globalClipRect,
     this.separateSurfaceOpacity = false,
+    this.overviewMotion,
+    this.overviewHome,
     required this.child,
   });
 
@@ -686,7 +698,15 @@ class DesktopAnimatedWindowPosition extends ConsumerStatefulWidget {
   final bool alignSizeToDevicePixels;
   final Rect? globalClipRect;
   final bool separateSurfaceOpacity;
+
+  /// Draws the window between [overviewHome] and [rect] as the overview's
+  /// motion moves; see [DesktopOverviewMotion].
+  final Animation<double>? overviewMotion;
+  final Rect? overviewHome;
   final Widget child;
+
+  bool get _followsOverviewMotion =>
+      overview && overviewMotion != null && overviewHome != null;
 
   @override
   ConsumerState<DesktopAnimatedWindowPosition> createState() =>
@@ -707,17 +727,44 @@ class _DesktopAnimatedWindowPositionState
     super.initState();
     _curve = widget.overview ? Motion.overviewEnterCurve : Motion.md3Emphasized;
     _overviewTransitionCompleted = ValueNotifier<bool>(widget.overview);
+    _followOverviewMotion(null);
   }
 
   @override
   void dispose() {
+    widget.overviewMotion?.removeListener(_overviewMotionChanged);
     _overviewTransitionCompleted.dispose();
     super.dispose();
+  }
+
+  /// A window carried by the overview's motion has arrived once the motion
+  /// has opened the overview fully.
+  void _followOverviewMotion(DesktopAnimatedWindowPosition? oldWidget) {
+    final previous = oldWidget?._followsOverviewMotion ?? false
+        ? oldWidget!.overviewMotion
+        : null;
+    final next = widget._followsOverviewMotion ? widget.overviewMotion : null;
+    if (!identical(previous, next)) {
+      previous?.removeListener(_overviewMotionChanged);
+      next?.addListener(_overviewMotionChanged);
+    }
+    if (next != null) {
+      _overviewTransitionActive = false;
+      _overviewMotionChanged();
+    }
+  }
+
+  void _overviewMotionChanged() {
+    final motion = widget._followsOverviewMotion ? widget.overviewMotion : null;
+    if (motion != null) {
+      _overviewTransitionCompleted.value = motion.value >= 1.0;
+    }
   }
 
   @override
   void didUpdateWidget(covariant DesktopAnimatedWindowPosition oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _followOverviewMotion(oldWidget);
     _resizeJustEnded = oldWidget.resizing && !widget.resizing;
     final layoutPreviewGeometryChanged =
         widget.rect != oldWidget.rect &&
@@ -744,8 +791,10 @@ class _DesktopAnimatedWindowPositionState
       _curve = interruptedOverviewTransition
           ? Motion.overviewReversalCurve
           : Motion.overviewEnterCurve;
-      _overviewTransitionActive = overviewGeometryWillAnimate;
-      _overviewTransitionCompleted.value = !_overviewTransitionActive;
+      if (!widget._followsOverviewMotion) {
+        _overviewTransitionActive = overviewGeometryWillAnimate;
+        _overviewTransitionCompleted.value = !_overviewTransitionActive;
+      }
     } else if (oldWidget.overview && !widget.overview) {
       _curve = interruptedOverviewTransition
           ? Motion.overviewReversalCurve
@@ -823,6 +872,8 @@ class _DesktopAnimatedWindowPositionState
       // texture, frame, shadow, and hit-test region move as one composited
       // layer instead of resizing and repainting on every animation tick.
       layoutRect: layoutRect,
+      driver: widget._followsOverviewMotion ? widget.overviewMotion : null,
+      driverHome: widget._followsOverviewMotion ? widget.overviewHome : null,
       onEnd: () {
         final completedOverviewEntrance =
             _overviewTransitionActive && widget.overview;

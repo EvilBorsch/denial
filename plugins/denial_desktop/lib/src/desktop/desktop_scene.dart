@@ -30,6 +30,7 @@ import 'desktop_covered_outputs.dart';
 import 'desktop_held_layers.dart';
 import 'desktop_home_layout.dart';
 import 'desktop_minimize_layer_handoff.dart';
+import 'desktop_overview_motion.dart';
 import 'desktop_panel_overlay.dart';
 import 'desktop_pixel_alignment.dart';
 import 'desktop_scene_layers.dart';
@@ -364,9 +365,9 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
   _DesktopSceneTopologyCache? _topologyCache;
   DesktopShellServices? _surfaceServices;
   // A workspace overview behaves like a camera over every workspace. Windows
-  // of other workspaces enter from beside the screen and leave the same way,
-  // so they need a frame outside the scene's ordinary presented set.
-  Map<int, Rect> _overviewEntryFrames = const <int, Rect>{};
+  // of other workspaces enter from beside the screen with the overview's
+  // motion and leave the same way, so they need a frame outside the scene's
+  // ordinary presented set while it closes.
   Map<int, Rect> _overviewDepartingFrames = const <int, Rect>{};
   Timer? _overviewDepartureTimer;
   List<DenialWindow>? _heldLayersSource;
@@ -492,46 +493,29 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
       return;
     }
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final opened = after?.workspaces;
-    if (opened != null && before?.workspaces == null) {
-      final departing = _overviewDepartingFrames;
+    final motion = ref.read(desktopOverviewMotionProvider);
+    if (after != null && before == null) {
       _overviewDepartureTimer?.cancel();
       _overviewDepartingFrames = const <int, Rect>{};
-      if (reduceMotion) {
-        return;
+      // A gesture opening the overview moves it itself; a key opens it with
+      // a spring. Windows of other workspaces and screens enter from beside
+      // the screen with that motion (desktopOverviewHome).
+      if (!motion.held) {
+        motion.open(animate: !reduceMotion);
       }
-      final camera = next.activeWorkspaceFor(after!.monitorId);
-      final entries = <int, Rect>{
-        for (final entry in after.frames.entries)
-          if (next.placements[entry.key] case final placement?)
-            if (!placement.minimized &&
-                !departing.containsKey(entry.key) &&
-                !previous.isPlacementPresented(placement))
-              entry.key: opened.cameraRect(entry.value, camera),
-      };
-      if (entries.isEmpty) {
-        return;
-      }
-      _overviewEntryFrames = entries;
-      // Mount at the camera position for one frame, then travel to the card.
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && identical(_overviewEntryFrames, entries)) {
-          setState(() => _overviewEntryFrames = const <int, Rect>{});
-        }
-      });
       return;
     }
-    final closed = before?.workspaces;
-    if (closed == null || after?.workspaces != null) {
+    if (before == null || after != null) {
       return;
     }
-    _overviewEntryFrames = const <int, Rect>{};
+    motion.close(animate: !reduceMotion);
+    final closed = before.workspaces;
     _overviewDepartureTimer?.cancel();
-    if (reduceMotion) {
+    if (closed == null || reduceMotion) {
       _overviewDepartingFrames = const <int, Rect>{};
       return;
     }
-    final camera = next.activeWorkspaceFor(before!.monitorId);
+    final camera = next.activeWorkspaceFor(before.monitorId);
     _overviewDepartingFrames = <int, Rect>{
       for (final entry in before.frames.entries)
         if (next.placements[entry.key] case final placement?)
@@ -766,6 +750,7 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
     );
     final windowsById = topology.windowsById;
     final desktopVisible = ref.watch(desktopVisibleProvider);
+    final overviewMotion = ref.watch(desktopOverviewMotionProvider).presence;
     final popupSurfaces = topology.popupSurfaces;
     final placements = topology.placements
         .where(
@@ -962,9 +947,9 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                         onUpdateOverviewDrag: onUpdateOverviewDrag,
                         onEndOverviewDrag: onEndOverviewDrag,
                         onCancelOverviewDrag: onCancelOverviewDrag,
-                        overviewEntryFrames: _overviewEntryFrames,
                         overviewDepartingFrames: _overviewDepartingFrames,
                         heldLayers: heldLayers,
+                        overviewMotion: overviewMotion,
                       ),
                     ),
                   ),
@@ -978,6 +963,7 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                 onBarrierTap: onOverviewBarrierTap,
                 decoration: DesktopWorkspaceOverviewDeck(
                   desktop: desktop,
+                  motion: overviewMotion,
                   onSelectWorkspace: widget.onSelectOverviewWorkspace,
                   onExpandScreenStack: widget.onExpandScreenStack,
                 ),
@@ -1027,9 +1013,9 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                         onUpdateOverviewDrag: onUpdateOverviewDrag,
                         onEndOverviewDrag: onEndOverviewDrag,
                         onCancelOverviewDrag: onCancelOverviewDrag,
-                        overviewEntryFrames: _overviewEntryFrames,
                         overviewDepartingFrames: _overviewDepartingFrames,
                         heldLayers: heldLayers,
+                        overviewMotion: overviewMotion,
                       ),
                     ),
                   ),
