@@ -1594,6 +1594,7 @@
   "colorPresetMono": "黑白",
   "colorTuningPresets": "预设",
   "moveToMonitor": "移到显示器",
+  "recentsCloseAppWindows": "关闭“{app}”的全部 {count} 个窗口",
   "setupWelcome": "欢迎",
   "setupLanguageBody": "选择语言。",
   "setupWifiTitle": "Wi-Fi",

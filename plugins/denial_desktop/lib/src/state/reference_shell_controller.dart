@@ -11,7 +11,9 @@ import 'package:denial_flutter_sdk/motion.dart' show ShellSprings;
 import 'package:denial_flutter_sdk/platform.dart';
 import 'package:denial_flutter_sdk/state.dart';
 
+import '../launcher/home_icon_locator.dart' show launcherAppIdentity;
 import 'app_deck.dart';
+import 'deck_order.dart';
 import 'reference_shell_state.dart';
 import 'input_deck.dart';
 import 'left_app.dart';
@@ -743,12 +745,19 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
         velocity: slides ? -toward : 0,
       );
       _deck.attached.settle(1, ShellSprings.appStrip);
-      // Out of an app the previous app comes to the middle; otherwise the
-      // row settles on the card nearest, never on home.
+      // Recents shows the windows of one app side by side, the cards moving
+      // into place as they shrink.
+      _deck.reorder(
+        groupedByApp(_deck.order, deckAppKeyOf),
+        ShellSprings.recentsOpen,
+      );
+      // Out of an app the app used before it comes to the middle; otherwise
+      // the row settles on the card nearest, never on home.
       final last = _deck.length - 1;
       final row = _deck.row;
+      final frontApp = state.deckAppOf(state.foregroundObjectId);
       final target = front != null && !caught
-          ? (front > 0 ? front - 1 : math.min(last, front + 1))
+          ? _deck.indexOf(_appBefore(frontApp)) ?? _deck.indexOf(frontApp) ?? 0
           : row.target.round().clamp(0, math.max(0, last));
       if (last >= 0 && row.target != target) {
         row.settle(target.toDouble(), ShellSprings.recentsOpen);
@@ -1182,7 +1191,9 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
 
   /// The deck at rest: the row is the frozen switch order while it lasts,
   /// else the stacking order, and the screen is on the app in front, or on
-  /// home past the newest app.
+  /// home past the newest app. Recents groups it by app when it opens
+  /// ([openOverview]); the home pill's quick switch keeps this order, so the
+  /// app used before is always one swipe away.
   void _arrangeDeck() {
     if (_deck.presenting.value) return;
     final current = state;
@@ -1199,6 +1210,23 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
       current.deckAppOf(current.foregroundObjectId) ?? -1,
     );
     _deck.arrange(order, rowAt: (front < 0 ? order.length : front).toDouble());
+  }
+
+  /// The app in front most recently before [front], or null without one.
+  int? _appBefore(int? front) {
+    final order = _recencyOrder();
+    for (final id in order.reversed) {
+      if (id != front) return id;
+    }
+    return null;
+  }
+
+  /// The app a deck window belongs to, as Recents groups them: the window's
+  /// app id; none for a window without one.
+  String? deckAppKeyOf(int objectId) {
+    final appId = state.openAppWindowsByObjectId[objectId]?.appId ?? '';
+    final key = launcherAppIdentity(appId);
+    return key.isEmpty ? null : key;
   }
 
   /// The row while the deck presents: its own order, without the apps that

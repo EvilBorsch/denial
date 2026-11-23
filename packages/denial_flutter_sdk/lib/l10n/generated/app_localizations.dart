@@ -9504,6 +9504,12 @@ abstract class AppLocalizations {
   /// **'Move to monitor'**
   String get moveToMonitor;
 
+  /// Accessibility label of the button on a tablet recents card that closes every window of the card's app.
+  ///
+  /// In en, this message translates to:
+  /// **'Close all {count} windows of {app}'**
+  String recentsCloseAppWindows(String app, int count);
+
   /// First-boot setup: title of the language step.
   ///
   /// In en, this message translates to:

@@ -5071,6 +5071,11 @@ class AppLocalizationsZh extends AppLocalizations {
   String get moveToMonitor => '移到显示器';
 
   @override
+  String recentsCloseAppWindows(String app, int count) {
+    return '关闭“$app”的全部 $count 个窗口';
+  }
+
+  @override
   String get setupWelcome => '欢迎';
 
   @override

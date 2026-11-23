@@ -5326,6 +5326,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get moveToMonitor => 'Move to monitor';
 
   @override
+  String recentsCloseAppWindows(String app, int count) {
+    return 'Close all $count windows of $app';
+  }
+
+  @override
   String get setupWelcome => 'Welcome';
 
   @override

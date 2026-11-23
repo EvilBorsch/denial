@@ -82,20 +82,23 @@ Baseline screenshots: `D:\androidlinux\device-logs\eb18-baseline\m*.png`.
 
 ### 3. Recents: windows of one app together
 
-- The row's order groups the windows of one app next to each other: groups
-  are ordered by their most recent window, windows inside a group by their
-  own recency. The window in front stays the last card, so switching apps
-  with the pill, opening Recents and going home behave as before; the
-  previous card of a window is now the app's other window, which is what a
-  pill swipe should reach first.
+- When Recents opens, its row groups the windows of one app next to each
+  other: apps in the order of their most recent window, an app's windows in
+  their own order, the window in front last. The cards slide into place as
+  they shrink. The card in the middle is the app used before the one in
+  front, as before.
+- The home pill's sideways quick switch keeps the order the apps were in
+  front in, so the app used before is always one swipe away, even when the
+  app in front has several windows (grouping that row too would put the
+  app's other window first).
 - A card whose app has more than one window shows two lines above it: the
   app name, and that window's title under it, so cards of one app tell
   apart. A card of a single-window app keeps one line, as now (48 px icon,
   17 px name; the title line is 14 px).
 - Cards of a multi-window app carry a "close all" button (× and the count,
   44 px tall) at the end of their label: it closes every window of the
-  app, each card leaving as a flung one does. Flinging one card closes that
-  window, as now.
+  app, each card on screen leaving as a flung one does. Flinging one card
+  closes that window, as now.
 
 ## Split View (iPadOS-like), two apps side by side
 

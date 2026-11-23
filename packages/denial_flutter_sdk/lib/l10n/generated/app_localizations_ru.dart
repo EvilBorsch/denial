@@ -5379,6 +5379,11 @@ class AppLocalizationsRu extends AppLocalizations {
   String get moveToMonitor => 'Перенести на монитор';
 
   @override
+  String recentsCloseAppWindows(String app, int count) {
+    return 'Закрыть все окна приложения «$app» ($count)';
+  }
+
+  @override
   String get setupWelcome => 'Добро пожаловать';
 
   @override

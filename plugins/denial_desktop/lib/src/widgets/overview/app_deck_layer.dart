@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:motor/motor.dart' as motor;
 
 import 'package:denial_flutter_sdk/localization.dart';
@@ -15,6 +16,8 @@ import 'package:denial_flutter_sdk/motion.dart';
 import 'package:denial_flutter_sdk/rendering.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 
+import '../../launcher/home_icon_locator.dart' show launcherAppIdentity;
+import '../../launcher/window_application.dart';
 import 'overview_card_label.dart';
 import 'overview_chrome.dart';
 
@@ -25,6 +28,8 @@ import 'overview_chrome.dart';
 ///
 /// In recents a tap opens a card, a card swiped up closes its app, a
 /// sideways drag scrolls the row, and a tap beside the cards goes home.
+/// Cards of an app with several windows name their window under the app,
+/// and carry a button that closes them all.
 class AppDeckLayer extends StatefulWidget {
   const AppDeckLayer({
     super.key,
@@ -102,6 +107,12 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
   var _windows = <int, DenialWindow>{};
   final _poses = <int, ValueNotifier<WindowPose>>{};
 
+  /// The deck's windows of each app, by window: the window's app's windows.
+  var _appWindows = <int, List<int>>{};
+
+  /// Cards told to leave by a close-all: they go as a flung card goes.
+  var _closing = <int>{};
+
   /// The apps drawn, back to front.
   List<int> _drawn = const <int>[];
   bool _presenting = false;
@@ -159,6 +170,23 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
 
   void _indexWindows() {
     _windows = {for (final window in widget.windows) window.objectId: window};
+    final byApp = <String, List<int>>{};
+    final appWindows = <int, List<int>>{};
+    for (final window in widget.windows) {
+      final app = launcherAppIdentity(window.appId);
+      if (app.isEmpty) {
+        appWindows[window.objectId] = [window.objectId];
+        continue;
+      }
+      final windows = byApp[app] ??= <int>[];
+      windows.add(window.objectId);
+      appWindows[window.objectId] = windows;
+    }
+    _appWindows = appWindows;
+    _closing = {
+      for (final id in _closing)
+        if (_windows.containsKey(id)) id,
+    };
     _poses.removeWhere((id, pose) {
       if (_windows.containsKey(id)) return false;
       WidgetsBinding.instance.addPostFrameCallback((_) => pose.dispose());
@@ -195,6 +223,28 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
         _presenting = presenting;
         _drawn = ids;
       });
+    }
+  }
+
+  /// The close-all of [window]'s card: every card of its app leaves, as a
+  /// flung card does. Cards off screen have nothing to show and leave at
+  /// once.
+  void _closeApp(DenialWindow window) {
+    final windows = _appWindows[window.objectId] ?? [window.objectId];
+    final drawn = _drawn.toSet();
+    final animated = <int>{};
+    for (final id in windows) {
+      final card = _windows[id];
+      if (card == null) continue;
+      if (drawn.contains(id)) {
+        animated.add(id);
+      } else {
+        widget.onLeaveWindow(card);
+        widget.onDismissWindow(card);
+      }
+    }
+    if (animated.isNotEmpty) {
+      setState(() => _closing = {..._closing, ...animated});
     }
   }
 
@@ -335,9 +385,12 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
                         pose: pose,
                         labelWidth: geometry.card.width,
                         labelOpacity: _labelOpacity,
+                        appWindowCount: _appWindows[id]?.length ?? 1,
+                        closing: _closing.contains(id),
                         onOpen: widget.onOpenWindow,
                         onLeaving: widget.onLeaveWindow,
                         onDismissed: widget.onDismissWindow,
+                        onCloseApp: _closeApp,
                         onMoveToDesk: widget.onMoveWindowToDesk,
                       ),
                 ],
@@ -360,9 +413,12 @@ class _DeckCard extends StatefulWidget {
     required this.pose,
     required this.labelWidth,
     required this.labelOpacity,
+    this.appWindowCount = 1,
+    this.closing = false,
     required this.onOpen,
     required this.onLeaving,
     required this.onDismissed,
+    this.onCloseApp,
     this.onMoveToDesk,
   });
 
@@ -375,6 +431,13 @@ class _DeckCard extends StatefulWidget {
 
   /// The app's icon and name above the card; none without it.
   final Animation<double>? labelOpacity;
+
+  /// How many windows of the card's app Recents shows. With more than one,
+  /// the label names the window and offers to close them all.
+  final int appWindowCount;
+
+  /// A close-all of the app sends the card away.
+  final bool closing;
   final ValueChanged<DenialWindow> onOpen;
 
   /// The card was thrown away: the row may close over it at once.
@@ -382,6 +445,9 @@ class _DeckCard extends StatefulWidget {
 
   /// The thrown card has left the screen: its app closes.
   final ValueChanged<DenialWindow> onDismissed;
+
+  /// Closes every window of the card's app.
+  final ValueChanged<DenialWindow>? onCloseApp;
   final ValueChanged<DenialWindow>? onMoveToDesk;
 
   @override
@@ -396,6 +462,9 @@ class _DeckCardState extends State<_DeckCard>
   static const double _dismissDistanceRatio = 0.5;
   static const double _dismissFlingVelocity = 1000.0;
   static const double _offscreenMargin = 16.0;
+
+  /// How fast a close-all sends a card up, in logical pixels per second.
+  static const double _closeAllVelocity = 2400.0;
 
   /// A card swiped away shrinks as it leaves.
   static const double _dismissShrink = 0.1;
@@ -423,6 +492,13 @@ class _DeckCardState extends State<_DeckCard>
   void didUpdateWidget(covariant _DeckCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.pose != oldWidget.pose) _pose.base = widget.pose;
+    if (widget.closing && !oldWidget.closing) {
+      _pose.length = math.max(
+        1.0,
+        _pose.base.value.rect.bottom + _offscreenMargin,
+      );
+      _leave(-_closeAllVelocity);
+    }
   }
 
   @override
@@ -480,15 +556,22 @@ class _DeckCardState extends State<_DeckCard>
     // The release's direction comes before distance: thrown back down, a
     // card returns even past the threshold.
     if (flingUp || (passed && !flingDown)) {
-      _leaving = true;
-      _exit = -_pose.length;
-      _throw
-        ..motion = ShellSprings.cardDismiss
-        ..animateTo(_exit, withVelocity: velocity);
-      widget.onLeaving(widget.window);
+      _leave(velocity);
     } else {
       _settleBack(velocity);
     }
+  }
+
+  /// The card leaves upward at [velocity], and its window closes once it
+  /// is gone.
+  void _leave(double velocity) {
+    if (_leaving) return;
+    _leaving = true;
+    _exit = -_pose.length;
+    _throw
+      ..motion = ShellSprings.cardDismiss
+      ..animateTo(_exit, withVelocity: velocity);
+    widget.onLeaving(widget.window);
   }
 
   void _settleBack([double velocity = 0]) {
@@ -518,6 +601,27 @@ class _DeckCardState extends State<_DeckCard>
   Widget build(BuildContext context) {
     final labelOpacity = widget.labelOpacity;
     final onMoveToDesk = widget.onMoveToDesk;
+    final onCloseApp = widget.appWindowCount > 1 ? widget.onCloseApp : null;
+    final buttons = [
+      if (onCloseApp != null)
+        _CloseAppButton(
+          window: widget.window,
+          count: widget.appWindowCount,
+          onTap: () {
+            if (!_leaving) onCloseApp(widget.window);
+          },
+        ),
+      if (onMoveToDesk != null)
+        _MoveToDeskButton(
+          onTap: () {
+            if (!_leaving) onMoveToDesk(widget.window);
+          },
+        ),
+    ];
+    final buttonsWidth =
+        (onCloseApp == null ? 0.0 : _CloseAppButton.width) +
+        (onMoveToDesk == null ? 0.0 : _MoveToDeskButton.size) +
+        (buttons.length > 1 ? OverviewCardLabel.gap : 0.0);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -565,9 +669,10 @@ class _DeckCardState extends State<_DeckCard>
                   opacity: labelOpacity,
                   child: OverviewCardLabel(
                     window: widget.window,
-                    trailingSpace: onMoveToDesk == null
+                    showsTitle: widget.appWindowCount > 1,
+                    trailingSpace: buttons.isEmpty
                         ? 0
-                        : _MoveToDeskButton.size + OverviewCardLabel.gap,
+                        : buttonsWidth + OverviewCardLabel.gap,
                   ),
                 ),
               ),
@@ -586,8 +691,8 @@ class _DeckCardState extends State<_DeckCard>
             onVerticalDragCancel: _settleBack,
           ),
         ),
-        if (labelOpacity != null && onMoveToDesk != null)
-          // The translation spans the deck, so a tap on the button is tested
+        if (labelOpacity != null && buttons.isNotEmpty)
+          // The translation spans the deck, so a tap on a button is tested
           // where the label is drawn, not at the label's untranslated slot.
           Positioned.fill(
             child: CompositedTranslation(
@@ -604,10 +709,15 @@ class _DeckCardState extends State<_DeckCard>
                       opacity: labelOpacity,
                       child: Align(
                         alignment: AlignmentDirectional.centerEnd,
-                        child: _MoveToDeskButton(
-                          onTap: () {
-                            if (!_leaving) onMoveToDesk(widget.window);
-                          },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final (index, button) in buttons.indexed) ...[
+                              if (index > 0)
+                                const SizedBox(width: OverviewCardLabel.gap),
+                              button,
+                            ],
+                          ],
                         ),
                       ),
                     ),
@@ -715,6 +825,67 @@ class _RenderPoseHitRegion extends RenderProxyBox {
       return false;
     }
     return super.hitTest(result, position: position);
+  }
+}
+
+/// Closes every window of a card's app: a × and how many.
+class _CloseAppButton extends ConsumerWidget {
+  const _CloseAppButton({
+    required this.window,
+    required this.count,
+    required this.onTap,
+  });
+
+  static const double width = 72;
+  static const double height = 44;
+
+  final DenialWindow window;
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dark = ShellTheme.of(context).brightness == Brightness.dark;
+    final ink = dark ? const Color(0xFFF5F5F7) : const Color(0xFF1C1C1E);
+    final application = ref.watch(windowApplicationProvider(window.appId));
+    final app = application.name ?? localizedWindowTitle(context, window);
+    return Semantics(
+      button: true,
+      label: context.l10n.recentsCloseAppWindows(app, count),
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(height / 2),
+            color: dark ? const Color(0x73000000) : const Color(0x8CFFFFFF),
+            border: Border.all(
+              color: dark ? const Color(0x24FFFFFF) : const Color(0x1F000000),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.close_rounded, size: 20, color: ink),
+              const SizedBox(width: 4),
+              Text(
+                '$count',
+                style: TextStyle(
+                  color: ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
