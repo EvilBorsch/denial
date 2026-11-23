@@ -93,6 +93,8 @@ mod lifecycle;
 mod local_windows;
 #[path = "deniald/loop_wake.rs"]
 mod loop_wake;
+#[path = "deniald/mac_keys.rs"]
+mod mac_keys;
 #[path = "deniald/native_shortcut.rs"]
 mod native_shortcut;
 #[cfg(feature = "flutter")]
