@@ -19,7 +19,7 @@ the Settings portal, `org.freedesktop.portal.Settings` (`ReadOne`, `ReadAll`,
 | Namespace / key | Type | Value |
 |---|---|---|
 | `org.denialwm.shell` `presentation` | `s` | `tablet` or `desktop` |
-| `org.denialwm.shell` `keyboard-attached` | `b` | a keyboard to type on is attached, such as a keyboard cover |
+| `org.denialwm.shell` `keyboard-attached` | `b` | a physical keyboard to type on is attached, such as a keyboard cover: the keyboards the shell's presentation follows, not virtual (uinput) ones such as a test tool's |
 | `org.denialwm.shell` `tablet-mode` | `b` | apps should show their touch layouts: the presentation is `tablet` and `apps.followMode` is on |
 
 `tablet-mode` is what an app or adapter follows; `presentation` and

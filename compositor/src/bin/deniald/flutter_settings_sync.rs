@@ -726,7 +726,7 @@ fn synchronize_committed_theme(
     let settings = &events.frontend().settings;
     let shell = settings.apps_follow().shell_state(
         events.shell_presentation,
-        !events.input_devices.typing_keyboards.is_empty(),
+        events.input_devices.keyboard_attached_for_apps(),
     );
     let snapshot = settings
         .theme_snapshot()
