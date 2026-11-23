@@ -53,6 +53,9 @@ const DEFAULT_TOUCHPAD_SCROLL_SPEED_FACTOR: f64 = 1.0;
 pub(super) const MIN_TOUCHPAD_SCROLLING_LAYOUT_SWIPE_SPEED_FACTOR: f64 = 0.25;
 pub(super) const MAX_TOUCHPAD_SCROLLING_LAYOUT_SWIPE_SPEED_FACTOR: f64 = 4.0;
 const DEFAULT_TOUCHPAD_SCROLLING_LAYOUT_SWIPE_SPEED_FACTOR: f64 = 1.0;
+pub(super) const MIN_TOUCHPAD_SPEED: f64 = -1.0;
+pub(super) const MAX_TOUCHPAD_SPEED: f64 = 1.0;
+const DEFAULT_TOUCHPAD_SPEED: f64 = 0.0;
 pub(super) const MIN_SCROLLING_LAYOUT_WHEEL_SPEED: f64 = 0.25;
 pub(super) const MAX_SCROLLING_LAYOUT_WHEEL_SPEED: f64 = 4.0;
 const DEFAULT_SCROLLING_LAYOUT_WHEEL_SPEED: f64 = 1.0;
@@ -493,6 +496,10 @@ pub(super) struct TouchpadSettings {
     pub(super) natural_scroll_enabled: bool,
     pub(super) scroll_speed_factor: f64,
     pub(super) scrolling_layout_swipe_speed_factor: f64,
+    /// libinput's pointer speed, as for a mouse.
+    pub(super) speed: f64,
+    /// libinput's adaptive profile when on, its flat profile when off.
+    pub(super) acceleration_enabled: bool,
 }
 
 impl Default for TouchpadSettings {
@@ -503,12 +510,21 @@ impl Default for TouchpadSettings {
             scroll_speed_factor: DEFAULT_TOUCHPAD_SCROLL_SPEED_FACTOR,
             scrolling_layout_swipe_speed_factor:
                 DEFAULT_TOUCHPAD_SCROLLING_LAYOUT_SWIPE_SPEED_FACTOR,
+            speed: DEFAULT_TOUCHPAD_SPEED,
+            acceleration_enabled: true,
         }
     }
 }
 
 impl TouchpadSettings {
     pub(super) fn validate(&self) -> Result<(), SettingsError> {
+        if !self.speed.is_finite()
+            || !(MIN_TOUCHPAD_SPEED..=MAX_TOUCHPAD_SPEED).contains(&self.speed)
+        {
+            return Err(SettingsError::Touchpad(format!(
+                "touchpad speed must be within {MIN_TOUCHPAD_SPEED}..={MAX_TOUCHPAD_SPEED}"
+            )));
+        }
         if !self.scroll_speed_factor.is_finite()
             || !(MIN_TOUCHPAD_SCROLL_SPEED_FACTOR..=MAX_TOUCHPAD_SCROLL_SPEED_FACTOR)
                 .contains(&self.scroll_speed_factor)
@@ -1489,6 +1505,7 @@ fn parse_document(bytes: &[u8]) -> Result<ParsedSettingsDocument, SettingsError>
         None => TouchpadSettings::default(),
     };
     touchpad.validate()?;
+    let had_every_touchpad_field = section_has_every_field(&document, "touchpad", &touchpad);
     let color = match document.get("color") {
         Some(value) => serde_json::from_value::<ColorSettings>(value.clone())?,
         None => ColorSettings::default(),
@@ -1584,7 +1601,7 @@ fn parse_document(bytes: &[u8]) -> Result<ParsedSettingsDocument, SettingsError>
         || !document.contains_key("revision")
         || !document.contains_key("keyboard")
         || !document.contains_key("mouse")
-        || !document.contains_key("touchpad")
+        || !had_every_touchpad_field
         || !had_application_environment
         || !had_color_scheme_preference
         || !had_allow_client_cursor_surfaces
@@ -1626,6 +1643,23 @@ fn parse_document(bytes: &[u8]) -> Result<ParsedSettingsDocument, SettingsError>
         application_environment,
         migrated,
     })
+}
+
+/// Whether the document's `section` holds every field `value` serializes. A
+/// section saved before a field existed reads that field's default; the
+/// document is then rewritten once so that the file shows the value in use.
+fn section_has_every_field(
+    document: &Map<String, Value>,
+    section: &str,
+    value: &impl Serialize,
+) -> bool {
+    let Some(present) = document.get(section).and_then(Value::as_object) else {
+        return false;
+    };
+    match serde_json::to_value(value) {
+        Ok(Value::Object(fields)) => fields.keys().all(|field| present.contains_key(field)),
+        _ => false,
+    }
 }
 
 fn default_document(mobile: bool) -> (Map<String, Value>, u64, TypedSettings) {

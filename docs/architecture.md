@@ -288,13 +288,18 @@ Touchpad preferences live in the native-owned `touchpad` section:
     "tapToClickEnabled": true,
     "naturalScrollEnabled": false,
     "scrollSpeedFactor": 1.0,
-    "scrollingLayoutSwipeSpeedFactor": 1.0
+    "scrollingLayoutSwipeSpeedFactor": 1.0,
+    "speed": 0.0,
+    "accelerationEnabled": true
   }
 }
 ```
 
 Denial applies the device preferences through libinput when a touchpad appears
-and on every live update. The scrolling-layout swipe factor instead scales only
+and on every live update. `speed` (-1 to 1) and `accelerationEnabled` (libinput's
+adaptive profile, or its flat one when off) work as the mouse's do, on
+libinput's own touchpad curve. A section saved before a field existed reads
+its default and is rewritten with it when deniald loads the document. The scrolling-layout swipe factor instead scales only
 the compositor-owned continuous three-finger gesture, including its release
 projection; it does not affect two-finger content scrolling or shortcut swipes.
 The shell receives touchpad presence separately so controls are disabled when

@@ -2100,3 +2100,65 @@ fn shell_presentation_rejects_requests_and_unknown_kinds() {
     ));
     assert_eq!(bridge.take_shell_presentation(), None);
 }
+
+#[test]
+fn shell_touchpad_request_keeps_the_settings_it_does_not_carry() {
+    let mut bridge = bridge();
+    let mut builder = FlatBufferBuilder::new();
+    let touchpad = fb::TouchpadConfiguration::create(
+        &mut builder,
+        &fb::TouchpadConfigurationArgs {
+            tap_to_click_enabled: false,
+            natural_scroll_enabled: true,
+            scroll_speed_factor: 1.5,
+            scrolling_layout_swipe_speed_factor: 2.0,
+        },
+    );
+    let request = fb::SettingsRequest::create(
+        &mut builder,
+        &fb::SettingsRequestArgs {
+            kind: fb::SettingsRequestKind::ConfigureTouchpad,
+            expected_revision: 4,
+            touchpad: Some(touchpad),
+            ..Default::default()
+        },
+    );
+    let envelope = fb::Envelope::create(
+        &mut builder,
+        &fb::EnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            sequence: 1,
+            request_id: 21,
+            payload_type: fb::Payload::SettingsRequest,
+            payload: Some(request.as_union_value()),
+        },
+    );
+    fb::finish_envelope_buffer(&mut builder, envelope);
+    assert!(bridge.handle(builder.finished_data()).unwrap().is_none());
+    let commands = bridge.drain_settings_commands().collect::<Vec<_>>();
+    let [
+        SettingsCommand::ConfigureTouchpad {
+            request_id: 21,
+            expected_revision: 4,
+            touchpad,
+        },
+    ] = commands.as_slice()
+    else {
+        panic!("expected one touchpad request, got {commands:?}");
+    };
+    let current = TouchpadSettings {
+        speed: 0.6,
+        acceleration_enabled: false,
+        ..TouchpadSettings::default()
+    };
+    assert_eq!(
+        touchpad.applied_to(&current),
+        TouchpadSettings {
+            tap_to_click_enabled: false,
+            natural_scroll_enabled: true,
+            scroll_speed_factor: 1.5,
+            scrolling_layout_swipe_speed_factor: 2.0,
+            ..current
+        }
+    );
+}

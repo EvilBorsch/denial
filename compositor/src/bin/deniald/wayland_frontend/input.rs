@@ -1578,6 +1578,34 @@ fn configure_touchpad_device(
             })?;
     }
 
+    // libinput's own touchpad curve, with the same speed and profile choice
+    // as a mouse's.
+    let acceleration_supported = device.config_accel_is_available();
+    let acceleration_profile = if settings.acceleration_enabled {
+        AccelProfile::Adaptive
+    } else {
+        AccelProfile::Flat
+    };
+    if acceleration_supported {
+        device
+            .config_accel_set_speed(settings.speed)
+            .map_err(|error| {
+                format!(
+                    "could not set pointer speed on {} to {}: {error:?}",
+                    device.name(),
+                    settings.speed
+                )
+            })?;
+        device
+            .config_accel_set_profile(acceleration_profile)
+            .map_err(|error| {
+                format!(
+                    "could not set pointer acceleration on {} to {acceleration_profile:?}: {error:?}",
+                    device.name()
+                )
+            })?;
+    }
+
     info!(
         device = %device.name(),
         finger_count,
@@ -1585,6 +1613,9 @@ fn configure_touchpad_device(
         natural_scroll_enabled = settings.natural_scroll_enabled,
         natural_scroll_supported,
         two_finger_right_click = finger_count >= 2,
+        speed = settings.speed,
+        ?acceleration_profile,
+        acceleration_supported,
         "configured touchpad"
     );
     Ok(())
