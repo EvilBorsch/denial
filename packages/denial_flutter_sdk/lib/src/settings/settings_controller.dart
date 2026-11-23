@@ -580,7 +580,7 @@ class ShellSettingsController extends Notifier<ShellSettings> {
           idleLockTimeoutSeconds: value
               .clamp(
                 ShellPowerSettings.minimumIdleTimeoutSeconds,
-                state.power.idleSuspendTimeoutSeconds,
+                ShellPowerSettings.maximumIdleTimeoutSeconds,
               )
               .toInt(),
         ),
@@ -597,13 +597,7 @@ class ShellSettingsController extends Notifier<ShellSettings> {
         .toInt();
     _update(
       state.copyWith(
-        power: state.power.copyWith(
-          idleDpmsTimeoutSeconds: timeout,
-          idleSuspendTimeoutSeconds:
-              timeout > state.power.idleSuspendTimeoutSeconds
-              ? timeout
-              : state.power.idleSuspendTimeoutSeconds,
-        ),
+        power: state.power.copyWith(idleDpmsTimeoutSeconds: timeout),
       ),
     );
   }
@@ -624,7 +618,10 @@ class ShellSettingsController extends Notifier<ShellSettings> {
     _update(state.copyWith(power: state.power.copyWith(suspendMode: value)));
   }
 
-  void setIdleSuspendTimeoutSeconds(int value) {
+  /// How long after the screen went dark the system suspends; see
+  /// [ShellPowerSettings.idleSuspendAfterScreenOffSeconds]. The display and
+  /// lock timeouts are left as they are.
+  void setIdleSuspendAfterScreenOffSeconds(int value) {
     final timeout = value
         .clamp(
           ShellPowerSettings.minimumIdleTimeoutSeconds,
@@ -633,15 +630,7 @@ class ShellSettingsController extends Notifier<ShellSettings> {
         .toInt();
     _update(
       state.copyWith(
-        power: state.power.copyWith(
-          idleLockTimeoutSeconds: state.power.idleLockTimeoutSeconds > timeout
-              ? timeout
-              : state.power.idleLockTimeoutSeconds,
-          idleDpmsTimeoutSeconds: state.power.idleDpmsTimeoutSeconds > timeout
-              ? timeout
-              : state.power.idleDpmsTimeoutSeconds,
-          idleSuspendTimeoutSeconds: timeout,
-        ),
+        power: state.power.copyWith(idleSuspendAfterScreenOffSeconds: timeout),
       ),
     );
   }

@@ -109,10 +109,22 @@ fn packet_is_versioned_bounded_ordered_and_preserves_optional_actions() {
         decode_configuration(&packet(0, 0, 1, 1)),
         Err(IdlePolicyPacketError::ZeroTimeout("lock"))
     ));
-    assert!(matches!(
-        decode_configuration(&packet(0, 2, 1, 1)),
-        Err(IdlePolicyPacketError::TimeoutAfterSuspend("lock"))
-    ));
+    // The suspend counts from the screen going dark: it may be shorter than
+    // the lock and display timeouts.
+    assert_eq!(
+        decode_configuration(&packet(
+            LOCK_ENABLED | DPMS_ENABLED | SUSPEND_ENABLED,
+            2_000,
+            3_000,
+            1_000
+        ))
+        .unwrap(),
+        configuration(
+            Some(Duration::from_secs(2)),
+            Some(Duration::from_secs(3)),
+            Some(Duration::from_secs(1)),
+        )
+    );
     let too_large = u64::try_from(MAX_TIMEOUT.as_millis()).unwrap() + 1;
     assert!(matches!(
         decode_configuration(&packet(0, 1, 1, too_large)),
@@ -446,7 +458,7 @@ fn inactivity_triggers_lock_dpms_and_suspend_once_in_threshold_order() {
         configuration(
             Some(Duration::from_secs(5)),
             Some(Duration::from_secs(10)),
-            Some(Duration::from_secs(15)),
+            Some(Duration::from_secs(5)),
         ),
         started,
     );
@@ -473,6 +485,21 @@ fn inactivity_triggers_lock_dpms_and_suspend_once_in_threshold_order() {
             output: output(1),
             powered: false,
         }]
+    );
+    // The compositor commits the power-off: the suspend counts from there.
+    policy.note_outputs_dark(true, started + Duration::from_secs(10));
+    assert_eq!(
+        policy.next_deadline(),
+        Some(started + Duration::from_secs(15))
+    );
+    assert!(
+        !policy
+            .evaluate(
+                started + Duration::from_secs(14),
+                false,
+                [(output(1), false), (output(2), false)],
+            )
+            .suspend
     );
 
     let suspend = policy.evaluate(
@@ -519,7 +546,7 @@ fn resume_without_input_suspends_again_after_a_fresh_interval() {
         configuration(
             Some(Duration::from_secs(5)),
             Some(Duration::from_secs(10)),
-            Some(Duration::from_secs(15)),
+            Some(Duration::from_secs(5)),
         ),
         started,
     );
@@ -529,6 +556,7 @@ fn resume_without_input_suspends_again_after_a_fresh_interval() {
         false,
         [(output(1), true)],
     );
+    policy.note_outputs_dark(true, started + Duration::from_secs(10));
     assert!(
         policy
             .evaluate(
@@ -540,7 +568,8 @@ fn resume_without_input_suspends_again_after_a_fresh_interval() {
     );
     assert_eq!(policy.next_deadline(), None);
 
-    // An alarm wakes the system; `Instant` did not advance during sleep.
+    // An alarm wakes the system; `Instant` did not advance during sleep. The
+    // screen stays dark, and the suspend counts again from the resume.
     let resumed = started + Duration::from_secs(16);
     policy.note_resume(resumed);
     assert_eq!(
@@ -555,21 +584,13 @@ fn resume_without_input_suspends_again_after_a_fresh_interval() {
     assert!(!early.suspend);
     assert!(early.power_requests.is_empty());
 
-    // The dark screen stays dark and the locked session stays locked.
-    let display_off = policy.evaluate(
-        resumed + Duration::from_secs(10),
+    let again = policy.evaluate(
+        resumed + Duration::from_secs(5),
         false,
         [(output(1), false)],
     );
-    assert!(display_off.power_requests.is_empty());
-    assert!(!display_off.suspend);
-    let suspend = policy.evaluate(
-        resumed + Duration::from_secs(15),
-        false,
-        [(output(1), false)],
-    );
-    assert!(suspend.suspend);
-    assert!(suspend.power_requests.is_empty());
+    assert!(again.suspend);
+    assert!(again.power_requests.is_empty());
 
     // A touch still lights the screen the idle policy blanked.
     assert_eq!(
@@ -582,14 +603,14 @@ fn resume_without_input_suspends_again_after_a_fresh_interval() {
 }
 
 #[test]
-fn equal_dpms_and_suspend_thresholds_commit_display_off_first() {
+fn the_suspend_counts_from_the_committed_display_power_off() {
     let started = Instant::now();
     let mut policy = IdlePolicy::default();
     policy.configure(
         configuration(
             None,
             Some(Duration::from_secs(10)),
-            Some(Duration::from_secs(10)),
+            Some(Duration::from_secs(5)),
         ),
         started,
     );
@@ -601,18 +622,42 @@ fn equal_dpms_and_suspend_thresholds_commit_display_off_first() {
     );
     assert!(!first.suspend);
     assert_eq!(first.power_requests.len(), 1);
-    assert_eq!(
-        policy.next_deadline(),
-        Some(started + Duration::from_secs(10))
+    // Not dark yet: nothing to count from.
+    assert_eq!(policy.next_deadline(), None);
+    assert!(
+        !policy
+            .evaluate(
+                started + Duration::from_secs(10),
+                false,
+                [(output(1), true)],
+            )
+            .suspend
     );
 
-    let second = policy.evaluate(
-        started + Duration::from_secs(10),
-        false,
-        [(output(1), false)],
+    let committed = started + Duration::from_millis(10_200);
+    policy.note_outputs_dark(true, committed);
+    assert_eq!(
+        policy.next_deadline(),
+        Some(committed + Duration::from_secs(5))
     );
-    assert!(second.suspend);
-    assert!(second.power_requests.is_empty());
+    assert!(
+        !policy
+            .evaluate(
+                started + Duration::from_secs(15),
+                false,
+                [(output(1), false)],
+            )
+            .suspend
+    );
+    assert!(
+        policy
+            .evaluate(
+                committed + Duration::from_secs(5),
+                false,
+                [(output(1), false)]
+            )
+            .suspend
+    );
 }
 
 #[test]
@@ -665,39 +710,32 @@ fn equal_lock_and_dpms_thresholds_delay_lock_until_after_display_off() {
 }
 
 #[test]
-fn equal_suspend_threshold_waits_for_the_delayed_lock() {
+fn the_suspend_does_not_wait_for_a_later_idle_lock() {
+    // The sleep transition locks the session before the system sleeps.
     let started = Instant::now();
     let mut policy = IdlePolicy::default();
     policy.configure(
         configuration(
+            Some(Duration::from_secs(60)),
             Some(Duration::from_secs(10)),
-            Some(Duration::from_secs(10)),
-            Some(Duration::from_secs(10)),
+            Some(Duration::from_secs(5)),
         ),
         started,
     );
-
     let display_off = policy.evaluate(
         started + Duration::from_secs(10),
         false,
         [(output(1), true)],
     );
-    assert!(!display_off.lock);
-    assert!(!display_off.suspend);
     assert_eq!(display_off.power_requests.len(), 1);
-    assert_eq!(
-        policy.next_deadline(),
-        Some(started + Duration::from_secs(15))
-    );
-
-    let lock_and_suspend = policy.evaluate(
+    policy.note_outputs_dark(true, started + Duration::from_secs(10));
+    let suspend = policy.evaluate(
         started + Duration::from_secs(15),
         false,
         [(output(1), false)],
     );
-    assert!(lock_and_suspend.lock);
-    assert!(lock_and_suspend.suspend);
-    assert!(lock_and_suspend.power_requests.is_empty());
+    assert!(suspend.suspend);
+    assert!(!suspend.lock);
 }
 
 #[test]
@@ -1061,11 +1099,25 @@ fn sleep_test_policy(started: Instant) -> IdlePolicy {
         configuration(
             Some(Duration::from_secs(5)),
             Some(Duration::from_secs(10)),
-            Some(Duration::from_secs(15)),
+            Some(Duration::from_secs(5)),
         ),
         started,
     );
     policy
+}
+
+/// The display timeout as the compositor carries it out: the power-off is
+/// asked for and committed at `at`.
+fn idle_screen_off(policy: &mut IdlePolicy, at: Instant) {
+    let dpms = policy.evaluate(at, false, [(output(1), true)]);
+    assert_eq!(
+        dpms.power_requests,
+        [IdlePowerRequest {
+            output: output(1),
+            powered: false,
+        }]
+    );
+    policy.note_outputs_dark(true, at);
 }
 
 #[test]
@@ -1076,18 +1128,7 @@ fn sleep_inhibitor_lets_the_screen_lock_and_go_dark_but_holds_suspend_off() {
 
     let lock = policy.evaluate(started + Duration::from_secs(5), false, [(output(1), true)]);
     assert!(lock.lock);
-    let dpms = policy.evaluate(
-        started + Duration::from_secs(10),
-        false,
-        [(output(1), true)],
-    );
-    assert_eq!(
-        dpms.power_requests,
-        [IdlePowerRequest {
-            output: output(1),
-            powered: false,
-        }]
-    );
+    idle_screen_off(&mut policy, started + Duration::from_secs(10));
 
     let held = policy.evaluate(
         started + Duration::from_secs(15),
@@ -1115,16 +1156,16 @@ fn sleep_inhibitor_lets_the_screen_lock_and_go_dark_but_holds_suspend_off() {
     policy.set_sleep_inhibited(false, released);
     assert_eq!(
         policy.next_deadline(),
-        Some(released + Duration::from_secs(15))
+        Some(released + Duration::from_secs(5))
     );
     let early = policy.evaluate(
-        released + Duration::from_secs(14),
+        released + Duration::from_secs(4),
         false,
         [(output(1), false)],
     );
     assert!(early.eq(&IdlePolicyActions::default()));
     let suspend = policy.evaluate(
-        released + Duration::from_secs(15),
+        released + Duration::from_secs(5),
         false,
         [(output(1), false)],
     );
@@ -1135,7 +1176,7 @@ fn sleep_inhibitor_lets_the_screen_lock_and_go_dark_but_holds_suspend_off() {
 }
 
 #[test]
-fn sleep_inhibitor_that_ends_early_moves_the_suspend_a_full_timeout_on() {
+fn a_sleep_inhibitor_that_ended_while_the_screen_was_lit_moves_nothing() {
     let started = Instant::now();
     let mut policy = sleep_test_policy(started);
     policy.set_sleep_inhibited(true, started + Duration::from_secs(1));
@@ -1146,19 +1187,15 @@ fn sleep_inhibitor_that_ends_early_moves_the_suspend_a_full_timeout_on() {
     policy.set_sleep_inhibited(false, started + Duration::from_secs(4));
 
     policy.evaluate(started + Duration::from_secs(5), false, [(output(1), true)]);
-    policy.evaluate(
-        started + Duration::from_secs(10),
-        false,
-        [(output(1), true)],
-    );
+    idle_screen_off(&mut policy, started + Duration::from_secs(10));
     assert_eq!(
         policy.next_deadline(),
-        Some(started + Duration::from_secs(18))
+        Some(started + Duration::from_secs(15))
     );
     assert!(
         !policy
             .evaluate(
-                started + Duration::from_secs(15),
+                started + Duration::from_secs(14),
                 false,
                 [(output(1), false)],
             )
@@ -1167,7 +1204,7 @@ fn sleep_inhibitor_that_ends_early_moves_the_suspend_a_full_timeout_on() {
     assert!(
         policy
             .evaluate(
-                started + Duration::from_secs(18),
+                started + Duration::from_secs(15),
                 false,
                 [(output(1), false)],
             )
@@ -1181,11 +1218,7 @@ fn activity_under_a_sleep_inhibitor_restarts_the_interval_and_the_report() {
     let mut policy = sleep_test_policy(started);
     policy.set_sleep_inhibited(true, started);
     policy.evaluate(started + Duration::from_secs(5), false, [(output(1), true)]);
-    policy.evaluate(
-        started + Duration::from_secs(10),
-        false,
-        [(output(1), true)],
-    );
+    idle_screen_off(&mut policy, started + Duration::from_secs(10));
     assert!(
         policy
             .evaluate(
@@ -1204,22 +1237,13 @@ fn activity_under_a_sleep_inhibitor_restarts_the_interval_and_the_report() {
             powered: true,
         }]
     );
+    policy.note_outputs_dark(false, touched);
     assert!(
         policy
             .evaluate(touched + Duration::from_secs(5), false, [(output(1), true)])
             .lock
     );
-    assert_eq!(
-        policy
-            .evaluate(
-                touched + Duration::from_secs(10),
-                false,
-                [(output(1), true)]
-            )
-            .power_requests
-            .len(),
-        1
-    );
+    idle_screen_off(&mut policy, touched + Duration::from_secs(10));
     let held = policy.evaluate(
         touched + Duration::from_secs(15),
         false,
@@ -1234,11 +1258,7 @@ fn end_of_a_sleep_inhibitor_asks_again_for_a_refused_suspend() {
     let started = Instant::now();
     let mut policy = sleep_test_policy(started);
     policy.evaluate(started + Duration::from_secs(5), false, [(output(1), true)]);
-    policy.evaluate(
-        started + Duration::from_secs(10),
-        false,
-        [(output(1), true)],
-    );
+    idle_screen_off(&mut policy, started + Duration::from_secs(10));
     // logind refused this one: an inhibitor appeared just before it.
     assert!(
         policy
@@ -1253,9 +1273,18 @@ fn end_of_a_sleep_inhibitor_asks_again_for_a_refused_suspend() {
     assert_eq!(policy.next_deadline(), None);
     policy.set_sleep_inhibited(false, started + Duration::from_secs(30));
     assert!(
+        !policy
+            .evaluate(
+                started + Duration::from_secs(34),
+                false,
+                [(output(1), false)],
+            )
+            .suspend
+    );
+    assert!(
         policy
             .evaluate(
-                started + Duration::from_secs(45),
+                started + Duration::from_secs(35),
                 false,
                 [(output(1), false)],
             )
@@ -1296,11 +1325,7 @@ fn idle_inhibitor_over_a_sleep_inhibitor_holds_everything_until_both_end() {
         false,
         [(output(1), true)],
     );
-    policy.evaluate(
-        idle_released + Duration::from_secs(10),
-        false,
-        [(output(1), true)],
-    );
+    idle_screen_off(&mut policy, idle_released + Duration::from_secs(10));
     let held = policy.evaluate(
         idle_released + Duration::from_secs(15),
         false,
@@ -1314,7 +1339,7 @@ fn idle_inhibitor_over_a_sleep_inhibitor_holds_everything_until_both_end() {
     assert!(
         policy
             .evaluate(
-                sleep_released + Duration::from_secs(15),
+                sleep_released + Duration::from_secs(5),
                 false,
                 [(output(1), false)],
             )
@@ -1550,4 +1575,239 @@ fn the_screen_off_request_beside_a_desk_darkens_only_the_phone() {
             IdlePolicyActions::default()
         );
     }
+}
+#[test]
+fn every_way_the_screen_goes_dark_starts_the_suspend_timeout() {
+    let now = Instant::now();
+    // The display timeout: 30 s, then 5 min.
+    let mut policy = phone_policy(now);
+    let idle = policy.evaluate(now + Duration::from_secs(30), false, [(output(1), true)]);
+    assert!(!idle.power_requests[0].powered);
+    policy.note_outputs_dark(true, now + Duration::from_secs(30));
+    assert_eq!(policy.next_deadline(), Some(now + Duration::from_secs(330)));
+    assert!(
+        policy
+            .evaluate(now + Duration::from_secs(330), false, [(output(1), false)])
+            .suspend
+    );
+
+    // Ten seconds after the last touch: the power button, the shell's Screen
+    // off, the cover (blank_now), a client such as wlopm.
+    let dark = now + Duration::from_secs(10);
+    for path in ["power button", "Screen off", "cover", "client"] {
+        let mut policy = phone_policy(now);
+        let requests = match path {
+            "power button" => policy.toggle_now([(output(1), true)], dark).power_requests,
+            "Screen off" => {
+                policy
+                    .screen_off_now([(output(1), true)], dark)
+                    .power_requests
+            }
+            "cover" => policy.blank_now([(output(1), true)]),
+            _ => Vec::new(),
+        };
+        assert!(requests.iter().all(|request| !request.powered), "{path}");
+        policy.note_outputs_dark(true, dark);
+        assert!(
+            !policy
+                .evaluate(dark + Duration::from_secs(299), false, [(output(1), false)])
+                .suspend,
+            "{path}"
+        );
+        assert!(
+            policy
+                .evaluate(dark + Duration::from_secs(300), false, [(output(1), false)])
+                .suspend,
+            "{path}"
+        );
+    }
+}
+
+#[test]
+fn lighting_the_screen_stops_the_suspend_timeout_and_input_restarts_it() {
+    let now = Instant::now();
+    let mut policy = phone_policy(now);
+    policy.toggle_now([(output(1), true)], now);
+    policy.note_outputs_dark(true, now);
+
+    // A touch lights the screen: nothing counts while it is lit.
+    let touched = now + Duration::from_secs(100);
+    assert_eq!(
+        policy.note_activity(touched),
+        [IdlePowerRequest {
+            output: output(1),
+            powered: true,
+        }]
+    );
+    policy.note_outputs_dark(false, touched);
+    assert!(
+        !policy
+            .evaluate(now + Duration::from_secs(300), false, [(output(1), true)])
+            .suspend
+    );
+
+    // The button turns it off again: a full timeout from then.
+    let pressed = now + Duration::from_secs(400);
+    policy.toggle_now([(output(1), true)], pressed);
+    policy.note_outputs_dark(true, pressed);
+    assert!(
+        !policy
+            .evaluate(
+                pressed + Duration::from_secs(199),
+                false,
+                [(output(1), false)]
+            )
+            .suspend
+    );
+    // Input that leaves the screen dark (a client keeps it off) starts the
+    // timeout again.
+    policy.note_external_power_request(output(1), false);
+    let typed = pressed + Duration::from_secs(200);
+    assert!(policy.note_activity(typed).is_empty());
+    assert!(
+        !policy
+            .evaluate(
+                pressed + Duration::from_secs(300),
+                false,
+                [(output(1), false)]
+            )
+            .suspend
+    );
+    assert!(
+        policy
+            .evaluate(
+                typed + Duration::from_secs(300),
+                false,
+                [(output(1), false)]
+            )
+            .suspend
+    );
+}
+
+#[test]
+fn the_suspend_timeout_is_independent_of_the_display_timeout() {
+    // The tablet's owner: the screen off after 30 min, sleep 5 min after it.
+    let now = Instant::now();
+    let owner = || {
+        let mut policy = IdlePolicy::default();
+        policy.configure(
+            IdlePolicyConfiguration {
+                lock_after_screen_off: Some(Duration::ZERO),
+                ..configuration(
+                    None,
+                    Some(Duration::from_secs(1800)),
+                    Some(Duration::from_secs(300)),
+                )
+            },
+            now,
+        );
+        policy
+    };
+    let mut policy = owner();
+    let off = policy.evaluate(now + Duration::from_secs(1800), false, [(output(1), true)]);
+    assert!(!off.power_requests[0].powered);
+    assert!(off.lock);
+    assert!(!off.suspend);
+    policy.note_outputs_dark(true, now + Duration::from_secs(1800));
+    assert_eq!(
+        policy.next_deadline(),
+        Some(now + Duration::from_secs(2100))
+    );
+    assert!(
+        policy
+            .evaluate(now + Duration::from_secs(2100), false, [(output(1), false)])
+            .suspend
+    );
+
+    // After the power button: 5 min, not 30.
+    let mut policy = owner();
+    let pressed = now + Duration::from_secs(60);
+    assert!(policy.toggle_now([(output(1), true)], pressed).lock);
+    policy.note_outputs_dark(true, pressed);
+    assert!(
+        policy
+            .evaluate(
+                pressed + Duration::from_secs(300),
+                false,
+                [(output(1), false)]
+            )
+            .suspend
+    );
+}
+
+#[test]
+fn nothing_suspends_under_stay_awake_or_with_suspend_off() {
+    let now = Instant::now();
+    let mut policy = phone_policy(now);
+    policy.set_stay_awake(true, now);
+    // The Screen off tile still darkens the screen.
+    assert!(
+        !policy
+            .screen_off_now([(output(1), true)], now)
+            .power_requests
+            .is_empty()
+    );
+    policy.note_outputs_dark(true, now);
+    assert_eq!(policy.next_deadline(), None);
+    assert!(
+        !policy
+            .evaluate(now + Duration::from_secs(3600), false, [(output(1), false)])
+            .suspend
+    );
+
+    let mut policy = IdlePolicy::default();
+    policy.configure(
+        configuration(None, Some(Duration::from_secs(30)), None),
+        now,
+    );
+    policy.toggle_now([(output(1), true)], now);
+    policy.note_outputs_dark(true, now);
+    assert!(
+        !policy
+            .evaluate(now + Duration::from_secs(7200), false, [(output(1), false)])
+            .suspend
+    );
+    assert_eq!(policy.next_deadline(), None);
+}
+
+#[test]
+fn a_visible_idle_inhibitor_holds_the_suspend_off_and_its_end_starts_it_again() {
+    let now = Instant::now();
+    let mut policy = phone_policy(now);
+    // The power button during playback: the screen stays dark.
+    policy.toggle_now([(output(1), true)], now);
+    policy.note_outputs_dark(true, now);
+    for second in [100, 300, 600] {
+        assert_eq!(
+            policy.evaluate(
+                now + Duration::from_secs(second),
+                true,
+                [(output(1), false)]
+            ),
+            IdlePolicyActions::default()
+        );
+    }
+    assert_eq!(policy.next_deadline(), None);
+
+    // Playback ends: a full timeout from then.
+    let ended = now + Duration::from_secs(600);
+    assert!(!policy.evaluate(ended, false, [(output(1), false)]).suspend);
+    assert!(
+        !policy
+            .evaluate(
+                ended + Duration::from_secs(299),
+                false,
+                [(output(1), false)]
+            )
+            .suspend
+    );
+    assert!(
+        policy
+            .evaluate(
+                ended + Duration::from_secs(300),
+                false,
+                [(output(1), false)]
+            )
+            .suspend
+    );
 }

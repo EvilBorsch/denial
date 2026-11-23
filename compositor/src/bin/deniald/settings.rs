@@ -1578,7 +1578,9 @@ fn parse_document(bytes: &[u8]) -> Result<ParsedSettingsDocument, SettingsError>
     };
     set_workspace_settings(&mut document, workspace_settings)?;
     migrate_idle_timeouts(&mut document);
-    let migrated = version != SETTINGS_SCHEMA_VERSION
+    let suspend_migrated = migrate_suspend_after_screen_off(&mut document);
+    let migrated = suspend_migrated
+        || version != SETTINGS_SCHEMA_VERSION
         || !document.contains_key("revision")
         || !document.contains_key("keyboard")
         || !document.contains_key("mouse")
@@ -1760,6 +1762,52 @@ fn migrate_idle_timeouts(document: &mut Map<String, Value>) {
                 .or_insert_with(|| Value::from(minutes.saturating_mul(60)));
         }
     }
+}
+
+/// How long after the screen went dark the system suspends.
+const SUSPEND_AFTER_SCREEN_OFF: &str = "idleSuspendAfterScreenOffSeconds";
+/// The shell's display timeout when a document names none.
+const LEGACY_DISPLAY_TIMEOUT_SECONDS: u64 = 15 * 60;
+/// The shell's bounds of every idle timeout.
+const MIN_IDLE_TIMEOUT_SECONDS: u64 = 30;
+const MAX_IDLE_TIMEOUT_SECONDS: u64 = 2 * 60 * 60;
+
+/// The system suspends a set time after the screen went dark
+/// (`power.idleSuspendAfterScreenOffSeconds`), no longer a set time after
+/// the last input (`power.idleSuspendTimeoutSeconds`), which the shell never
+/// let be shorter than the display timeout. A stored suspend timeout carries
+/// over: as it is when it was no longer than the display timeout (the user
+/// chose it; the shell only stretched it), else what was left of it once the
+/// screen went dark. The old key stays for an older Denial; whether the
+/// system suspends at all (`idleSuspendEnabled`) is left alone. Returns
+/// whether the document changed.
+fn migrate_suspend_after_screen_off(document: &mut Map<String, Value>) -> bool {
+    let Some(power) = document.get_mut("power").and_then(Value::as_object_mut) else {
+        return false;
+    };
+    if power.contains_key(SUSPEND_AFTER_SCREEN_OFF) {
+        return false;
+    }
+    let Some(suspend) = power
+        .get("idleSuspendTimeoutSeconds")
+        .and_then(Value::as_u64)
+    else {
+        return false;
+    };
+    let display = power
+        .get("idleDpmsTimeoutSeconds")
+        .and_then(Value::as_u64)
+        .unwrap_or(LEGACY_DISPLAY_TIMEOUT_SECONDS);
+    let after = if suspend <= display {
+        suspend
+    } else {
+        suspend - display
+    };
+    power.insert(
+        SUSPEND_AFTER_SCREEN_OFF.to_owned(),
+        Value::from(after.clamp(MIN_IDLE_TIMEOUT_SECONDS, MAX_IDLE_TIMEOUT_SECONDS)),
+    );
+    true
 }
 
 fn set_color_scheme_preference(

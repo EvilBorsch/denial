@@ -1182,3 +1182,107 @@ fn apps_follow_only_a_tablets_shell_and_only_while_switched_on() {
         }
     );
 }
+
+/// Loads a complete document with `power` as its power section and returns
+/// the migrated section, and whether the file was rewritten.
+fn migrated_power(power: Value) -> (serde_json::Map<String, Value>, bool) {
+    let temporary = TemporaryDirectory::new("settings-suspend-after");
+    let path = temporary.settings_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    // deniald completes and writes a bare document once.
+    fs::write(&path, format!(r#"{{"version":{SETTINGS_SCHEMA_VERSION}}}"#)).unwrap();
+    SettingsManager::load_path(path.clone()).unwrap();
+    let mut complete: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    complete["power"] = power;
+    let written = serde_json::to_vec(&complete).unwrap();
+    fs::write(&path, &written).unwrap();
+    let manager = SettingsManager::load_path(path.clone()).unwrap();
+    let document: Value = serde_json::from_str(&manager.document_json().unwrap()).unwrap();
+    let rewritten = fs::read(&path).unwrap() != written;
+    (document["power"].as_object().unwrap().clone(), rewritten)
+}
+
+#[test]
+fn a_suspend_timeout_no_longer_than_the_display_timeout_carries_over() {
+    // The tablet's owner: the screen off after 30 min, sleep after 5 min,
+    // which the shell had stretched to 30 min after the last touch.
+    let (power, rewritten) = migrated_power(serde_json::json!({
+        "idleDpmsTimeoutSeconds": 1800,
+        "idleSuspendEnabled": true,
+        "idleSuspendTimeoutSeconds": 300,
+        "stayAwake": false,
+        "powerButtonAction": "dpms",
+    }));
+    assert_eq!(power["idleSuspendAfterScreenOffSeconds"], 300);
+    assert_eq!(power["idleSuspendEnabled"], true);
+    assert_eq!(power["idleDpmsTimeoutSeconds"], 1800);
+    // Kept for an older Denial.
+    assert_eq!(power["idleSuspendTimeoutSeconds"], 300);
+    assert!(rewritten);
+    // Equal timeouts carry over too.
+    let (power, _) = migrated_power(serde_json::json!({
+        "idleDpmsTimeoutSeconds": 900,
+        "idleSuspendTimeoutSeconds": 900,
+    }));
+    assert_eq!(power["idleSuspendAfterScreenOffSeconds"], 900);
+}
+
+#[test]
+fn a_longer_suspend_timeout_keeps_what_was_left_after_the_screen_went_dark() {
+    let (power, _) = migrated_power(serde_json::json!({
+        "idleDpmsTimeoutSeconds": 900,
+        "idleSuspendTimeoutSeconds": 1800,
+    }));
+    assert_eq!(power["idleSuspendAfterScreenOffSeconds"], 900);
+    // A display timeout the document leaves out was the shell's 15 min.
+    let (power, _) = migrated_power(serde_json::json!({"idleSuspendTimeoutSeconds": 2700}));
+    assert_eq!(power["idleSuspendAfterScreenOffSeconds"], 1800);
+    // Never shorter than half a minute.
+    let (power, _) = migrated_power(serde_json::json!({
+        "idleDpmsTimeoutSeconds": 900,
+        "idleSuspendTimeoutSeconds": 910,
+    }));
+    assert_eq!(power["idleSuspendAfterScreenOffSeconds"], 30);
+}
+
+#[test]
+fn suspend_migration_keeps_it_disabled_and_runs_once() {
+    let (power, rewritten) = migrated_power(serde_json::json!({
+        "idleDpmsTimeoutSeconds": 600,
+        "idleSuspendEnabled": false,
+        "idleSuspendTimeoutSeconds": 1200,
+    }));
+    assert_eq!(power["idleSuspendEnabled"], false);
+    assert_eq!(power["idleSuspendAfterScreenOffSeconds"], 600);
+    assert!(rewritten);
+
+    // Already there: left as it is, the file untouched.
+    let (power, rewritten) = migrated_power(serde_json::json!({
+        "idleDpmsTimeoutSeconds": 1800,
+        "idleSuspendTimeoutSeconds": 300,
+        "idleSuspendAfterScreenOffSeconds": 120,
+    }));
+    assert_eq!(power["idleSuspendAfterScreenOffSeconds"], 120);
+    assert!(!rewritten);
+
+    // Nothing stored: the shell's default applies, nothing is written.
+    let (power, rewritten) = migrated_power(serde_json::json!({"idleDpmsTimeoutSeconds": 30}));
+    assert!(!power.contains_key("idleSuspendAfterScreenOffSeconds"));
+    assert!(!rewritten);
+}
+
+#[test]
+fn suspend_migration_follows_the_minutes_migration() {
+    let temporary = TemporaryDirectory::new("settings-suspend-minutes");
+    let path = temporary.settings_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        br#"{"version":29,"power":{"idleDpmsTimeoutMinutes":15,"idleSuspendTimeoutMinutes":45}}"#,
+    )
+    .unwrap();
+    let manager = SettingsManager::load_path(path).unwrap();
+    let document: Value = serde_json::from_str(&manager.document_json().unwrap()).unwrap();
+    assert_eq!(document["power"]["idleSuspendTimeoutSeconds"], 2700);
+    assert_eq!(document["power"]["idleSuspendAfterScreenOffSeconds"], 1800);
+}

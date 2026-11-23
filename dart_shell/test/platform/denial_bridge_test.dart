@@ -211,6 +211,47 @@ void main() {
     },
   );
 
+  test(
+    'a suspend shorter than the display and lock timeouts is sent',
+    () async {
+      // The tablet's owner: the screen off after 30 min, sleep 5 min after it.
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      ByteData? packet;
+      messenger.setMockMessageHandler('denial/idle_policy', (message) async {
+        packet = message;
+        return null;
+      });
+      final bridge = DenialBridge();
+
+      try {
+        bridge.setIdlePolicy(
+          powerButtonAction: PowerButtonAction.dpms,
+          powerButtonLongPressAction: PowerButtonLongPressAction.nothing,
+          lockEnabled: true,
+          lockTimeout: const Duration(minutes: 31),
+          dpmsEnabled: true,
+          dpmsTimeout: const Duration(minutes: 30),
+          suspendEnabled: true,
+          suspendTimeout: const Duration(minutes: 5),
+          suspendMode: SuspendMode.deep,
+          lockAfterScreenOff: Duration.zero,
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        final data = packet;
+        expect(data, isNotNull);
+        expect(data!.getUint8(1), 0x0f);
+        expect(data.getUint64(8, Endian.little), 31 * 60 * 1000);
+        expect(data.getUint64(16, Endian.little), 30 * 60 * 1000);
+        expect(data.getUint64(24, Endian.little), 5 * 60 * 1000);
+      } finally {
+        bridge.dispose();
+        messenger.setMockMessageHandler('denial/idle_policy', null);
+      }
+    },
+  );
+
   test('software dimming requests and state cross the native bridge', () async {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;

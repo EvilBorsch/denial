@@ -638,7 +638,7 @@ class ShellPowerSettings {
     this.idleDpmsEnabled = true,
     this.idleDpmsTimeoutSeconds = 15 * 60,
     this.idleSuspendEnabled = false,
-    this.idleSuspendTimeoutSeconds = 30 * 60,
+    this.idleSuspendAfterScreenOffSeconds = 15 * 60,
     this.suspendMode = SuspendMode.deep,
     this.screenOffLockDelaySeconds = 0,
     this.stayAwake = false,
@@ -660,7 +660,13 @@ class ShellPowerSettings {
   final bool idleDpmsEnabled;
   final int idleDpmsTimeoutSeconds;
   final bool idleSuspendEnabled;
-  final int idleSuspendTimeoutSeconds;
+
+  /// How long after the screen went dark the system suspends, whatever
+  /// turned it off: the display timeout, the power button, Screen off, the
+  /// cover. Input starts it again; a lit screen stops it. Independent of the
+  /// display and lock timeouts (`power.idleSuspendAfterScreenOffSeconds`;
+  /// deniald carries an older `idleSuspendAfterScreenOffSeconds` over once).
+  final int idleSuspendAfterScreenOffSeconds;
   final SuspendMode suspendMode;
 
   /// On a phone, seconds a dark screen stays unlocked, by the power button
@@ -689,7 +695,7 @@ class ShellPowerSettings {
     bool? idleDpmsEnabled,
     int? idleDpmsTimeoutSeconds,
     bool? idleSuspendEnabled,
-    int? idleSuspendTimeoutSeconds,
+    int? idleSuspendAfterScreenOffSeconds,
     SuspendMode? suspendMode,
     int? screenOffLockDelaySeconds,
     bool? stayAwake,
@@ -705,8 +711,9 @@ class ShellPowerSettings {
       idleDpmsTimeoutSeconds:
           idleDpmsTimeoutSeconds ?? this.idleDpmsTimeoutSeconds,
       idleSuspendEnabled: idleSuspendEnabled ?? this.idleSuspendEnabled,
-      idleSuspendTimeoutSeconds:
-          idleSuspendTimeoutSeconds ?? this.idleSuspendTimeoutSeconds,
+      idleSuspendAfterScreenOffSeconds:
+          idleSuspendAfterScreenOffSeconds ??
+          this.idleSuspendAfterScreenOffSeconds,
       suspendMode: suspendMode ?? this.suspendMode,
       screenOffLockDelaySeconds:
           screenOffLockDelaySeconds ?? this.screenOffLockDelaySeconds,
@@ -724,7 +731,8 @@ class ShellPowerSettings {
         other.idleDpmsEnabled == idleDpmsEnabled &&
         other.idleDpmsTimeoutSeconds == idleDpmsTimeoutSeconds &&
         other.idleSuspendEnabled == idleSuspendEnabled &&
-        other.idleSuspendTimeoutSeconds == idleSuspendTimeoutSeconds &&
+        other.idleSuspendAfterScreenOffSeconds ==
+            idleSuspendAfterScreenOffSeconds &&
         other.suspendMode == suspendMode &&
         other.screenOffLockDelaySeconds == screenOffLockDelaySeconds &&
         other.stayAwake == stayAwake;
@@ -739,7 +747,7 @@ class ShellPowerSettings {
     idleDpmsEnabled,
     idleDpmsTimeoutSeconds,
     idleSuspendEnabled,
-    idleSuspendTimeoutSeconds,
+    idleSuspendAfterScreenOffSeconds,
     suspendMode,
     screenOffLockDelaySeconds,
     stayAwake,
@@ -1426,8 +1434,10 @@ class ShellSettings {
       if (power.idleSuspendEnabled != before.idleSuspendEnabled) {
         section['idleSuspendEnabled'] = power.idleSuspendEnabled;
       }
-      if (power.idleSuspendTimeoutSeconds != before.idleSuspendTimeoutSeconds) {
-        section['idleSuspendTimeoutSeconds'] = power.idleSuspendTimeoutSeconds;
+      if (power.idleSuspendAfterScreenOffSeconds !=
+          before.idleSuspendAfterScreenOffSeconds) {
+        section['idleSuspendAfterScreenOffSeconds'] =
+            power.idleSuspendAfterScreenOffSeconds;
       }
       if (power.suspendMode != before.suspendMode) {
         section['suspendMode'] = power.suspendMode.name;
@@ -1542,7 +1552,8 @@ class ShellSettings {
         'idleDpmsEnabled': power.idleDpmsEnabled,
         'idleDpmsTimeoutSeconds': power.idleDpmsTimeoutSeconds,
         'idleSuspendEnabled': power.idleSuspendEnabled,
-        'idleSuspendTimeoutSeconds': power.idleSuspendTimeoutSeconds,
+        'idleSuspendAfterScreenOffSeconds':
+            power.idleSuspendAfterScreenOffSeconds,
         'suspendMode': power.suspendMode.name,
         'screenOffLockDelaySeconds': power.screenOffLockDelaySeconds,
         'stayAwake': power.stayAwake,
@@ -1610,30 +1621,20 @@ class ShellSettings {
       ShellPowerSettings.minimumIdleTimeoutSeconds,
       ShellPowerSettings.maximumIdleTimeoutSeconds,
     );
-    final idleSuspendTimeoutSeconds =
-        _integer(
-              powerJson['idleSuspendTimeoutSeconds'],
-              defaults.power.idleSuspendTimeoutSeconds,
-              ShellPowerSettings.minimumIdleTimeoutSeconds,
-              ShellPowerSettings.maximumIdleTimeoutSeconds,
-            )
-            .clamp(
-              idleDpmsTimeoutSeconds,
-              ShellPowerSettings.maximumIdleTimeoutSeconds,
-            )
-            .toInt();
-    final idleLockTimeoutSeconds =
-        _integer(
-              powerJson['idleLockTimeoutSeconds'],
-              defaults.power.idleLockTimeoutSeconds,
-              ShellPowerSettings.minimumIdleTimeoutSeconds,
-              ShellPowerSettings.maximumIdleTimeoutSeconds,
-            )
-            .clamp(
-              ShellPowerSettings.minimumIdleTimeoutSeconds,
-              idleSuspendTimeoutSeconds,
-            )
-            .toInt();
+    // Each timeout stands alone: the suspend counts from the screen going
+    // dark, so it is no longer held at or above the others.
+    final idleSuspendAfterScreenOffSeconds = _integer(
+      powerJson['idleSuspendAfterScreenOffSeconds'],
+      defaults.power.idleSuspendAfterScreenOffSeconds,
+      ShellPowerSettings.minimumIdleTimeoutSeconds,
+      ShellPowerSettings.maximumIdleTimeoutSeconds,
+    );
+    final idleLockTimeoutSeconds = _integer(
+      powerJson['idleLockTimeoutSeconds'],
+      defaults.power.idleLockTimeoutSeconds,
+      ShellPowerSettings.minimumIdleTimeoutSeconds,
+      ShellPowerSettings.maximumIdleTimeoutSeconds,
+    );
     final legacyTransparencyMode = appearanceJson['backdropBlurEnabled'] is bool
         ? (appearanceJson['backdropBlurEnabled'] as bool
               ? ShellTransparencyMode.blur
@@ -1952,7 +1953,7 @@ class ShellSettings {
         idleSuspendEnabled: powerJson['idleSuspendEnabled'] is bool
             ? powerJson['idleSuspendEnabled'] as bool
             : defaults.power.idleSuspendEnabled,
-        idleSuspendTimeoutSeconds: idleSuspendTimeoutSeconds,
+        idleSuspendAfterScreenOffSeconds: idleSuspendAfterScreenOffSeconds,
         suspendMode: _enumValue(
           SuspendMode.values,
           powerJson['suspendMode'],

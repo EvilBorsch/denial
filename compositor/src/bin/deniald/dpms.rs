@@ -161,6 +161,34 @@ pub(super) fn synchronize_wake_key(scanouts: &[Scanout], events: &mut RuntimeSta
     info!(output = %panel.output.name, "wake key requested display wake");
 }
 
+/// The closed cover turns the screen off, so that the suspend timeout counts
+/// from the closing, as after the power button. logind locks the session as
+/// configured (or Denial holds the lid under Stay awake: then the screen
+/// stays on). Beside another display, as logind's HandleLidSwitchDocked, the
+/// display policy alone leaves the panel under the cover dark. Opening the
+/// cover lights the screen, also when only logind reports it after a resume.
+#[cfg(feature = "flutter")]
+pub(super) fn synchronize_cover(scanouts: &[Scanout], events: &mut RuntimeState) {
+    match events.cover.update(events.lid.closed()) {
+        None => {}
+        Some(lid_switch::CoverChange::Closed) => {
+            let docked = scanouts
+                .iter()
+                .any(|scanout| !output_policy::is_internal_panel(&scanout.output.name));
+            if events.idle_policy.stay_awake() || docked {
+                return;
+            }
+            let outputs = button_outputs(scanouts, events);
+            let requests = events.idle_policy.blank_now(outputs);
+            if !requests.is_empty() {
+                info!("the cover closed: turned the screen off");
+            }
+            events.queue_idle_power_requests(requests);
+        }
+        Some(lid_switch::CoverChange::Opened) => events.note_user_activity(),
+    }
+}
+
 #[cfg(feature = "flutter")]
 /// Tells the idle policy whether a desk shares the session with the phone,
 /// and locks if the phone's panel is left dark and alone.
@@ -651,6 +679,12 @@ pub(super) fn apply_output_power_requests(
 
     runtime.set_outputs_visible(scanouts.iter().any(|scanout| scanout.powered))?;
     events.output_power_requests = deferred;
+    // The suspend timeout counts from here once every output is off,
+    // whatever turned them off.
+    let dark = !scanouts
+        .iter()
+        .any(|scanout| scanout.powered && !events.ambient_display.refreshing(scanout.output.id));
+    events.idle_policy.note_outputs_dark(dark, Instant::now());
     Ok(power_changed)
 }
 

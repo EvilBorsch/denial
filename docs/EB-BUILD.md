@@ -159,7 +159,8 @@ untouched v0.6.8: the three `cpu_scheduling` kernel tests (utilization clamp
 qemu-user cannot) and the timing-sensitive
 `frame_deadline_source_tests::acquire_callback_removes_queued_deadline_source`.
 On `eb/mode-follow` 709 of 714 pass with the same 4 failing. On `eb/power-tiles`
-735 of 740 pass with the same 4 failing.
+735 of 740 pass with the same 4 failing, on `eb/sleep-after-screen-off` 745 of
+750.
 
 The portal's tests and the protocol's run the same way, the D-Bus ones on a
 private session bus:
@@ -246,6 +247,8 @@ phone or the network) and one fails here,
 `cursor_theme::tests::cursor_zip_converts_to_denial_manifest`, whose fixture
 runs `bsdtar`, under qemu-user. denial-apps' `eb/wifi-join` adds nine
 (`wifi::nm::join_tests`, `words_ru::tests`): 51 pass, the same one fails.
+denial-apps' `eb/integration` at `4c5d2bf` (eb12 and eb13) passes 59 and at
+`f1735eb` (with `eb/sleep-after-screen-off`, eb14) 63, the same one failing.
 `denial-look`, the apps' shared look and words, is plain Rust; its tests run
 on the host:
 
@@ -337,8 +340,9 @@ On v0.6.8 this passes 188 tests and fails 12 that need Denial's engine
 `mobile_connectivity_marks_test`); `eb/lockscreen-keyboard` passes 193 and
 `eb/compositor-inhibit-keyboard` 196, with the same 12 failing; `eb/mode-follow`
 223 with the same 12 failing, and `packages/denial_flutter_sdk` all 111;
-`eb/integration` at `d2baa59` 244 and `eb/power-tiles` 256, with the same 12
-failing, and the SDK all 111.
+`eb/integration` at `d2baa59` 244, `eb/power-tiles` 256 and
+`eb/sleep-after-screen-off` 261, with the same 12 failing, and the SDK all
+111.
 
 ## Another Denial release
 
