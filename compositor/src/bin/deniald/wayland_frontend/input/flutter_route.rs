@@ -281,7 +281,7 @@ pub(super) fn process_flutter_input_event(
                 return true;
             }
             if deck_touch && !secure_locked {
-                let directions = swipe_scroll_directions(state, None);
+                let directions = swipe_tracking(state, None);
                 let update = state.input_deck.screen_gestures.down(
                     slot,
                     (position.x, position.y),
@@ -293,7 +293,7 @@ pub(super) fn process_flutter_input_event(
                     return changed;
                 }
             }
-            let swipe_directions = swipe_scroll_directions(state, Some(position));
+            let swipe_directions = swipe_tracking(state, Some(position));
             let gesture = if deck_touch {
                 TouchGestureUpdate::default()
             } else {

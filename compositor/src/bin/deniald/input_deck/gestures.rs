@@ -5,7 +5,9 @@
 //! distances, repeats and continuous scrolling-layout motion.
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::touchpad_gestures::{ActiveSwipe, HorizontalScrollDirections, TouchpadGestureEvent};
+#[cfg(test)]
+use crate::touchpad_gestures::HorizontalScrollDirections;
+use crate::touchpad_gestures::{ActiveSwipe, SwipeTracking, TouchpadGestureEvent};
 
 const CONTACT_SLOP: f64 = 8.0;
 
@@ -67,7 +69,7 @@ impl ScreenGestures {
         &mut self,
         slot: i32,
         position: (f64, f64),
-        directions: HorizontalScrollDirections,
+        directions: impl Into<SwipeTracking>,
     ) -> Update {
         if self.contacts.contains_key(&slot) || !finite(position) {
             return Update::default();

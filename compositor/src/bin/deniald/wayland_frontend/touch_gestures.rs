@@ -11,9 +11,7 @@ use smithay::desktop::Window;
 use smithay::utils::{Logical, Point, Rectangle, SERIAL_COUNTER, Size};
 
 use super::super::RuntimeState;
-use super::super::touchpad_gestures::{
-    ActiveSwipe, HorizontalScrollDirections, TouchpadGestureEvent,
-};
+use super::super::touchpad_gestures::{ActiveSwipe, SwipeTracking, TouchpadGestureEvent};
 use super::super::window_grab::{TileMoveGrab, constrain_dimension};
 use super::super::window_layout::LayoutResizeEdges;
 use super::super::wire::{WindowGeometry, WindowPlacementChange, WindowPlacementPhase};
@@ -190,7 +188,7 @@ pub(super) struct TouchGestureState {
     placement_transform: Option<(u64, PlacementTransform)>,
     layout_move: Option<TileMoveGrab>,
     swipe: Option<ActiveSwipe>,
-    swipe_directions: HorizontalScrollDirections,
+    swipe_directions: SwipeTracking,
     last_timestamp_micros: u64,
 }
 
@@ -221,8 +219,8 @@ impl PlacementTransform {
 }
 
 impl TouchGestureState {
-    pub(super) fn set_swipe_directions(&mut self, directions: HorizontalScrollDirections) {
-        self.swipe_directions = directions;
+    pub(super) fn set_swipe_directions(&mut self, directions: impl Into<SwipeTracking>) {
+        self.swipe_directions = directions.into();
     }
 
     pub(super) fn down(

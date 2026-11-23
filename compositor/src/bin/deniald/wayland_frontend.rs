@@ -277,11 +277,12 @@ use handlers::{MAX_WAYLAND_CLIENTS, WaylandClientBudget};
 use idle_inhibit::IdleInhibitors;
 #[cfg(feature = "flutter")]
 use input::{ClientInputRoute, RoutedPointerTarget};
-pub(super) use input::{init_libinput, reset_all_input_devices};
 #[cfg(feature = "flutter")]
 pub(super) use input::{
-    install_keyboard_settings, install_mouse_settings, install_touchpad_settings,
+    cancel_shell_gesture, install_keyboard_settings, install_mouse_settings,
+    install_touchpad_settings,
 };
+pub(super) use input::{init_libinput, reset_all_input_devices};
 #[cfg(feature = "flutter")]
 use input_method::EditorEndpoint;
 use input_method::InputMethodManager;
