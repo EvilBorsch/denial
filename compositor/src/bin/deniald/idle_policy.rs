@@ -9,6 +9,10 @@
 //! visible Wayland inhibitor does: the caller passes either as `inhibited`.
 //! One on `sleep` holds only automatic suspend off: the screen still goes
 //! dark and the session still locks ([`IdlePolicy::set_sleep_inhibited`]).
+//!
+//! Stay awake (`power.stayAwake`) keeps the screen on and the session
+//! unlocked ([`IdlePolicy::set_stay_awake`]): nothing happens on inactivity,
+//! and the power button does not turn a lit screen off.
 
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -575,6 +579,8 @@ pub(super) struct IdlePolicy {
     suspend_triggered: bool,
     /// A logind block inhibitor on `sleep` holds automatic suspend off.
     sleep_inhibited: bool,
+    /// Stay awake is on: the screen stays on and the session unlocked.
+    stay_awake: bool,
     /// When the last sleep inhibitor ended: the suspend timeout counts from
     /// there if that came after the last activity.
     sleep_released_at: Option<Instant>,
@@ -600,6 +606,7 @@ impl Default for IdlePolicy {
             dpms_triggered: false,
             suspend_triggered: false,
             sleep_inhibited: false,
+            stay_awake: false,
             sleep_released_at: None,
             suspend_withheld: false,
             blanked_outputs: BTreeSet::new(),
@@ -657,7 +664,7 @@ impl IdlePolicy {
 
     /// The phone's panel goes dark once nobody touched it for the display
     /// timeout, while the desk keeps its own. A visible inhibitor on the
-    /// phone holds it lit.
+    /// phone holds it lit, and so does Stay awake.
     pub(super) fn evaluate_phone(
         &mut self,
         now: Instant,
@@ -665,8 +672,9 @@ impl IdlePolicy {
         powered: bool,
     ) -> Option<IdlePowerRequest> {
         let timeout = self.configuration.dpms_timeout;
+        let stay_awake = self.stay_awake;
         let phone = self.phone.as_mut()?;
-        if inhibited {
+        if inhibited || stay_awake {
             phone.last_touch = now;
             phone.dpms_triggered = false;
             return None;
@@ -690,6 +698,9 @@ impl IdlePolicy {
     /// when an external power client originally switched the displays off.
     /// With a desk, it turns only the phone's panel off and on and never
     /// locks: the user goes on at the desk.
+    ///
+    /// Under Stay awake ([`Self::set_stay_awake`]) the press leaves a lit
+    /// screen as it is; it still lights a dark one.
     pub(super) fn toggle_now(
         &mut self,
         outputs: impl IntoIterator<Item = (OutputId, bool)>,
@@ -697,26 +708,11 @@ impl IdlePolicy {
     ) -> IdlePolicyActions {
         self.reset_idle_interval(now);
         let outputs = outputs.into_iter().collect::<Vec<_>>();
-        if let Some(phone) = self.phone.as_mut() {
-            let output = phone.output;
-            let powered = outputs
-                .iter()
-                .any(|(candidate, powered)| *candidate == output && *powered);
-            if powered {
-                phone.dpms_triggered = true;
-                self.blanked_outputs.insert(output);
-            } else {
-                phone.last_touch = now;
-                phone.dpms_triggered = false;
-                self.blanked_outputs.remove(&output);
-            }
-            return IdlePolicyActions {
-                power_requests: vec![IdlePowerRequest {
-                    output,
-                    powered: !powered,
-                }],
-                ..IdlePolicyActions::default()
-            };
+        if self.stay_awake && self.button_screen_lit(&outputs) {
+            return IdlePolicyActions::default();
+        }
+        if let Some(actions) = self.toggle_phone(&outputs, now) {
+            return actions;
         }
         if outputs.iter().any(|(_, powered)| *powered) {
             IdlePolicyActions {
@@ -741,6 +737,74 @@ impl IdlePolicy {
                 ..IdlePolicyActions::default()
             }
         }
+    }
+
+    /// The shell asks for the screen to go dark: its Screen off tile, a
+    /// double tap on the home screen or the lock screen. That is the power
+    /// button pressed on a lit screen ([`Self::toggle_now`]), except that a
+    /// dark screen stays dark and that it acts under Stay awake too: an
+    /// explicit request. Under Stay awake nothing locks, neither at once nor
+    /// after the screen-off delay, and input or the power button lights the
+    /// screen again without the lock screen. Beside a desk the request
+    /// concerns the phone's panel alone, as the button does.
+    pub(super) fn screen_off_now(
+        &mut self,
+        outputs: impl IntoIterator<Item = (OutputId, bool)>,
+        now: Instant,
+    ) -> IdlePolicyActions {
+        let outputs = outputs.into_iter().collect::<Vec<_>>();
+        if !self.button_screen_lit(&outputs) {
+            return IdlePolicyActions::default();
+        }
+        if !self.stay_awake {
+            return self.toggle_now(outputs, now);
+        }
+        self.reset_idle_interval(now);
+        if let Some(actions) = self.toggle_phone(&outputs, now) {
+            return actions;
+        }
+        IdlePolicyActions {
+            power_requests: self.blank_now(outputs),
+            ..IdlePolicyActions::default()
+        }
+    }
+
+    /// Whether the screen the power button turns off is lit: beside a desk,
+    /// the phone's panel; otherwise any output.
+    fn button_screen_lit(&self, outputs: &[(OutputId, bool)]) -> bool {
+        let phone = self.phone_output();
+        outputs
+            .iter()
+            .any(|(output, powered)| *powered && phone.is_none_or(|phone| *output == phone))
+    }
+
+    /// Beside a desk the power button turns the phone's panel alone off and
+    /// on, and never locks. None without a desk.
+    fn toggle_phone(
+        &mut self,
+        outputs: &[(OutputId, bool)],
+        now: Instant,
+    ) -> Option<IdlePolicyActions> {
+        let phone = self.phone.as_mut()?;
+        let output = phone.output;
+        let powered = outputs
+            .iter()
+            .any(|(candidate, powered)| *candidate == output && *powered);
+        if powered {
+            phone.dpms_triggered = true;
+            self.blanked_outputs.insert(output);
+        } else {
+            phone.last_touch = now;
+            phone.dpms_triggered = false;
+            self.blanked_outputs.remove(&output);
+        }
+        Some(IdlePolicyActions {
+            power_requests: vec![IdlePowerRequest {
+                output,
+                powered: !powered,
+            }],
+            ..IdlePolicyActions::default()
+        })
     }
 
     /// Blanks every powered output explicitly while retaining native
@@ -825,6 +889,36 @@ impl IdlePolicy {
         self.suspend_withheld = false;
     }
 
+    /// Follows Stay awake (`power.stayAwake`). While it is on the screen
+    /// stays on and the session unlocked, so that someone working on the
+    /// device from afar sees it and can take screenshots: inactivity neither
+    /// turns the screen off, nor locks, nor suspends, and the power button
+    /// does not turn a lit screen off. An explicit Screen off from the shell
+    /// still darkens it, without locking ([`Self::screen_off_now`]).
+    ///
+    /// Turning it on lights a screen that went dark on inactivity or by the
+    /// power button and drops a pending screen-off lock; a session already
+    /// locked stays locked. Turning it off starts a full idle interval.
+    /// Returns the outputs to light.
+    pub(super) fn set_stay_awake(&mut self, on: bool, now: Instant) -> Vec<IdlePowerRequest> {
+        if std::mem::replace(&mut self.stay_awake, on) == on {
+            return Vec::new();
+        }
+        self.reset_idle_interval(now);
+        if let Some(phone) = self.phone.as_mut() {
+            phone.last_touch = now;
+            phone.dpms_triggered = false;
+        }
+        if !on {
+            return Vec::new();
+        }
+        self.wake_blanked_outputs()
+    }
+
+    pub(super) fn stay_awake(&self) -> bool {
+        self.stay_awake
+    }
+
     pub(super) fn note_activity(&mut self, now: Instant) -> Vec<IdlePowerRequest> {
         self.reset_idle_interval(now);
         self.wake_blanked_outputs()
@@ -840,6 +934,11 @@ impl IdlePolicy {
         I: IntoIterator<Item = (OutputId, bool)>,
         I::IntoIter: Clone,
     {
+        if self.stay_awake {
+            // A screen the shell turned off stays dark until input lights
+            // it. A full interval counts once Stay awake ends.
+            return IdlePolicyActions::default();
+        }
         // The dark screen locks on time even while playback holds idling
         // off: the user chose to turn it off.
         let screen_off_lock = self.screen_off_lock_at.is_some_and(|at| now >= at);
@@ -937,8 +1036,12 @@ impl IdlePolicy {
     ///
     /// Input, inhibitor, configuration, and explicit power events wake the
     /// compositor independently. Between those edges the idle policy needs no
-    /// polling; this deadline is the only timer it contributes.
+    /// polling; this deadline is the only timer it contributes. Stay awake
+    /// sets none: nothing happens on inactivity.
     pub(super) fn next_deadline(&self) -> Option<Instant> {
+        if self.stay_awake {
+            return None;
+        }
         let phone = self.phone.as_ref().and_then(|phone| {
             (!phone.dpms_triggered)
                 .then_some(self.configuration.dpms_timeout?)

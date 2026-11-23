@@ -48,6 +48,10 @@ pub(super) struct InputDevices {
     pub(super) mice: BTreeMap<String, smithay::reexports::input::Device>,
     #[cfg(feature = "flutter")]
     pub(super) touchpads: BTreeMap<String, smithay::reexports::input::Device>,
+    /// The built-in touchscreens and pens, by sysname: they are ignored
+    /// while the lid is closed ([`lid_switch::ignored_under_closed_lid`]).
+    #[cfg(feature = "flutter")]
+    pub(super) lid_covered: BTreeSet<String>,
 }
 
 /// The kinds of input device the shell is told about.
@@ -80,6 +84,7 @@ impl InputDevices {
             self.typing_keyboards.remove(sysname);
             self.mice.remove(sysname);
             self.touchpads.remove(sysname);
+            self.lid_covered.remove(sysname);
         }
     }
 }
@@ -202,9 +207,6 @@ pub(super) struct RuntimeState {
     pub(super) pending_text_prediction: Option<wire::TextPrediction>,
     #[cfg(feature = "flutter")]
     pub(super) lid: lid_switch::LidSwitch,
-    /// What the cover does while Denial handles the lid switch.
-    #[cfg(feature = "flutter")]
-    pub(super) cover: lid_switch::Cover,
     #[cfg(feature = "flutter")]
     pub(super) output_control_dirty: bool,
     #[cfg(feature = "flutter")]

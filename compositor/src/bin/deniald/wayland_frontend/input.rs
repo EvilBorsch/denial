@@ -41,6 +41,8 @@ use tracing::{info, warn};
 
 #[cfg(feature = "flutter")]
 use super::super::PendingWindowEvent;
+#[cfg(feature = "flutter")]
+use super::super::lid_switch;
 use super::super::lifecycle::ShutdownReason;
 use super::super::native_shortcut::{
     ShortcutAction, ShortcutDisposition, ShortcutGesture, ShortcutTarget,
@@ -1631,6 +1633,62 @@ fn has_typing_keys(has_key: impl Fn(u32) -> bool) -> bool {
     TYPING_KEYS.into_iter().all(has_key)
 }
 
+/// What decides whether a device is ignored while the lid is closed.
+#[cfg(feature = "flutter")]
+fn lid_device_traits(device: &LibinputDevice) -> lid_switch::InputDeviceTraits {
+    lid_switch::InputDeviceTraits {
+        bus: input_device_bus(device),
+        touch: Device::has_capability(device, DeviceCapability::Touch),
+        tablet: Device::has_capability(device, DeviceCapability::TabletTool)
+            || Device::has_capability(device, DeviceCapability::TabletPad),
+    }
+}
+
+/// The kernel's bus type of an input device: `id/bustype` of the input
+/// device above its event node.
+#[cfg(feature = "flutter")]
+fn input_device_bus(device: &LibinputDevice) -> Option<u16> {
+    // SAFETY: this device came from the same udev-backed libinput context used
+    // to construct the event source, as required by input::Device::udev_device.
+    let node = unsafe { device.udev_device() }?;
+    let input = node.parent()?;
+    let bus = input.attribute_value("id/bustype")?.to_str()?;
+    u16::from_str_radix(bus.trim(), 16).ok()
+}
+
+/// The device an input event came from; none for a device added or removed.
+#[cfg(feature = "flutter")]
+fn input_event_device(event: &InputEvent<LibinputInputBackend>) -> Option<LibinputDevice> {
+    Some(match event {
+        InputEvent::Keyboard { event } => event.device(),
+        InputEvent::PointerMotion { event } => event.device(),
+        InputEvent::PointerMotionAbsolute { event } => event.device(),
+        InputEvent::PointerButton { event } => event.device(),
+        InputEvent::PointerAxis { event } => event.device(),
+        InputEvent::GestureSwipeBegin { event } => event.device(),
+        InputEvent::GestureSwipeUpdate { event } => event.device(),
+        InputEvent::GestureSwipeEnd { event } => event.device(),
+        InputEvent::GesturePinchBegin { event } => event.device(),
+        InputEvent::GesturePinchUpdate { event } => event.device(),
+        InputEvent::GesturePinchEnd { event } => event.device(),
+        InputEvent::GestureHoldBegin { event } => event.device(),
+        InputEvent::GestureHoldEnd { event } => event.device(),
+        InputEvent::TouchDown { event } => event.device(),
+        InputEvent::TouchMotion { event } => event.device(),
+        InputEvent::TouchUp { event } => event.device(),
+        InputEvent::TouchCancel { event } => event.device(),
+        InputEvent::TouchFrame { event } => event.device(),
+        InputEvent::TabletToolAxis { event } => event.device(),
+        InputEvent::TabletToolProximity { event } => event.device(),
+        InputEvent::TabletToolTip { event } => event.device(),
+        InputEvent::TabletToolButton { event } => event.device(),
+        InputEvent::SwitchToggle { event } => event.device(),
+        InputEvent::DeviceAdded { .. }
+        | InputEvent::DeviceRemoved { .. }
+        | InputEvent::Special(_) => return None,
+    })
+}
+
 fn is_mouse_device(device: &LibinputDevice) -> bool {
     // Do not infer this from pointer capability alone: touchpads expose the
     // same capability and have an independently configurable input model.
@@ -1982,6 +2040,14 @@ fn process_input_event(
                     .insert(device.sysname().to_owned());
             }
         }
+        #[cfg(feature = "flutter")]
+        if lid_switch::ignored_under_closed_lid(lid_device_traits(device)) {
+            info!(device = %device.name(), "ignored while the lid is closed");
+            state
+                .input_devices
+                .lid_covered
+                .insert(device.sysname().to_owned());
+        }
         let touchpad = is_touchpad_device(device);
         if touchpad {
             let settings = state
@@ -2051,6 +2117,17 @@ fn process_input_event(
             reset_input_devices(state, reset);
         }
         return reset.any() || tablet_clients_changed;
+    }
+
+    // While the lid is closed the built-in touchscreen and pen reach neither
+    // the shell nor a client, and they are no activity: they neither light
+    // the screen nor restart the idle timer.
+    #[cfg(feature = "flutter")]
+    if state.lid.closed()
+        && input_event_device(&event)
+            .is_some_and(|device| state.input_devices.lid_covered.contains(device.sysname()))
+    {
+        return false;
     }
 
     #[cfg(feature = "flutter")]
@@ -2176,7 +2253,22 @@ fn process_input_event(
         && SwitchToggleEvent::switch(event) == Some(Switch::Lid)
     {
         let closed = SwitchToggleEvent::state(event) == SwitchState::On;
+        let was_closed = state.lid.closed();
         state.lid.note_toggle(closed);
+        if closed && !was_closed {
+            // End the touches under way: their lift comes from a touchscreen
+            // the closed lid silences.
+            reset_input_devices(
+                state,
+                InputDeviceReset {
+                    keyboard: false,
+                    pointer: false,
+                    touch: true,
+                },
+            );
+            info!("the lid closed: the touchscreen and pen are ignored until it opens");
+            return true;
+        }
         if !closed {
             // Opening the lid asks to see the panel, as a key press would.
             state.note_user_activity();

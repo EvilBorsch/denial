@@ -349,7 +349,6 @@ impl Session<'_, '_> {
             frame_scheduler,
             flutter,
             events,
-            output_configuration,
             ..
         } = self;
         let output_control_was_dirty = events.output_control_dirty;
@@ -359,7 +358,6 @@ impl Session<'_, '_> {
         if background_maintenance_due {
             synchronize_idle_dpms(scanouts, events, now);
         }
-        dpms::synchronize_cover(scanouts, events, output_configuration.lid_closed);
         dpms::synchronize_wake_key(scanouts, events);
         synchronize_power_button(scanouts, events);
         synchronize_fingerprint_display_wake(scanouts, scheduler, events);

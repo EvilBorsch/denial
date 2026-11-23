@@ -39,6 +39,7 @@ import 'package:denial_flutter_sdk/effects.dart';
 import '../liquid/water_reveal.dart';
 import 'bypass_charging_tile.dart';
 import 'liquid_range_bar.dart';
+import 'power_tiles.dart';
 import 'quick_settings_tiles.dart';
 import 'stay_awake_tile.dart';
 
@@ -822,6 +823,9 @@ class _QuickSettingsTilesSection extends ConsumerWidget {
             ref.read(referenceShellPresentationProvider.notifier).toggle();
           },
         ),
+      // A short press of the power button, and sleep now.
+      screenOffQuickTile(ref, l10n),
+      sleepQuickTile(ref, l10n),
     ];
     final view = MediaQuery.sizeOf(context);
     return QuickSettingsTiles(

@@ -2378,7 +2378,7 @@ abstract class AppLocalizations {
   /// **'Auto-rotate'**
   String get quickSettingsAutoRotate;
 
-  /// Quick Settings tile that keeps the idle timeout from suspending the system while it is on. The screen still turns off and locks, and closing the lid still suspends.
+  /// Quick Settings tile that keeps the screen on and the session unlocked while it is on: inactivity neither turns the screen off, nor locks, nor suspends, the power button and closing the cover leave the screen on, and only the Screen off tile still turns it off.
   ///
   /// In en, this message translates to:
   /// **'Stay awake'**
@@ -2401,6 +2401,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Bypass charging is on'**
   String get quickSettingsBypassChargingOn;
+
+  /// Quick Settings tile that turns the screen off as a short press of the power button does: the session locks as for the button, unless Stay awake is on, and the system does not suspend.
+  ///
+  /// In en, this message translates to:
+  /// **'Screen off'**
+  String get quickSettingsScreenOff;
+
+  /// Quick Settings tile that suspends the system now, even while Stay awake is on. The session is locked when the system wakes.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep'**
+  String get quickSettingsSleep;
 
   /// Quick Settings tile that starts a screen recording, and stops it when tapped again.
   ///

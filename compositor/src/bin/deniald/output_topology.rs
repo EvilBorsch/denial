@@ -54,6 +54,9 @@ pub(super) struct RuntimeOutputConfiguration {
     /// Transient lid position. It shapes which outputs are lit, but it is
     /// never saved with the output preferences.
     pub(super) lid_closed: bool,
+    /// Transient: Stay awake keeps the built-in panels lit under the closed
+    /// lid ([`Self::lid_covers_panels`]).
+    pub(super) stay_awake: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -98,7 +101,15 @@ impl RuntimeOutputConfiguration {
             vrr_outputs: options.vrr_outputs.clone(),
             disabled_outputs: options.disabled_outputs.clone(),
             lid_closed: false,
+            stay_awake: false,
         }
+    }
+
+    /// Whether the closed lid covers the built-in panels for the display
+    /// policy. Under Stay awake it does not: the panel stays lit beside
+    /// another display, so that the screen can still be seen and captured.
+    pub(super) fn lid_covers_panels(&self) -> bool {
+        self.lid_closed && !self.stay_awake
     }
 
     pub(super) fn effective_transform(&self, name: &str) -> OutputTransform {
@@ -220,7 +231,7 @@ pub(super) fn configured_outputs(
     let selection = output_policy::select_outputs(
         named.iter().map(|(name, _)| name.as_str()),
         &configuration.disabled_outputs,
-        configuration.lid_closed,
+        configuration.lid_covers_panels(),
     );
     named.retain(|(name, _)| {
         let lit = selection.lit.contains(name);
@@ -800,7 +811,7 @@ pub(super) fn configuration_from_output_request(
     staged.disabled_outputs = output_policy::reconcile_disabled_outputs(
         &names.iter().map(String::as_str).collect::<Vec<_>>(),
         &current.disabled_outputs,
-        current.lid_closed,
+        current.lid_covers_panels(),
         |name| requested_by_name[name].enabled,
     );
     Ok((staged, power))
@@ -1071,6 +1082,7 @@ mod tests {
             vrr_outputs: BTreeSet::new(),
             disabled_outputs: BTreeSet::new(),
             lid_closed: false,
+            stay_awake: false,
         };
         // The native frozen offset applies to internal panels, including a
         // panel that reconnects later; never rotate an external monitor.
@@ -1166,5 +1178,42 @@ mod tests {
         assert_eq!(reconnected[1].position, LogicalPoint::new(0, 1_200));
         assert_eq!(configured[0].position, LogicalPoint::new(1_375, 1_200));
         assert_eq!(configured[1].position, LogicalPoint::new(1_375, 2_400));
+    }
+
+    #[test]
+    fn stay_awake_keeps_the_panel_lit_under_the_closed_lid() {
+        let mut configuration = RuntimeOutputConfiguration {
+            primary_output: None,
+            positions: BTreeMap::new(),
+            modes: BTreeMap::new(),
+            scales_120: BTreeMap::new(),
+            transforms: BTreeMap::new(),
+            scrolling_layout_axes: BTreeMap::new(),
+            sensor_rotation: OutputTransform::Normal,
+            vrr_outputs: BTreeSet::new(),
+            disabled_outputs: BTreeSet::new(),
+            lid_closed: true,
+            stay_awake: false,
+        };
+        assert!(configuration.lid_covers_panels());
+        let clamshell = output_policy::select_outputs(
+            ["DP-1", "DSI-1"],
+            &configuration.disabled_outputs,
+            configuration.lid_covers_panels(),
+        );
+        assert!(!clamshell.lit.contains("DSI-1"));
+
+        configuration.stay_awake = true;
+        assert!(!configuration.lid_covers_panels());
+        let awake = output_policy::select_outputs(
+            ["DP-1", "DSI-1"],
+            &configuration.disabled_outputs,
+            configuration.lid_covers_panels(),
+        );
+        assert!(awake.lit.contains("DSI-1") && awake.lit.contains("DP-1"));
+
+        configuration.lid_closed = false;
+        configuration.stay_awake = false;
+        assert!(!configuration.lid_covers_panels());
     }
 }

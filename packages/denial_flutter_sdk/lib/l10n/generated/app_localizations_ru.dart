@@ -1356,6 +1356,12 @@ class AppLocalizationsRu extends AppLocalizations {
   String get quickSettingsBypassChargingOn => 'Обходная зарядка включена';
 
   @override
+  String get quickSettingsScreenOff => 'Погасить экран';
+
+  @override
+  String get quickSettingsSleep => 'Сон';
+
+  @override
   String get quickSettingsScreenRecording => 'Запись экрана';
 
   @override

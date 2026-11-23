@@ -668,12 +668,14 @@ class ShellPowerSettings {
   /// locking on or off there, and the idle lock timeout has no say.
   final int screenOffLockDelaySeconds;
 
-  /// Stay awake: the idle timeout does not suspend the system, whatever
-  /// [idleSuspendEnabled] says. The screen still goes dark and the session
-  /// still locks on their timeouts, and nothing else that suspends is held
-  /// off: closing the lid, the power button and the power menu act as
-  /// usual. Switched from the quick settings; [idleSuspendEnabled] stays the
-  /// chosen default for when it is off.
+  /// Stay awake: the screen stays on and the session unlocked, so that
+  /// someone working on the device from afar sees it. deniald, which reads
+  /// the setting itself, neither darkens the screen, locks nor suspends on
+  /// inactivity, the power button leaves a lit screen lit, and closing the
+  /// cover changes nothing; the Screen off tile still darkens the screen,
+  /// without locking, and the Sleep tile and the power menu still suspend.
+  /// Switched from the quick settings; [idleSuspendEnabled] stays the chosen
+  /// default for when it is off.
   final bool stayAwake;
 
   /// Whether the idle timeout suspends the system.

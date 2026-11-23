@@ -894,10 +894,12 @@ impl SettingsManager {
             .unwrap_or(true)
     }
 
-    /// Stay awake (`power.stayAwake`): nothing suspends the system on its
-    /// own. The shell leaves the suspend timeout out of the idle policy, and
-    /// deniald takes the lid switch from logind so that closing the cover
-    /// does not suspend either. Off unless the user turned it on.
+    /// Stay awake (`power.stayAwake`): the screen stays on and the session
+    /// unlocked, and nothing suspends the system on its own. The idle policy
+    /// neither darkens, locks nor suspends, the power button leaves a lit
+    /// screen lit, and deniald takes the lid switch from logind so that
+    /// closing the cover changes nothing either. Off unless the user turned
+    /// it on.
     pub(super) fn stay_awake(&self) -> bool {
         self.document
             .get("power")

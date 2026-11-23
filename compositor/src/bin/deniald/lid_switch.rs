@@ -1,15 +1,21 @@
-//! Laptop lid position for the runtime display policy.
+//! Laptop lid position for the runtime display policy and for input.
 //!
 //! libinput reports each lid toggle as it happens, but it withholds the
 //! initial position of switches it does not trust, and a session away from its
 //! VT receives no toggles. logind reads the switch itself. It supplies the
 //! position at startup, and again whenever libinput may have missed a change:
-//! after the session returns to its VT and after system sleep.
+//! after the session returns to its VT and after system sleep. Only the lid
+//! switch says whether the lid is closed, through either; nothing else is
+//! taken for it.
 //!
 //! logind acts on the lid by itself. While Denial holds its
 //! `handle-lid-switch` inhibitor (Stay awake), logind leaves the lid alone
-//! and [`Cover`] decides what the compositor does instead: the closed cover
-//! turns the displays off, the opened cover lights them again.
+//! and the closed cover changes nothing on screen: the panel stays lit and
+//! the session as it was.
+//!
+//! In any mode, the built-in touchscreen and pen are ignored while the lid
+//! is closed ([`ignored_under_closed_lid`]): they register touches through
+//! the closed cover. Every other input device goes on working.
 
 #[cfg(feature = "flutter")]
 use smithay::reexports::calloop::channel::Sender;
@@ -64,6 +70,8 @@ pub(super) struct LidReading {
 #[cfg(feature = "flutter")]
 #[derive(Default)]
 pub(super) struct LidSwitch {
+    /// The last position the lid switch reported, by either source.
+    closed: bool,
     pending: Option<bool>,
     /// Advances with every libinput toggle, so a logind reading requested
     /// before a newer toggle cannot overwrite it.
@@ -73,8 +81,10 @@ pub(super) struct LidSwitch {
 
 #[cfg(feature = "flutter")]
 impl LidSwitch {
-    pub(super) fn new(readings: Sender<LidReading>) -> Self {
+    /// `closed` is the position logind reported at startup.
+    pub(super) fn new(readings: Sender<LidReading>, closed: bool) -> Self {
         Self {
+            closed,
             readings: Some(readings),
             ..Self::default()
         }
@@ -83,6 +93,12 @@ impl LidSwitch {
     pub(super) fn note_toggle(&mut self, closed: bool) {
         self.generation = self.generation.wrapping_add(1);
         self.pending = Some(closed);
+        self.closed = closed;
+    }
+
+    /// Whether the lid switch last reported the lid closed.
+    pub(super) fn closed(&self) -> bool {
+        self.closed
     }
 
     /// Asks logind for the current position without blocking the compositor
@@ -112,6 +128,7 @@ impl LidSwitch {
     pub(super) fn note_reading(&mut self, reading: LidReading) {
         if reading.generation == self.generation {
             self.pending = Some(reading.closed);
+            self.closed = reading.closed;
         }
     }
 
@@ -120,57 +137,39 @@ impl LidSwitch {
     }
 }
 
-/// What the cover does while Denial, not logind, handles the lid switch.
-///
-/// The closed cover only turns the displays off: the session stays as it
-/// was, so opening the cover shows what was on screen. With the inhibitor
-/// let go, logind acts on the lid as configured, and the cover asks nothing
-/// of the compositor beyond lighting the displays it darkened.
+/// Linux input bus types (`linux/input.h`) of devices plugged in or paired
+/// and of virtual ones: none of them is under the cover.
 #[cfg(feature = "flutter")]
-#[derive(Debug, Default)]
-pub(super) struct Cover {
-    /// The closed cover turned the displays off; opening it lights them.
-    darkened: bool,
+const BUS_USB: u16 = 0x03;
+#[cfg(feature = "flutter")]
+const BUS_BLUETOOTH: u16 = 0x05;
+#[cfg(feature = "flutter")]
+const BUS_VIRTUAL: u16 = 0x06;
+
+/// What decides whether an input device is ignored while the lid is closed.
+#[cfg(feature = "flutter")]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) struct InputDeviceTraits {
+    /// The kernel's bus type (`id/bustype`), if it could be read.
+    pub(super) bus: Option<u16>,
+    /// A touchscreen.
+    pub(super) touch: bool,
+    /// A pen, or a drawing tablet's pad.
+    pub(super) tablet: bool,
 }
 
+/// Whether a device is ignored while the lid is closed: a touchscreen or a
+/// pen built into the machine. On the OnePlus Pad 3 these are
+/// NVTCapacitiveTouchScreen and NVTCapacitivePen on SPI, which register
+/// touches through the closed cover. A touchscreen or pen plugged in or
+/// paired (USB, Bluetooth) or a virtual one, and every keyboard, touchpad or
+/// mouse, including the keyboard cover's, goes on working; so do the power
+/// and volume keys and the lid switch. A touchscreen whose bus could not be
+/// read counts as built in.
 #[cfg(feature = "flutter")]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum CoverAction {
-    /// Turn the displays off, without locking.
-    Darken,
-    /// Light the displays the cover turned off.
-    Light,
-}
-
-#[cfg(feature = "flutter")]
-impl Cover {
-    /// Follows the lid position the display policy uses (`closed`), whether
-    /// Denial holds logind's lid switch handling (`handled`) and whether a
-    /// display other than the built-in panels is in use (`docked`), where
-    /// logind by default ignores the lid too. Called on every loop turn, it
-    /// acts once per closing: the cover closed while handled, or the handling
-    /// taken while the cover was closed.
-    pub(super) fn update(
-        &mut self,
-        closed: bool,
-        handled: bool,
-        docked: bool,
-    ) -> Option<CoverAction> {
-        if !closed {
-            return std::mem::take(&mut self.darkened).then_some(CoverAction::Light);
-        }
-        if self.darkened || !handled || docked {
-            return None;
-        }
-        self.darkened = true;
-        Some(CoverAction::Darken)
-    }
-
-    /// Whether the closed cover keeps the displays dark: a notification does
-    /// not light the panel under it. The user's own input still does.
-    pub(super) fn darkened(&self) -> bool {
-        self.darkened
-    }
+pub(super) fn ignored_under_closed_lid(device: InputDeviceTraits) -> bool {
+    let attached = matches!(device.bus, Some(BUS_USB | BUS_BLUETOOTH | BUS_VIRTUAL));
+    !attached && (device.touch || device.tablet)
 }
 
 #[cfg(all(test, feature = "flutter"))]
@@ -189,57 +188,82 @@ mod tests {
             closed: true,
         });
         assert_eq!(lid.take_pending(), None);
+        assert!(!lid.closed());
 
         lid.note_reading(LidReading {
             generation: lid.generation,
             closed: true,
         });
         assert_eq!(lid.take_pending(), Some(true));
+        assert!(lid.closed());
     }
 
     #[test]
-    fn the_cover_darkens_only_while_denial_handles_the_lid() {
-        let mut cover = Cover::default();
-        // logind handles the lid: it suspends or locks, Denial does nothing.
-        assert_eq!(cover.update(true, false, false), None);
-        assert!(!cover.darkened());
-        assert_eq!(cover.update(false, false, false), None);
+    fn the_lid_position_follows_toggles_from_the_startup_reading() {
+        let (readings, _) = smithay::reexports::calloop::channel::channel();
+        let mut lid = LidSwitch::new(readings, true);
+        assert!(lid.closed());
+        // Read at once by the input path, before the display policy takes it.
+        lid.note_toggle(false);
+        assert!(!lid.closed());
+        lid.note_toggle(true);
+        assert!(lid.closed());
+        assert_eq!(lid.take_pending(), Some(true));
+        assert!(lid.closed());
+    }
 
-        assert_eq!(cover.update(true, true, false), Some(CoverAction::Darken));
-        assert!(cover.darkened());
-        // Once per closing, however many loop turns follow.
-        assert_eq!(cover.update(true, true, false), None);
-        assert_eq!(cover.update(false, true, false), Some(CoverAction::Light));
-        assert!(!cover.darkened());
-        assert_eq!(cover.update(false, true, false), None);
+    /// `linux/input.h`
+    const BUS_HOST: u16 = 0x19;
+    const BUS_SPI: u16 = 0x1c;
+
+    fn device(bus: u16) -> InputDeviceTraits {
+        InputDeviceTraits {
+            bus: Some(bus),
+            ..InputDeviceTraits::default()
+        }
     }
 
     #[test]
-    fn taking_the_lid_while_the_cover_is_closed_darkens_at_once() {
-        let mut cover = Cover::default();
-        assert_eq!(cover.update(true, false, false), None);
-        assert_eq!(cover.update(true, true, false), Some(CoverAction::Darken));
+    fn the_closed_lid_silences_the_built_in_touchscreen_and_pen() {
+        // NVTCapacitiveTouchScreen and NVTCapacitivePen.
+        assert!(ignored_under_closed_lid(InputDeviceTraits {
+            touch: true,
+            ..device(BUS_SPI)
+        }));
+        assert!(ignored_under_closed_lid(InputDeviceTraits {
+            tablet: true,
+            ..device(BUS_SPI)
+        }));
+        // An unreadable bus counts as built in.
+        assert!(ignored_under_closed_lid(InputDeviceTraits {
+            touch: true,
+            bus: None,
+            ..InputDeviceTraits::default()
+        }));
     }
 
     #[test]
-    fn letting_the_lid_go_under_the_closed_cover_leaves_logind_to_act() {
-        let mut cover = Cover::default();
-        assert_eq!(cover.update(true, true, false), Some(CoverAction::Darken));
-        // logind suspends on battery or does nothing on the charger; the
-        // displays stay dark until the cover opens.
-        assert_eq!(cover.update(true, false, false), None);
-        assert!(cover.darkened());
-        assert_eq!(cover.update(false, false, false), Some(CoverAction::Light));
-    }
-
-    #[test]
-    fn an_external_display_keeps_the_desktop_lit_under_the_closed_cover() {
-        let mut cover = Cover::default();
-        assert_eq!(cover.update(true, true, true), None);
-        assert!(!cover.darkened());
-        assert_eq!(cover.update(false, true, true), None);
-        // Unplugged while the cover is closed: nothing shows the desktop.
-        assert_eq!(cover.update(true, true, true), None);
-        assert_eq!(cover.update(true, true, false), Some(CoverAction::Darken));
+    fn every_other_device_works_under_the_closed_lid() {
+        // The keyboard cover's keyboard and touchpad (oneplus-pogo-keyboard,
+        // BUS_HOST), gpio-keys (volume keys, the lid) and pmic_pwrkey: no
+        // touchscreen or pen.
+        assert!(!ignored_under_closed_lid(device(BUS_HOST)));
+        // A Bluetooth or USB keyboard, mouse, touchscreen or pen.
+        for bus in [BUS_USB, BUS_BLUETOOTH] {
+            assert!(!ignored_under_closed_lid(device(bus)));
+            assert!(!ignored_under_closed_lid(InputDeviceTraits {
+                touch: true,
+                ..device(bus)
+            }));
+            assert!(!ignored_under_closed_lid(InputDeviceTraits {
+                tablet: true,
+                ..device(bus)
+            }));
+        }
+        // uinput, such as a remote session's virtual touchscreen.
+        assert!(!ignored_under_closed_lid(InputDeviceTraits {
+            touch: true,
+            ..device(BUS_VIRTUAL)
+        }));
     }
 }

@@ -693,14 +693,24 @@ pub(super) fn synchronize_fingerprint_unlock(events: &RuntimeState) {
     }
 }
 
-/// Holds logind's lid switch while Stay awake is on, so that closing the
-/// cover does not suspend: at start and after every settings change, from
-/// the shell, the control socket or an edit of the file alike. Repeating the
-/// current value changes nothing.
+/// Follows Stay awake at start and after every settings change, from the
+/// shell, the control socket or an edit of the file alike: while it is on,
+/// the idle policy keeps the screen on and the session unlocked, and
+/// logind's lid switch is held, so that closing the cover changes nothing.
+/// Otherwise logind acts on the cover as configured. Repeating the current
+/// value changes nothing.
 #[cfg(feature = "flutter")]
-pub(super) fn synchronize_stay_awake(events: &RuntimeState) {
+pub(super) fn synchronize_stay_awake(events: &mut RuntimeState) {
+    let stay_awake = events.frontend().settings.stay_awake();
     if let Some(controls) = events.system_controls.as_ref() {
-        controls.hold_lid_switch(events.frontend().settings.stay_awake());
+        controls.hold_lid_switch(stay_awake);
+    }
+    if stay_awake != events.idle_policy.stay_awake() {
+        let requests = events
+            .idle_policy
+            .set_stay_awake(stay_awake, std::time::Instant::now());
+        events.queue_idle_power_requests(requests);
+        info!(stay_awake, "Stay awake changed");
     }
 }
 

@@ -486,6 +486,7 @@ impl Session<'_, '_> {
             self.apply_pending_sensor_orientation(iteration_now)?;
             self.synchronize_orientation_demand();
             self.apply_pending_lid_position();
+            self.apply_stay_awake_display_policy();
             self.expire_output_confirmation(iteration_now);
             let current_output_snapshot = self.publish_output_control_updates()?;
             if let Some(reason) = self.events.lifecycle.shutdown_reason() {
@@ -955,7 +956,7 @@ pub(super) fn run_flutter_event_loop(
         ..RuntimeState::default()
     };
     synchronize_fingerprint_unlock(&events);
-    synchronize_stay_awake(&events);
+    synchronize_stay_awake(&mut events);
     if let Err(error) = settings_watch::install(&event_loop.handle(), &settings_path) {
         warn!(%error, path = %settings_path.display(), "could not watch Denial settings for external edits");
     }
@@ -982,7 +983,7 @@ pub(super) fn run_flutter_event_loop(
             }
         },
     )?;
-    events.lid = lid_switch::LidSwitch::new(lid_readings);
+    events.lid = lid_switch::LidSwitch::new(lid_readings, output_configuration.lid_closed);
     events.synchronize_flutter_pointer_position();
     let (scheduler, frame_scheduler) = create_frame_schedulers(
         drm,
