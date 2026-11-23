@@ -160,7 +160,11 @@ qemu-user cannot) and the timing-sensitive
 `frame_deadline_source_tests::acquire_callback_removes_queued_deadline_source`.
 On `eb/mode-follow` 709 of 714 pass with the same 4 failing. On `eb/power-tiles`
 735 of 740 pass with the same 4 failing, on `eb/sleep-after-screen-off` 745 of
-750.
+750. `eb/main` at `8dc3da5` passes 751 of 756 and `eb/pointer-gestures` 764 of
+769, the same 4 failing; there
+`gpu_transfer::tests::source_wait_accepts_readiness_and_rejects_hangup`, whose
+5 ms deadline a busy qemu-user thread can miss, also failed in 2 of 5 full
+runs and passes alone.
 
 The portal's tests and the protocol's run the same way, the D-Bus ones on a
 private session bus:
