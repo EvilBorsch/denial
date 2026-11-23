@@ -294,6 +294,23 @@ impl FlutterRuntime {
         Ok(())
     }
 
+    /// A shell gesture that follows the fingers or the pointer (screens
+    /// layout: three fingers or a middle-button drag, up or down).
+    #[allow(dead_code)]
+    pub fn send_shell_gesture(
+        &mut self,
+        gesture: wire::ShellGesture,
+    ) -> Result<(), Box<dyn Error>> {
+        let engine = self
+            .host
+            .as_ref()
+            .expect("Flutter runtime is shutting down")
+            .engine();
+        let event = self.wire.encode_shell_gesture(gesture)?;
+        engine.send_platform_message(wire::TO_FLUTTER_CHANNEL, event)?;
+        Ok(())
+    }
+
     pub fn set_active_workspaces(
         &mut self,
         workspaces: impl IntoIterator<Item = (i64, u8)>,

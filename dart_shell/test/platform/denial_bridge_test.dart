@@ -101,6 +101,65 @@ void main() {
     );
   }
 
+  test('shell gestures cross the native bridge with their progress', () async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final bridge = DenialBridge();
+    final events = <DenialShellActionEvent>[];
+    final subscription = bridge.shellActions.listen(events.add);
+    try {
+      Future<void> send(wire.ShellActionObjectBuilder action) {
+        final envelope = wire.EnvelopeObjectBuilder(
+          protocolVersion: 1,
+          sequence: 7,
+          requestId: 0,
+          payloadType: wire.PayloadTypeId.ShellAction,
+          payload: action,
+        ).toBytes('DENW');
+        return messenger.handlePlatformMessage(
+          wire.denialWireToFlutterChannel,
+          ByteData.sublistView(envelope),
+          null,
+        );
+      }
+
+      await send(
+        wire.ShellActionObjectBuilder(
+          action: wire.ShellActionKind.ShellGesture,
+          gestureKind: wire.ShellGestureKind.Down,
+          gesturePhase: wire.ShellGesturePhase.End,
+          gestureProgress: 0.75,
+          gestureVelocity: -2.5,
+          gestureCommitted: true,
+        ),
+      );
+      await send(
+        wire.ShellActionObjectBuilder(action: wire.ShellActionKind.Search),
+      );
+      await send(
+        wire.ShellActionObjectBuilder(
+          action: wire.ShellActionKind.AppSwitcherEnd,
+        ),
+      );
+
+      expect(events.map((event) => event.action), [
+        DenialShellAction.shellGesture,
+        DenialShellAction.search,
+        DenialShellAction.appSwitcherEnd,
+      ]);
+      final gesture = events.first.gesture!;
+      expect(gesture.kind, DenialShellGestureKind.down);
+      expect(gesture.phase, DenialShellGesturePhase.end);
+      expect(gesture.progress, 0.75);
+      expect(gesture.velocity, -2.5);
+      expect(gesture.committed, isTrue);
+      expect(events[1].gesture, isNull);
+    } finally {
+      await subscription.cancel();
+      bridge.dispose();
+    }
+  });
+
   test(
     'atomic client cursor surface state crosses the native bridge',
     () async {

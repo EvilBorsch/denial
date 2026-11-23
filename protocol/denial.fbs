@@ -115,7 +115,42 @@ enum ShellActionKind : ubyte {
   LockScreenEditor = 19,
   // The windows of the focused app (full-screen apps layout, three fingers
   // down). Appended: an older shell ignores it.
-  AppWindows = 20
+  AppWindows = 20,
+  // The app switcher (Alt+Tab; Cmd+Tab in the Mac preset). Next and Previous
+  // step the selected app (Tab, Shift+Tab), WindowNext and WindowPrevious the
+  // windows of the selected app (grave, Shift+grave; without an open switcher
+  // they step the focused app's windows). deniald sends End when the held
+  // modifier is released (switch to the selection) and Cancel on Escape.
+  AppSwitcherNext = 21,
+  AppSwitcherPrevious = 22,
+  AppSwitcherWindowNext = 23,
+  AppSwitcherWindowPrevious = 24,
+  AppSwitcherEnd = 25,
+  AppSwitcherCancel = 26,
+  // Open search: the global overlay over the current screen; in an open
+  // overview it focuses the overview's search field.
+  Search = 27,
+  // A shell gesture that follows the fingers or the pointer (three fingers,
+  // or a middle-button drag, up or down in the screens layout); see the
+  // gesture_* fields of ShellAction. The shell decides what the direction
+  // opens where it is (the overview, the app windows).
+  ShellGesture = 28
+}
+
+// The direction of a ShellGesture: three fingers (or a middle-button drag)
+// up or down.
+enum ShellGestureKind : ubyte {
+  Up = 0,
+  Down = 1
+}
+
+enum ShellGesturePhase : ubyte {
+  Begin = 0,
+  Update = 1,
+  // The fingers lifted; gesture_committed says whether the view opens.
+  End = 2,
+  // Abandoned (another gesture took over, the session locked, ...).
+  Cancel = 3
 }
 
 enum KeyboardCommandKind : ubyte {
@@ -626,6 +661,16 @@ table ShellAction {
   texture_id:long;
   // WorkspaceChanged only. One-based and scoped by monitor_id.
   workspace_id:uint = 1;
+  // ShellGesture only (appended; older readers ignore them).
+  gesture_kind:ShellGestureKind = Up;
+  gesture_phase:ShellGesturePhase = Begin;
+  // 0 at rest, 1 when the view is fully open; may leave 0..1 while the
+  // fingers overshoot.
+  gesture_progress:float;
+  // Progress per second at End.
+  gesture_velocity:float;
+  // End only: deniald's decision, true when the gesture opens its view.
+  gesture_committed:bool;
 }
 
 // Rust-authoritative software cursor state. Flutter cursor intents and
@@ -800,6 +845,11 @@ table InputDeviceCapabilities {
   // A keyboard to type on is attached. Power buttons, volume keys and other
   // key-only devices do not count.
   has_keyboard:bool;
+  // A physical keyboard to type on is attached: has_keyboard without the
+  // virtual (uinput, BUS_VIRTUAL) ones such as test tools. The keyboard
+  // cover, USB and Bluetooth keyboards count. Appended: older readers ignore
+  // it.
+  has_physical_keyboard:bool;
 }
 
 table TouchpadConfiguration {

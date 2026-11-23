@@ -265,6 +265,10 @@ impl WireBridge {
         if monitor_id.is_some_and(|monitor_id| monitor_id < 0) {
             return Err(WireError::Topology("invalid shell action monitor"));
         }
+        // A gesture carries its direction and progress: encode_shell_gesture.
+        if action == ShellAction::ShellGesture {
+            return Err(WireError::Identity);
+        }
         if (action == ShellAction::WorkspaceChanged)
             != (monitor_id.is_some() && workspace_id.is_some_and(|workspace| workspace > 0))
         {
@@ -281,6 +285,48 @@ impl WireBridge {
             0,
             None,
         )?;
+        Ok(self.outbound_builder.finished_data())
+    }
+
+    /// A shell gesture that follows the fingers or the pointer.
+    pub fn encode_shell_gesture(&mut self, gesture: ShellGesture) -> Result<&[u8], WireError> {
+        if !gesture.progress.is_finite() || !gesture.velocity.is_finite() {
+            return Err(WireError::Geometry);
+        }
+        let sequence = self.take_sequence();
+        self.outbound_builder.reset();
+        let action = fb::ShellAction::create(
+            &mut self.outbound_builder,
+            &fb::ShellActionArgs {
+                action: fb::ShellActionKind::ShellGesture,
+                gesture_kind: match gesture.kind {
+                    ShellGestureKind::Up => fb::ShellGestureKind::Up,
+                    ShellGestureKind::Down => fb::ShellGestureKind::Down,
+                },
+                gesture_phase: match gesture.phase {
+                    ShellGesturePhase::Begin => fb::ShellGesturePhase::Begin,
+                    ShellGesturePhase::Update => fb::ShellGesturePhase::Update,
+                    ShellGesturePhase::End => fb::ShellGesturePhase::End,
+                    ShellGesturePhase::Cancel => fb::ShellGesturePhase::Cancel,
+                },
+                gesture_progress: gesture.progress,
+                gesture_velocity: gesture.velocity,
+                gesture_committed: gesture.committed,
+                ..Default::default()
+            },
+        );
+        let envelope = fb::Envelope::create(
+            &mut self.outbound_builder,
+            &fb::EnvelopeArgs {
+                protocol_version: PROTOCOL_VERSION,
+                sequence,
+                request_id: 0,
+                payload_type: fb::Payload::ShellAction,
+                payload: Some(action.as_union_value()),
+            },
+        );
+        fb::finish_envelope_buffer(&mut self.outbound_builder, envelope);
+        validate_finished_message(&self.outbound_builder)?;
         Ok(self.outbound_builder.finished_data())
     }
 
@@ -497,6 +543,7 @@ impl WireBridge {
             has_mouse,
             mouse,
             has_keyboard,
+            has_physical_keyboard,
         } = devices;
         if revision == 0 || error.is_some_and(|error| error.len() > MAX_STRING_BYTES) {
             return Err(WireError::Identity);
@@ -528,6 +575,7 @@ impl WireBridge {
                 has_mouse,
                 mouse: Some(mouse),
                 has_keyboard,
+                has_physical_keyboard,
             },
         );
         let error = error.map(|error| self.outbound_builder.create_string(error));
@@ -938,6 +986,7 @@ fn encode_shell_action(
             has_monitor_id: monitor_id.is_some(),
             texture_id: texture_id.unwrap_or(0),
             workspace_id: u32::from(workspace_id.unwrap_or(1)),
+            ..Default::default()
         },
     );
     let envelope = fb::Envelope::create(

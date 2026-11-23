@@ -44,6 +44,11 @@ pub(super) struct InputDevices {
     /// The keyboards to type on, by sysname.
     #[cfg(feature = "flutter")]
     pub(super) typing_keyboards: BTreeSet<String>,
+    /// The physical ones among [`Self::typing_keyboards`]: not virtual
+    /// (uinput) devices such as test tools. The shell's presentation follows
+    /// these.
+    #[cfg(feature = "flutter")]
+    pub(super) physical_keyboards: BTreeSet<String>,
     #[cfg(feature = "flutter")]
     pub(super) mice: BTreeMap<String, smithay::reexports::input::Device>,
     #[cfg(feature = "flutter")]
@@ -62,6 +67,8 @@ pub(super) struct InputDeviceKinds {
     pub(super) mouse: bool,
     /// A keyboard to type on: the software keyboard stays down for it.
     pub(super) keyboard: bool,
+    /// A physical keyboard to type on: the shell's presentation follows it.
+    pub(super) physical_keyboard: bool,
 }
 
 impl InputDevices {
@@ -73,6 +80,7 @@ impl InputDevices {
             touchpad: !self.touchpads.is_empty(),
             mouse: !self.mice.is_empty(),
             keyboard: !self.typing_keyboards.is_empty(),
+            physical_keyboard: !self.physical_keyboards.is_empty(),
         }
     }
 
@@ -82,6 +90,7 @@ impl InputDevices {
         {
             self.touchscreens.remove(sysname);
             self.typing_keyboards.remove(sysname);
+            self.physical_keyboards.remove(sysname);
             self.mice.remove(sysname);
             self.touchpads.remove(sysname);
             self.lid_covered.remove(sysname);

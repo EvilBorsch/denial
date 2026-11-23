@@ -1705,6 +1705,20 @@ fn has_typing_keys(has_key: impl Fn(u32) -> bool) -> bool {
     TYPING_KEYS.into_iter().all(has_key)
 }
 
+/// linux/input.h BUS_VIRTUAL: uinput devices made by programs.
+#[cfg(feature = "flutter")]
+const BUS_VIRTUAL: u16 = 0x06;
+
+/// Whether a keyboard on this bus is a physical one, for the shell's
+/// presentation to follow. Virtual (uinput) keyboards of test tools and
+/// remappers do not count. Bluetooth keyboards come through uhid with their
+/// own bus (BUS_BLUETOOTH), so they count; so does a device whose bus cannot
+/// be read.
+#[cfg(feature = "flutter")]
+fn is_physical_keyboard_bus(bus: Option<u16>) -> bool {
+    bus != Some(BUS_VIRTUAL)
+}
+
 /// What decides whether a device is ignored while the lid is closed.
 #[cfg(feature = "flutter")]
 fn lid_device_traits(device: &LibinputDevice) -> lid_switch::InputDeviceTraits {
@@ -2182,11 +2196,18 @@ fn process_input_event(
                 .insert(device.sysname().to_owned(), device.clone());
             #[cfg(feature = "flutter")]
             if is_typing_keyboard(device) {
-                info!(device = %device.name(), "a keyboard to type on is attached");
+                let physical = is_physical_keyboard_bus(input_device_bus(device));
+                info!(device = %device.name(), physical, "a keyboard to type on is attached");
                 state
                     .input_devices
                     .typing_keyboards
                     .insert(device.sysname().to_owned());
+                if physical {
+                    state
+                        .input_devices
+                        .physical_keyboards
+                        .insert(device.sysname().to_owned());
+                }
             }
         }
         #[cfg(feature = "flutter")]
@@ -4149,5 +4170,17 @@ mod typing_keyboard_tests {
         }
         // udev's own test, Esc to D, is not enough without the other letters.
         assert!(!has_typing_keys(keys(&(KEY_ESC..=32).collect::<Vec<_>>())));
+    }
+
+    #[test]
+    fn virtual_keyboards_are_not_physical() {
+        // The cover (BUS_HOST), USB, Bluetooth through uhid, I2C.
+        for bus in [0x19, 0x03, 0x05, 0x18] {
+            assert!(is_physical_keyboard_bus(Some(bus)), "bus {bus:#x}");
+        }
+        // erhai test keyboard and other uinput devices.
+        assert!(!is_physical_keyboard_bus(Some(BUS_VIRTUAL)));
+        // An unreadable bus counts as physical, as before this distinction.
+        assert!(is_physical_keyboard_bus(None));
     }
 }

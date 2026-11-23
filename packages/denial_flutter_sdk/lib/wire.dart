@@ -84,6 +84,8 @@ export 'package:denial_wire_protocol/denial_denial.wire_generated.dart'
         ShellActionBuilder,
         ShellActionKind,
         ShellActionObjectBuilder,
+        ShellGestureKind,
+        ShellGesturePhase,
         ShellPresentation,
         ShellPresentationBuilder,
         ShellPresentationKind,

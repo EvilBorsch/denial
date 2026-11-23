@@ -944,6 +944,7 @@ fn control_input_snapshot(
         "has_touchpad": !events.input_devices.touchpads.is_empty(),
         "has_mouse": !events.input_devices.mice.is_empty(),
         "has_keyboard": !events.input_devices.typing_keyboards.is_empty(),
+        "has_physical_keyboard": !events.input_devices.physical_keyboards.is_empty(),
         "mouse_speed": mouse.speed,
         "mouse_acceleration_enabled": mouse.acceleration_enabled,
         "mouse_natural_scroll_enabled": mouse.natural_scroll_enabled,
@@ -1207,6 +1208,7 @@ pub(super) fn send_input_device_settings(
             has_mouse: !events.input_devices.mice.is_empty(),
             mouse: frontend.settings.mouse(),
             has_keyboard: !events.input_devices.typing_keyboards.is_empty(),
+            has_physical_keyboard: !events.input_devices.physical_keyboards.is_empty(),
         },
         error,
     )

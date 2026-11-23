@@ -2303,3 +2303,115 @@ fn windows_carry_their_screen_only_in_the_screens_layout() {
     assert_eq!(windows.get(1).layout_screen(), 0);
     assert!(windows.get(1).layout_screen_rect().is_none());
 }
+
+#[test]
+fn shell_gestures_carry_direction_phase_progress_and_decision() {
+    let mut bridge = bridge();
+    let bytes = bridge
+        .encode_shell_gesture(ShellGesture {
+            kind: ShellGestureKind::Down,
+            phase: ShellGesturePhase::End,
+            progress: 0.75,
+            velocity: -2.5,
+            committed: true,
+        })
+        .unwrap();
+    let envelope = fb::root_as_envelope(bytes).unwrap();
+    assert_eq!(envelope.payload_type(), fb::Payload::ShellAction);
+    let action = envelope.payload_as_shell_action().unwrap();
+    assert_eq!(action.action(), fb::ShellActionKind::ShellGesture);
+    assert_eq!(action.gesture_kind(), fb::ShellGestureKind::Down);
+    assert_eq!(action.gesture_phase(), fb::ShellGesturePhase::End);
+    assert_eq!(action.gesture_progress(), 0.75);
+    assert_eq!(action.gesture_velocity(), -2.5);
+    assert!(action.gesture_committed());
+    assert!(!action.has_monitor_id());
+
+    for (progress, velocity) in [(f32::NAN, 0.0), (0.5, f32::INFINITY)] {
+        assert!(
+            bridge
+                .encode_shell_gesture(ShellGesture {
+                    kind: ShellGestureKind::Up,
+                    phase: ShellGesturePhase::Update,
+                    progress,
+                    velocity,
+                    committed: false,
+                })
+                .is_err()
+        );
+    }
+    // A gesture is never sent without its fields.
+    assert!(
+        bridge
+            .encode_shell_action(ShellAction::ShellGesture, None, None)
+            .is_err()
+    );
+}
+
+#[test]
+fn eb18_shell_actions_reach_the_wire() {
+    let mut bridge = bridge();
+    for (action, kind) in [
+        (
+            ShellAction::AppSwitcherNext,
+            fb::ShellActionKind::AppSwitcherNext,
+        ),
+        (
+            ShellAction::AppSwitcherPrevious,
+            fb::ShellActionKind::AppSwitcherPrevious,
+        ),
+        (
+            ShellAction::AppSwitcherWindowNext,
+            fb::ShellActionKind::AppSwitcherWindowNext,
+        ),
+        (
+            ShellAction::AppSwitcherWindowPrevious,
+            fb::ShellActionKind::AppSwitcherWindowPrevious,
+        ),
+        (
+            ShellAction::AppSwitcherEnd,
+            fb::ShellActionKind::AppSwitcherEnd,
+        ),
+        (
+            ShellAction::AppSwitcherCancel,
+            fb::ShellActionKind::AppSwitcherCancel,
+        ),
+        (ShellAction::Search, fb::ShellActionKind::Search),
+    ] {
+        let bytes = bridge.encode_shell_action(action, None, None).unwrap();
+        let envelope = fb::root_as_envelope(bytes).unwrap();
+        assert_eq!(envelope.payload_as_shell_action().unwrap().action(), kind);
+    }
+}
+
+#[test]
+fn input_device_capabilities_tell_physical_keyboards_from_virtual_ones() {
+    let mut bridge = bridge();
+    let touchpad = TouchpadSettings::default();
+    let mouse = MouseSettings::default();
+    for (has_keyboard, has_physical_keyboard) in [(true, false), (true, true), (false, false)] {
+        let bytes = bridge
+            .encode_input_device_capabilities_response(
+                3,
+                5,
+                InputDeviceSettings {
+                    has_touchpad: false,
+                    touchpad: &touchpad,
+                    has_mouse: false,
+                    mouse: &mouse,
+                    has_keyboard,
+                    has_physical_keyboard,
+                },
+                None,
+            )
+            .unwrap();
+        let envelope = fb::root_as_envelope(bytes).unwrap();
+        let devices = envelope
+            .payload_as_settings_response()
+            .unwrap()
+            .input_devices()
+            .unwrap();
+        assert_eq!(devices.has_keyboard(), has_keyboard);
+        assert_eq!(devices.has_physical_keyboard(), has_physical_keyboard);
+    }
+}

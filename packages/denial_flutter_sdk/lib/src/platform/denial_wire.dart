@@ -764,6 +764,7 @@ class DenialWireCodec {
       scrollSpeedFactor: scrollSpeedFactor,
       scrollingLayoutSwipeSpeedFactor: scrollingLayoutSwipeSpeedFactor,
       hasKeyboard: inputDevices.hasKeyboard,
+      hasPhysicalKeyboard: inputDevices.hasPhysicalKeyboard,
     );
   }
 

@@ -127,6 +127,20 @@ final class BridgeEventsClient {
           wire.ShellActionKind.LockScreenEditor =>
             DenialShellAction.lockScreenEditor,
           wire.ShellActionKind.AppWindows => DenialShellAction.appWindows,
+          wire.ShellActionKind.AppSwitcherNext =>
+            DenialShellAction.appSwitcherNext,
+          wire.ShellActionKind.AppSwitcherPrevious =>
+            DenialShellAction.appSwitcherPrevious,
+          wire.ShellActionKind.AppSwitcherWindowNext =>
+            DenialShellAction.appSwitcherWindowNext,
+          wire.ShellActionKind.AppSwitcherWindowPrevious =>
+            DenialShellAction.appSwitcherWindowPrevious,
+          wire.ShellActionKind.AppSwitcherEnd =>
+            DenialShellAction.appSwitcherEnd,
+          wire.ShellActionKind.AppSwitcherCancel =>
+            DenialShellAction.appSwitcherCancel,
+          wire.ShellActionKind.Search => DenialShellAction.search,
+          wire.ShellActionKind.ShellGesture => DenialShellAction.shellGesture,
         };
         if (!_shellActions.isClosed) {
           _shellActions.add(
@@ -141,6 +155,32 @@ final class BridgeEventsClient {
                   payload.action == wire.ShellActionKind.WorkspaceChanged &&
                       payload.workspaceId > 0
                   ? payload.workspaceId
+                  : null,
+              gesture: payload.action == wire.ShellActionKind.ShellGesture
+                  ? DenialShellGesture(
+                      kind: switch (payload.gestureKind) {
+                        wire.ShellGestureKind.Up => DenialShellGestureKind.up,
+                        wire.ShellGestureKind.Down =>
+                          DenialShellGestureKind.down,
+                      },
+                      phase: switch (payload.gesturePhase) {
+                        wire.ShellGesturePhase.Begin =>
+                          DenialShellGesturePhase.begin,
+                        wire.ShellGesturePhase.Update =>
+                          DenialShellGesturePhase.update,
+                        wire.ShellGesturePhase.End =>
+                          DenialShellGesturePhase.end,
+                        wire.ShellGesturePhase.Cancel =>
+                          DenialShellGesturePhase.cancel,
+                      },
+                      progress: payload.gestureProgress.isFinite
+                          ? payload.gestureProgress
+                          : 0.0,
+                      velocity: payload.gestureVelocity.isFinite
+                          ? payload.gestureVelocity
+                          : 0.0,
+                      committed: payload.gestureCommitted,
+                    )
                   : null,
             ),
           );

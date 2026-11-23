@@ -270,6 +270,9 @@ pub struct InputDeviceSettings<'a> {
     pub mouse: &'a MouseSettings,
     /// A keyboard to type on, not merely a device with keys.
     pub has_keyboard: bool,
+    /// A physical keyboard to type on: `has_keyboard` without virtual
+    /// (uinput) devices. The shell's presentation follows it.
+    pub has_physical_keyboard: bool,
 }
 
 /// The touchpad preferences the shell's wire protocol carries. The pointer
@@ -440,6 +443,63 @@ pub enum ShellAction {
     LockScreenEditor,
     /// The windows of the focused app (full-screen apps layout).
     AppWindows,
+    /// The app switcher: step apps, step the selected app's windows, switch
+    /// to the selection (modifier released) or close (Escape).
+    #[allow(dead_code)]
+    AppSwitcherNext,
+    #[allow(dead_code)]
+    AppSwitcherPrevious,
+    #[allow(dead_code)]
+    AppSwitcherWindowNext,
+    #[allow(dead_code)]
+    AppSwitcherWindowPrevious,
+    #[allow(dead_code)]
+    AppSwitcherEnd,
+    #[allow(dead_code)]
+    AppSwitcherCancel,
+    /// Open search (the global overlay, or the open overview's field).
+    #[allow(dead_code)]
+    Search,
+    /// A gesture that follows the fingers or the pointer. Sent only through
+    /// [`ShellGesture`], which carries its direction and progress.
+    #[allow(dead_code)]
+    ShellGesture,
+}
+
+/// The direction of a [`ShellGesture`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ShellGestureKind {
+    Up,
+    Down,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(dead_code)]
+pub enum ShellGesturePhase {
+    Begin,
+    Update,
+    /// The fingers lifted (or the button was released); `committed` says
+    /// whether the view opens.
+    End,
+    /// Abandoned: another gesture took over, the session locked, ...
+    Cancel,
+}
+
+/// A shell gesture that follows the fingers or the pointer: three fingers up
+/// or down, or a middle-button drag, in the screens layout. The shell
+/// animates its view (the overview, the app windows) with `progress` and
+/// settles it at `End` the way `committed` says.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShellGesture {
+    pub kind: ShellGestureKind,
+    pub phase: ShellGesturePhase,
+    /// 0 at rest, 1 when the view is fully open; may leave 0..1 while the
+    /// fingers overshoot or turn back.
+    pub progress: f32,
+    /// Progress per second, for the settling spring.
+    pub velocity: f32,
+    /// At `End`: true when the gesture opens its view.
+    pub committed: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -480,6 +540,14 @@ impl ShellAction {
             Self::ScreenshotCaptured => fb::ShellActionKind::ScreenshotCaptured,
             Self::LockScreenEditor => fb::ShellActionKind::LockScreenEditor,
             Self::AppWindows => fb::ShellActionKind::AppWindows,
+            Self::AppSwitcherNext => fb::ShellActionKind::AppSwitcherNext,
+            Self::AppSwitcherPrevious => fb::ShellActionKind::AppSwitcherPrevious,
+            Self::AppSwitcherWindowNext => fb::ShellActionKind::AppSwitcherWindowNext,
+            Self::AppSwitcherWindowPrevious => fb::ShellActionKind::AppSwitcherWindowPrevious,
+            Self::AppSwitcherEnd => fb::ShellActionKind::AppSwitcherEnd,
+            Self::AppSwitcherCancel => fb::ShellActionKind::AppSwitcherCancel,
+            Self::Search => fb::ShellActionKind::Search,
+            Self::ShellGesture => fb::ShellActionKind::ShellGesture,
         }
     }
 }

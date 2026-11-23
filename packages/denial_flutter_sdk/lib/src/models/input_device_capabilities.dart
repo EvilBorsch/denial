@@ -21,6 +21,7 @@ class DenialInputDeviceCapabilities {
     required this.scrollSpeedFactor,
     required this.scrollingLayoutSwipeSpeedFactor,
     this.hasKeyboard = false,
+    this.hasPhysicalKeyboard = false,
   });
 
   const DenialInputDeviceCapabilities.none()
@@ -35,7 +36,8 @@ class DenialInputDeviceCapabilities {
       scrollSpeedFactor = touchpadScrollSpeedFactorDefault,
       scrollingLayoutSwipeSpeedFactor =
           touchpadScrollingLayoutSwipeSpeedFactorDefault,
-      hasKeyboard = false;
+      hasKeyboard = false,
+      hasPhysicalKeyboard = false;
 
   final int revision;
   final bool hasMouse;
@@ -54,6 +56,11 @@ class DenialInputDeviceCapabilities {
   /// A keyboard to type on is attached, such as a keyboard cover. deniald
   /// leaves out devices that only have power, volume or media keys.
   final bool hasKeyboard;
+
+  /// A physical keyboard to type on is attached: [hasKeyboard] without
+  /// virtual (uinput) devices such as test tools. The keyboard cover, USB and
+  /// Bluetooth keyboards count. The shell's presentation follows it.
+  final bool hasPhysicalKeyboard;
 
   factory DenialInputDeviceCapabilities.fromJson(Map<String, Object?> json) {
     return DenialInputDeviceCapabilities(
@@ -75,6 +82,7 @@ class DenialInputDeviceCapabilities {
           (json['scrolling_layout_swipe_speed_factor'] as num?)?.toDouble() ??
           touchpadScrollingLayoutSwipeSpeedFactorDefault,
       hasKeyboard: json['has_keyboard'] as bool? ?? false,
+      hasPhysicalKeyboard: json['has_physical_keyboard'] as bool? ?? false,
     );
   }
 
@@ -103,6 +111,7 @@ class DenialInputDeviceCapabilities {
     double? scrollSpeedFactor,
     double? scrollingLayoutSwipeSpeedFactor,
     bool? hasKeyboard,
+    bool? hasPhysicalKeyboard,
   }) {
     return DenialInputDeviceCapabilities(
       revision: revision ?? this.revision,
@@ -120,6 +129,7 @@ class DenialInputDeviceCapabilities {
           scrollingLayoutSwipeSpeedFactor ??
           this.scrollingLayoutSwipeSpeedFactor,
       hasKeyboard: hasKeyboard ?? this.hasKeyboard,
+      hasPhysicalKeyboard: hasPhysicalKeyboard ?? this.hasPhysicalKeyboard,
     );
   }
 
@@ -138,7 +148,8 @@ class DenialInputDeviceCapabilities {
             scrollSpeedFactor == other.scrollSpeedFactor &&
             scrollingLayoutSwipeSpeedFactor ==
                 other.scrollingLayoutSwipeSpeedFactor &&
-            hasKeyboard == other.hasKeyboard;
+            hasKeyboard == other.hasKeyboard &&
+            hasPhysicalKeyboard == other.hasPhysicalKeyboard;
   }
 
   @override
@@ -154,5 +165,6 @@ class DenialInputDeviceCapabilities {
     scrollSpeedFactor,
     scrollingLayoutSwipeSpeedFactor,
     hasKeyboard,
+    hasPhysicalKeyboard,
   );
 }

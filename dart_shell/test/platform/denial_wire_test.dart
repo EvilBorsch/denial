@@ -210,6 +210,7 @@ void main() {
               scrollingLayoutSwipeSpeedFactor: 1.75,
             ),
             hasKeyboard: true,
+            hasPhysicalKeyboard: true,
           ),
         ),
       ).toBytes('DENW');
@@ -235,6 +236,7 @@ void main() {
         closeTo(1.75, 0.0001),
       );
       expect(capabilities.hasKeyboard, isTrue);
+      expect(capabilities.hasPhysicalKeyboard, isTrue);
     },
   );
 
@@ -267,6 +269,7 @@ void main() {
     );
     expect(capabilities!.hasTouchpad, isTrue);
     expect(capabilities.hasKeyboard, isFalse);
+    expect(capabilities.hasPhysicalKeyboard, isFalse);
   });
 
   test('input capabilities read the keyboard from the control snapshot', () {
@@ -285,6 +288,19 @@ void main() {
       isFalse,
     );
     expect(capabilities, isNot(capabilities.copyWith(hasKeyboard: false)));
+    expect(capabilities.hasPhysicalKeyboard, isFalse);
+    expect(
+      DenialInputDeviceCapabilities.fromJson(const <String, Object?>{
+        'revision': 3,
+        'has_keyboard': true,
+        'has_physical_keyboard': true,
+      }).hasPhysicalKeyboard,
+      isTrue,
+    );
+    expect(
+      capabilities,
+      isNot(capabilities.copyWith(hasPhysicalKeyboard: true)),
+    );
   });
 
   test('theme accent is encoded as opaque packed sRGB', () {
