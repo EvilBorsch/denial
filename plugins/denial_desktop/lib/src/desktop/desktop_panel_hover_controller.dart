@@ -2,6 +2,12 @@ import 'dart:async';
 
 /// Coordinates hover-driven panel dismissal with the panel's entrance motion.
 ///
+/// Only a panel the pointer opened by entering its hot edge closes when the
+/// pointer leaves it again. A panel opened by a key, a gesture, a click or a
+/// finger stays open until it is dismissed: the pointer passing over and out
+/// of it, or the compositor ending the shell's mouse lifecycle (a pointer
+/// device going away), leaves it open, as Launchpad does on macOS.
+///
 /// Leaving an edge trigger while the panel is still entering records a pending
 /// close instead of starting the ordinary hover timer. The timer begins only
 /// once the transition reports completion, giving the pointer the full
@@ -19,12 +25,19 @@ class DesktopPanelHoverController {
   bool _opening = false;
   bool _closePending = false;
   bool _disposed = false;
+  bool _openedByHover = false;
 
-  void beginOpening() {
+  /// Whether leaving the open panel closes it: the pointer opened it.
+  bool get dismissesOnHoverExit => _openedByHover;
+
+  /// A closed panel starts opening. [byHover]: the pointer opened it by
+  /// entering its hot edge.
+  void beginOpening({required bool byHover}) {
     if (_disposed) {
       return;
     }
     _opening = true;
+    _openedByHover = byHover;
     cancelClose();
   }
 
@@ -50,7 +63,7 @@ class DesktopPanelHoverController {
   }
 
   void scheduleClose() {
-    if (_disposed) {
+    if (_disposed || !_openedByHover) {
       return;
     }
     _closeTimer?.cancel();
@@ -68,6 +81,7 @@ class DesktopPanelHoverController {
       return;
     }
     _opening = false;
+    _openedByHover = false;
     cancelClose();
   }
 

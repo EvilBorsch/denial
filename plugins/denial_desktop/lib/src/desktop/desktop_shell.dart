@@ -653,12 +653,15 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     ref.read(desktopWorkspaceProvider.notifier).closeOverview();
   }
 
-  void _openLauncher() {
+  /// Opens the launcher. [byHover]: the pointer entered its hot edge, so it
+  /// closes again when the pointer leaves it; opened any other way (Super,
+  /// four fingers up, a finger's edge swipe) it stays until dismissed.
+  void _openLauncher({bool byHover = false}) {
     if (ref.read(desktopLauncherProvider) == null) return;
     ref.read(clipboardTrayProvider.notifier).close();
     final workspace = ref.read(desktopWorkspaceProvider);
     if (!workspace.overviewActive && !workspace.launcherOpen) {
-      _panelHoverController.beginOpening();
+      _panelHoverController.beginOpening(byHover: byHover);
     } else {
       _panelHoverController.cancelClose();
     }
@@ -671,6 +674,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       }
     });
   }
+
+  void _hoverOpenLauncher() => _openLauncher(byHover: true);
+
+  void _hoverOpenDashboard() => _openDashboard(byHover: true);
 
   void _toggleLauncher() {
     if (ref.read(desktopWorkspaceProvider).launcherOpen) {
@@ -686,11 +693,12 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     _applicationSearchFocusNode.unfocus();
   }
 
-  void _openDashboard() {
+  /// Opens the dashboard; [byHover] as for [_openLauncher].
+  void _openDashboard({bool byHover = false}) {
     ref.read(clipboardTrayProvider.notifier).close();
     final workspace = ref.read(desktopWorkspaceProvider);
     if (!workspace.overviewActive && !workspace.dashboardOpen) {
-      _panelHoverController.beginOpening();
+      _panelHoverController.beginOpening(byHover: byHover);
     } else {
       _panelHoverController.cancelClose();
     }
@@ -1153,8 +1161,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
               mainOutputRect: mainOutput?.logicalRect,
               applicationSearchFocusNode: _applicationSearchFocusNode,
               onOpenLauncher: _openLauncher,
+              onHoverOpenLauncher: _hoverOpenLauncher,
               onDismissPanel: _closePanels,
               onOpenDashboard: _openDashboard,
+              onHoverOpenDashboard: _hoverOpenDashboard,
               onToggleDashboard: _toggleDashboard,
               onCloseWallpaperSelector: _closeWallpaperSelector,
               onOpenSettings: _openSettings,

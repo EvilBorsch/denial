@@ -278,8 +278,10 @@ class DesktopScene extends ConsumerStatefulWidget {
     required this.mainOutputRect,
     required this.applicationSearchFocusNode,
     required this.onOpenLauncher,
+    required this.onHoverOpenLauncher,
     required this.onDismissPanel,
     required this.onOpenDashboard,
+    required this.onHoverOpenDashboard,
     required this.onToggleDashboard,
     required this.onCloseWallpaperSelector,
     required this.onOpenSettings,
@@ -318,8 +320,14 @@ class DesktopScene extends ConsumerStatefulWidget {
   final Rect? mainOutputRect;
   final FocusNode applicationSearchFocusNode;
   final VoidCallback onOpenLauncher;
+
+  /// The pointer entered the launcher's hot edge.
+  final VoidCallback onHoverOpenLauncher;
   final VoidCallback onDismissPanel;
   final VoidCallback onOpenDashboard;
+
+  /// The pointer entered the dashboard's hot edge.
+  final VoidCallback onHoverOpenDashboard;
   final VoidCallback onToggleDashboard;
   final VoidCallback onCloseWallpaperSelector;
   final VoidCallback onOpenSettings;
@@ -1063,8 +1071,10 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                 panelDurationScale: widget.panelDurationScale,
                 applicationSearchFocusNode: applicationSearchFocusNode,
                 onOpenLauncher: onOpenLauncher,
+                onHoverOpenLauncher: widget.onHoverOpenLauncher,
                 onDismissPanel: onDismissPanel,
                 onOpenDashboard: onOpenDashboard,
+                onHoverOpenDashboard: widget.onHoverOpenDashboard,
                 onOpenSettings: onOpenSettings,
                 onCancelPanelClose: onCancelPanelClose,
                 onSchedulePanelClose: onSchedulePanelClose,
