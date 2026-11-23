@@ -512,6 +512,9 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
             items: overviewItems,
             bounds: nextOverview.bounds,
             mostRecentFirst: nextOverview.appWindows != null,
+            labelExtent: nextOverview.appWindows != null
+                ? DesktopOverviewLayout.titleExtent
+                : 0.0,
           ),
         );
         for (final placement in next.values) {
@@ -640,10 +643,12 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
             z: placement.z,
           ),
     ];
+    // The app windows name every window under it.
     final frames = DesktopOverviewLayout.arrange(
       items: items,
       bounds: bounds,
       mostRecentFirst: appWindows != null,
+      labelExtent: appWindows != null ? DesktopOverviewLayout.titleExtent : 0.0,
     );
     if (frames.isEmpty) {
       return;
@@ -1181,6 +1186,21 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
     return true;
   }
 
+  /// Selects [objectId]'s preview in the open overview, as the overview's
+  /// search chooses a window among its results.
+  bool selectOverviewWindow(int objectId) {
+    final overview = state.overview;
+    if (overview == null ||
+        overview.selectedObjectId == objectId ||
+        !overview.frames.containsKey(objectId)) {
+      return false;
+    }
+    state = state.copyWith(
+      overview: overview.copyWith(selectedObjectId: objectId),
+    );
+    return true;
+  }
+
   bool moveOverviewSelection(DesktopOverviewDirection direction) {
     final overview = state.overview;
     if (overview == null || overview.frames.isEmpty) {
@@ -1246,6 +1266,7 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
     _overviewDragOrigins[objectId] = (frame: previewFrame, z: placement.z);
     _overviewDropSlot = null;
     _overviewDropWorkspace = null;
+    _screensDrop = null;
     final next = Map<int, DesktopWindowPlacement>.of(state.placements);
     next[objectId] = placement.copyWith(z: state.nextZ, dragging: true);
     state = state.copyWith(placements: next, nextZ: state.nextZ + 1);
@@ -1373,6 +1394,10 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
       if (_overviewDropSlot?.objectId == objectId) {
         _overviewDropSlot = null;
       }
+      // The screens overview's drop belongs to this drag. Kept, its
+      // highlight would stay on screen in the old arrangement's place, an
+      // empty card frame, after the compositor rearranges the strip.
+      _screensDrop = null;
       state = state.copyWith(
         placements: next,
         overview: _rearrangedWorkspaceOverview(next, overview) ?? overview,

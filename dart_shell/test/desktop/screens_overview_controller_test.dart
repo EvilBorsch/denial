@@ -200,6 +200,85 @@ void main() {
     );
   });
 
+  test('a drop leaves no highlight behind when the strip changes', () {
+    final (container, workspace) = _desktop();
+    addTearDown(container.dispose);
+    workspace.openScreensOverview(
+      monitorId: 1,
+      bounds: Offset.zero & _view,
+      backgroundBounds: Offset.zero & _view,
+      viewport: _workArea,
+    );
+    final overview = container.read(desktopWorkspaceProvider).overview!;
+    // Settings (5) dragged onto the left half of Firefox's stack (1, 4).
+    final firefox = overview.workspaces!.screens!.cards.first.geometry;
+    workspace.beginOverviewDrag(5);
+    workspace.moveOverviewBy(
+      5,
+      firefox.contentRect.centerLeft +
+          const Offset(6, 0) -
+          overview.frames[5]!.center,
+    );
+    expect(workspace.planScreensDrop(5), isA<DesktopScreensJoin>());
+    expect(
+      container.read(desktopWorkspaceProvider).overview!.workspaces!.dropSlot,
+      isNotNull,
+    );
+
+    // The shell ends the drag as it sends the join to the compositor.
+    workspace.cancelOverviewDrag(5);
+    expect(
+      container.read(desktopWorkspaceProvider).overview!.workspaces!.dropSlot,
+      isNull,
+    );
+
+    // The compositor's answer: Settings joined Firefox's first screen, and
+    // the strip has one screen less. The rearranged overview keeps no frame
+    // of the old drop.
+    const current = 2;
+    final joined = _screen(1, current);
+    final half = (joined.width - _gap) / 2;
+    final strip = _strip();
+    final next = <DenialWindow>[
+      _window(
+        5,
+        app: 'settings',
+        screen: 1,
+        current: current,
+        frame: Rect.fromLTWH(joined.left, joined.top, half, joined.height),
+      ),
+      _window(
+        1,
+        app: 'firefox',
+        screen: 1,
+        current: current,
+        frame: Rect.fromLTWH(
+          joined.left + half + _gap,
+          joined.top,
+          half,
+          joined.height,
+        ),
+      ),
+      strip[1],
+      strip[2],
+      strip[3],
+    ];
+    workspace.syncWindows(
+      next,
+      _view,
+      1,
+      snapshotSequence: 2,
+      windowLayout: DesktopWindowLayout.screens,
+    );
+    final after = container.read(desktopWorkspaceProvider).overview!;
+    expect(after.workspaces!.dropSlot, isNull);
+    expect(after.workspaces!.screens!.cards.map((card) => card.screens), [
+      [1],
+      [2],
+      [3],
+    ]);
+  });
+
   test('the app windows view lists one app, the most recent first', () {
     final (container, workspace) = _desktop();
     addTearDown(container.dispose);

@@ -23,7 +23,9 @@ import '../state/desktop_window_switcher.dart';
 import '../state/quick_settings.dart';
 import '../widgets/shell_frame_time_overlay.dart';
 import 'desktop_overview_keyboard.dart';
+import 'desktop_overview_hub.dart';
 import 'desktop_overview_layout.dart';
+import 'desktop_overview_motion.dart';
 import 'desktop_overview_target.dart';
 import 'desktop_panel_hover_controller.dart';
 import 'settings_application.dart';
@@ -32,6 +34,7 @@ import '../color_tuning/color_tuning_controller.dart';
 import 'desktop_scene.dart';
 import 'desktop_scene_selection.dart';
 import 'desktop_screens_overview_layout.dart';
+import 'desktop_shell_search.dart';
 import 'desktop_window_coordinator.dart';
 import 'desktop_workspace.dart';
 import 'system_tray_module.dart';
@@ -63,6 +66,16 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   );
   late final StreamSubscription<DenialShellActionEvent>
   _shellActionSubscription;
+  late final DesktopOverviewGestures _overviewGestures =
+      DesktopOverviewGestures(
+        motion: ref.read(desktopOverviewMotionProvider),
+        currentView: _openOverviewView,
+        openView: (view, monitorId) => switch (view) {
+          DesktopOverviewGestureView.overview => _openOverview(monitorId),
+          DesktopOverviewGestureView.appWindows => _openAppWindows(monitorId),
+        },
+        dismiss: _dismissOverview,
+      );
 
   @override
   void initState() {
@@ -166,10 +179,19 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       case DenialShellAction.appSwitcherWindowPrevious:
       case DenialShellAction.appSwitcherEnd:
       case DenialShellAction.appSwitcherCancel:
-      case DenialShellAction.search:
-      case DenialShellAction.shellGesture:
         // The eb18 contract; the tracks that implement them handle them.
         break;
+      case DenialShellAction.search:
+        _toggleSearch(event.monitorId);
+      case DenialShellAction.shellGesture:
+        if (event.gesture case final gesture?) {
+          _cancelWindowSwitcher();
+          _overviewGestures.handle(
+            gesture,
+            monitorId: event.monitorId,
+            reduceMotion: MediaQuery.disableAnimationsOf(context),
+          );
+        }
       case DenialShellAction.workspaceChanged:
         final monitorId = event.monitorId;
         final workspaceId = event.workspaceId;
@@ -409,13 +431,20 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     ref.read(desktopWindowSwitcherProvider.notifier).cancel();
   }
 
-  void _toggleOverview(int? preferredMonitorId) {
-    ref.read(clipboardTrayProvider.notifier).close();
-    _panelHoverController.reset();
-    _applicationSearchFocusNode.unfocus();
+  /// The view of the full-screen apps layout's gestures open now.
+  DesktopOverviewGestureView? _openOverviewView() {
+    final overview = ref.read(desktopWorkspaceProvider).overview;
+    if (overview == null) {
+      return null;
+    }
+    return overview.appWindows != null
+        ? DesktopOverviewGestureView.appWindows
+        : DesktopOverviewGestureView.overview;
+  }
 
+  void _toggleOverview(int? preferredMonitorId) {
+    _overviewGestures.interrupt();
     final workspaceState = ref.read(desktopWorkspaceProvider);
-    final workspace = ref.read(desktopWorkspaceProvider.notifier);
     if (workspaceState.overviewActive) {
       // Three fingers up close the app windows of the full-screen apps
       // layout instead of choosing one of them.
@@ -425,6 +454,22 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       }
       _activateOverviewSelection();
       return;
+    }
+    _openOverview(preferredMonitorId);
+  }
+
+  /// Opens the overview of the current window layout; false when it has
+  /// nothing to show.
+  bool _openOverview(int? preferredMonitorId) {
+    ref.read(clipboardTrayProvider.notifier).close();
+    ref.read(desktopSearchOverlayProvider.notifier).close();
+    _panelHoverController.reset();
+    _applicationSearchFocusNode.unfocus();
+
+    final workspaceState = ref.read(desktopWorkspaceProvider);
+    final workspace = ref.read(desktopWorkspaceProvider.notifier);
+    if (workspaceState.overviewActive) {
+      return false;
     }
 
     final viewSize = workspaceState.viewSize.isEmpty
@@ -448,7 +493,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       allWorkspaces: workspaceOverview,
     );
     if (target == null) {
-      return;
+      return false;
     }
 
     workspace.closePanels();
@@ -456,14 +501,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       _cancelPendingWorkspaceRequest();
       workspace.openScreensOverview(
         monitorId: target.monitorId,
-        bounds: target.bounds,
+        // The band above the cards holds the search field.
+        bounds: DesktopOverviewHubMetrics.contentBounds(target.bounds),
         backgroundBounds: target.backgroundBounds,
         viewport: target.workArea,
         selectedObjectId: shellState.deskForegroundObjectId,
       );
-      return;
-    }
-    if (workspaceOverview) {
+    } else if (workspaceOverview) {
       _cancelPendingWorkspaceRequest();
       workspace.openWorkspaceOverview(
         monitorId: target.monitorId,
@@ -473,27 +517,38 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         orientation: layout.workspaceSwitchingOrientation,
         selectedObjectId: shellState.deskForegroundObjectId,
       );
-      return;
+    } else {
+      workspace.toggleOverview(
+        monitorId: target.monitorId,
+        bounds: target.bounds,
+        backgroundBounds: target.backgroundBounds,
+        objectIds: target.objectIds,
+        selectedObjectId: shellState.deskForegroundObjectId,
+      );
     }
-    workspace.toggleOverview(
-      monitorId: target.monitorId,
-      bounds: target.bounds,
-      backgroundBounds: target.backgroundBounds,
-      objectIds: target.objectIds,
-      selectedObjectId: shellState.deskForegroundObjectId,
-    );
+    return ref.read(desktopWorkspaceProvider).overviewActive;
   }
 
   /// Three fingers down in the full-screen apps layout: every window of the
   /// focused app, the most recent first, wherever it is in the strip. While
   /// the screens overview is open they close it instead.
   void _toggleAppWindows(int? preferredMonitorId) {
-    final workspaceState = ref.read(desktopWorkspaceProvider);
-    if (workspaceState.overviewActive) {
+    _overviewGestures.interrupt();
+    if (ref.read(desktopWorkspaceProvider).overviewActive) {
       _dismissOverview();
       return;
     }
+    _openAppWindows(preferredMonitorId);
+  }
+
+  /// Opens the app windows of the focused app; false when there is none.
+  bool _openAppWindows(int? preferredMonitorId) {
+    final workspaceState = ref.read(desktopWorkspaceProvider);
+    if (workspaceState.overviewActive) {
+      return false;
+    }
     ref.read(clipboardTrayProvider.notifier).close();
+    ref.read(desktopSearchOverlayProvider.notifier).close();
     _panelHoverController.reset();
     _applicationSearchFocusNode.unfocus();
     final shellState = ref.read(referenceShellProvider);
@@ -506,7 +561,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       }
     }
     if (focused == null || focused.appId.isEmpty) {
-      return;
+      return false;
     }
     final appWindows = <int>{
       for (final window in windows)
@@ -527,17 +582,55 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       allWorkspaces: true,
     );
     if (target == null) {
-      return;
+      return false;
     }
     final workspace = ref.read(desktopWorkspaceProvider.notifier);
     workspace.closePanels();
     workspace.toggleOverview(
       monitorId: target.monitorId,
-      bounds: target.bounds,
+      // The band above the windows names their app.
+      bounds: DesktopOverviewHubMetrics.contentBounds(target.bounds),
       backgroundBounds: target.backgroundBounds,
       objectIds: appWindows,
       selectedObjectId: focusedId,
       appWindows: focused.appId,
+    );
+    return ref.read(desktopWorkspaceProvider).overviewActive;
+  }
+
+  /// The search key: the search over the desktop, opened on [monitorId]'s
+  /// output, or closed again. In the hub of the full-screen apps layout it
+  /// puts the keyboard into the overview's own search field instead.
+  void _toggleSearch(int? monitorId) {
+    final shell = ref.read(referenceShellProvider);
+    if (shell.locked) {
+      return;
+    }
+    final workspace = ref.read(desktopWorkspaceProvider);
+    if (desktopOverviewIsHub(workspace.overview)) {
+      ref.read(desktopOverviewSearchFocusProvider.notifier).request();
+      return;
+    }
+    final search = ref.read(desktopSearchOverlayProvider.notifier);
+    if (ref.read(desktopSearchOverlayProvider) != null) {
+      search.close();
+      return;
+    }
+    _cancelWindowSwitcher();
+    _overviewGestures.interrupt();
+    if (workspace.overviewActive) {
+      _dismissOverview();
+    }
+    _closePanels();
+    ref.read(clipboardTrayProvider.notifier).close();
+    final foreground = shell.deskForegroundObjectId == null
+        ? null
+        : shell.desk.openAppWindowsByObjectId[shell.deskForegroundObjectId];
+    search.open(
+      monitorId ??
+          foreground?.monitorId ??
+          ref.read(deskDisplayLayoutProvider)?.mainOutput?.monitorId ??
+          0,
     );
   }
 
@@ -656,6 +749,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   void _openLauncher() {
     if (ref.read(desktopLauncherProvider) == null) return;
     ref.read(clipboardTrayProvider.notifier).close();
+    ref.read(desktopSearchOverlayProvider.notifier).close();
     final workspace = ref.read(desktopWorkspaceProvider);
     if (!workspace.overviewActive && !workspace.launcherOpen) {
       _panelHoverController.beginOpening();
@@ -688,6 +782,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
 
   void _openDashboard() {
     ref.read(clipboardTrayProvider.notifier).close();
+    ref.read(desktopSearchOverlayProvider.notifier).close();
     final workspace = ref.read(desktopWorkspaceProvider);
     if (!workspace.overviewActive && !workspace.dashboardOpen) {
       _panelHoverController.beginOpening();
@@ -1062,6 +1157,15 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         }
       },
     );
+    // The lock screen ends a search over the desktop.
+    ref.listen<bool>(referenceShellProvider.select((state) => state.locked), (
+      _,
+      locked,
+    ) {
+      if (locked) {
+        ref.read(desktopSearchOverlayProvider.notifier).close();
+      }
+    });
     ref.listen<int?>(
       referenceShellProvider.select((state) => state.deskForegroundObjectId),
       (previous, next) {
@@ -1130,7 +1234,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         color: context.shellColors.background,
         child: LayoutBuilder(
           builder: (context, constraints) => DesktopOverviewKeyboard(
-            active: desktop.overviewActive,
+            // The hub's search field takes the overview's keys itself.
+            active:
+                desktop.overviewActive &&
+                !desktopOverviewIsHub(desktop.overview),
             onNavigate: _moveOverviewSelection,
             onActivate: _activateOverviewSelection,
             onDismiss: _dismissOverview,
@@ -1171,6 +1278,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                   .closeWindow,
               onOverviewBarrierTap: _handleOverviewBarrierTap,
               onSelectOverviewWorkspace: _selectOverviewWorkspace,
+              onDismissOverview: _dismissOverview,
+              onNavigateOverview: _moveOverviewSelection,
+              onActivateOverviewSelection: _activateOverviewSelection,
               onExpandScreenStack: ref
                   .read(desktopWorkspaceProvider.notifier)
                   .expandScreenStack,

@@ -25,6 +25,8 @@ class DesktopPopupSurfaceLayers extends StatelessWidget {
     required this.overview,
     required this.switching,
     required this.motionDuration,
+    this.overviewMotion,
+    this.overviewHome,
   });
 
   final DenialWindow window;
@@ -36,6 +38,11 @@ class DesktopPopupSurfaceLayers extends StatelessWidget {
   final bool overview;
   final bool switching;
   final Duration motionDuration;
+
+  /// The overview's motion and the window's place with the overview closed;
+  /// popups ride along with their window (see [DesktopWindowFrame]).
+  final Animation<double>? overviewMotion;
+  final Rect? overviewHome;
 
   @override
   Widget build(BuildContext context) {
@@ -114,6 +121,12 @@ class DesktopPopupSurfaceLayers extends StatelessWidget {
         final retainedContentRect = drawsServerFrame
             ? placement.frame.deflate(DesktopMetrics.frameBorder)
             : placement.frame;
+        final home = overview ? overviewHome : null;
+        final homeContentRect = home == null
+            ? null
+            : drawsServerFrame
+            ? home.deflate(DesktopMetrics.frameBorder)
+            : home;
         final duration = placement.dragging ? Duration.zero : motionDuration;
         final resizing = desktopTextureNeedsResizeSmoothing(
           targetSize: contentRect.size,
@@ -160,6 +173,12 @@ class DesktopPopupSurfaceLayers extends StatelessWidget {
                         pixelGridOrigin: pixelGridOrigin,
                         alignSizeToDevicePixels: true,
                         globalClipRect: outputClip,
+                        overviewMotion: homeContentRect == null
+                            ? null
+                            : overviewMotion,
+                        overviewHome: homeContentRect == null
+                            ? null
+                            : window.mapSurfaceRect(layer, homeContentRect),
                         // The window primitive composites the client
                         // over its material per pixel, like a toplevel.
                         child: WindowPlane.texture(

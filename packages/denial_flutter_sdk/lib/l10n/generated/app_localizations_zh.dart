@@ -717,6 +717,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get desktopSearchApplications => '搜索应用';
 
   @override
+  String get desktopSearchWindowsAndApplications => '搜索窗口和应用';
+
+  @override
+  String get desktopSearchWindowsSection => '窗口';
+
+  @override
+  String get desktopSearchApplicationsSection => '应用';
+
+  @override
+  String get desktopSearchNoResults => '未找到结果';
+
+  @override
+  String get desktopClearSearch => '清除搜索';
+
+  @override
   String get desktopSystemProfile => '系统配置';
 
   @override

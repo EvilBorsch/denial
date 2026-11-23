@@ -13,19 +13,24 @@ import 'desktop_workspace_overview_layout.dart';
 /// Workspace cards behind the windows of a managed-layout overview.
 ///
 /// Windows stay in the desktop scene and move between their real frames and
-/// these cards. The deck follows the same camera: opening zooms out of the
-/// active workspace, and closing zooms into whichever workspace is active by
-/// then, so cards and windows travel as one plane. The deck is retained until
-/// that closing zoom completes.
+/// these cards. The deck follows the same camera and the same motion
+/// ([DesktopOverviewMotion]): opening zooms out of the current workspace or
+/// screen, as far as a gesture has opened the overview, and closing zooms
+/// into whichever workspace is active by then, so cards and windows travel
+/// as one plane. The deck is retained until that closing zoom completes.
 class DesktopWorkspaceOverviewDeck extends StatefulWidget {
   const DesktopWorkspaceOverviewDeck({
     super.key,
     required this.desktop,
+    required this.motion,
     required this.onSelectWorkspace,
     this.onExpandScreenStack,
   });
 
   final DesktopWorkspaceState desktop;
+
+  /// The overview's openness, shared with the windows on the cards.
+  final Animation<double> motion;
 
   /// Selects a workspace card, or in the screens overview of the
   /// full-screen apps layout a screen card by its id.
@@ -40,19 +45,20 @@ class DesktopWorkspaceOverviewDeck extends StatefulWidget {
 }
 
 class _DesktopWorkspaceOverviewDeckState
-    extends State<DesktopWorkspaceOverviewDeck>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _progress;
-  late final Animation<double> _zoom = _DeckZoom(_progress);
+    extends State<DesktopWorkspaceOverviewDeck> {
+  Animation<double> get _zoom => widget.motion;
   DesktopOverviewState? _presented;
+
+  /// The card the closing overview zooms into; while open, the camera is
+  /// on the current card.
   int _cameraWorkspace = 1;
+  bool _closing = false;
   bool _synchronized = false;
 
   @override
   void initState() {
     super.initState();
-    _progress = AnimationController(vsync: this)
-      ..addStatusListener(_handleStatus);
+    widget.motion.addListener(_handleMotion);
   }
 
   @override
@@ -67,44 +73,35 @@ class _DesktopWorkspaceOverviewDeckState
   @override
   void didUpdateWidget(covariant DesktopWorkspaceOverviewDeck oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.motion, widget.motion)) {
+      oldWidget.motion.removeListener(_handleMotion);
+      widget.motion.addListener(_handleMotion);
+    }
     _synchronize();
   }
 
   @override
   void dispose() {
-    _progress.dispose();
+    widget.motion.removeListener(_handleMotion);
     super.dispose();
   }
 
+  int _liveCamera(DesktopOverviewState overview) =>
+      overview.workspaces?.screens?.currentCardId ??
+      widget.desktop.activeWorkspaceFor(overview.monitorId);
+
   void _synchronize() {
     final overview = widget.desktop.overview;
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final closing =
-        _progress.status == AnimationStatus.reverse ||
-        _progress.status == AnimationStatus.dismissed;
     if (overview?.workspaces != null) {
-      if (_presented == null || closing) {
-        // The camera starts on the workspace the user is looking at.
-        _cameraWorkspace =
-            overview!.workspaces!.screens?.currentCardId ??
-            widget.desktop.activeWorkspaceFor(overview.monitorId);
-        _progress.animateTo(
-          1.0,
-          duration: reduceMotion ? Duration.zero : Motion.overviewOpen,
-          curve: _presented == null
-              ? Motion.overviewEnterCurve
-              : Motion.overviewReversalCurve,
-        );
-      }
+      _closing = false;
       _presented = overview;
       return;
     }
     final presented = _presented;
-    if (presented == null || closing) {
+    if (presented == null || _closing) {
       return;
     }
-    if (reduceMotion) {
-      _progress.value = 0.0;
+    if (MediaQuery.disableAnimationsOf(context) || widget.motion.value <= 0.0) {
       _presented = null;
       return;
     }
@@ -113,11 +110,17 @@ class _DesktopWorkspaceOverviewDeckState
     _cameraWorkspace = presented.workspaces?.screens != null
         ? _closingScreenCard(presented)
         : widget.desktop.activeWorkspaceFor(presented.monitorId);
-    _progress.animateBack(
-      0.0,
-      duration: Motion.overviewClose,
-      curve: Motion.overviewExitCurve,
-    );
+    _closing = true;
+  }
+
+  /// Drops the deck once the closing zoom has returned to the desktop.
+  void _handleMotion() {
+    if (_closing && widget.motion.value <= 0.0 && mounted) {
+      setState(() {
+        _closing = false;
+        _presented = null;
+      });
+    }
   }
 
   /// The screen card the closing overview zooms into: the one holding the
@@ -137,14 +140,6 @@ class _DesktopWorkspaceOverviewDeckState
         1;
   }
 
-  void _handleStatus(AnimationStatus status) {
-    if (status == AnimationStatus.dismissed &&
-        widget.desktop.overview?.workspaces == null &&
-        mounted) {
-      setState(() => _presented = null);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final overview = _presented;
@@ -157,13 +152,14 @@ class _DesktopWorkspaceOverviewDeckState
     final activeWorkspace =
         screens?.currentCardId ??
         widget.desktop.activeWorkspaceFor(overview.monitorId);
+    final camera = _closing ? _cameraWorkspace : _liveCamera(overview);
     final origin = overview.backgroundBounds.topLeft;
     final scrim = context.shellColors.overviewScrim;
     // The zoom only moves and fades the deck. Its render objects read it in
     // layout and paint, so a frame of the zoom rebuilds no widgets, and the
     // boundary keeps it from repainting the scene behind the deck.
     Rect place(Rect rect) => Rect.lerp(
-      workspaces.cameraRect(rect, _cameraWorkspace),
+      workspaces.cameraRect(rect, camera),
       rect,
       _zoom.value,
     )!.shift(-origin);
@@ -182,14 +178,17 @@ class _DesktopWorkspaceOverviewDeckState
                   fit: StackFit.expand,
                   clipBehavior: Clip.none,
                   children: [
-                    IgnorePointer(
-                      child: _FadedDecoratedBox(
-                        opacity: _zoom,
-                        decoration: BoxDecoration(
-                          color: scrim.withValues(alpha: scrim.a * 0.5),
+                    // The screens overview's backdrop dims and blurs the
+                    // desktop behind it (DesktopOverviewBackdrop).
+                    if (screens == null)
+                      IgnorePointer(
+                        child: _FadedDecoratedBox(
+                          opacity: _zoom,
+                          decoration: BoxDecoration(
+                            color: scrim.withValues(alpha: scrim.a * 0.5),
+                          ),
                         ),
                       ),
-                    ),
                     // A planned drop can widen a scrolling strip and so
                     // rescale every card. Cards reflow with the windows on
                     // them instead of jumping under their tiles.
@@ -380,26 +379,31 @@ class _ScreenCardLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = context.shellTheme;
     final colors = context.shellColors;
-    final style = theme.text.systemBarCaption.copyWith(
+    // Read from arm's length on the tablet: the shell's body face at a
+    // title's size, not the system bar's caption.
+    final style = theme.text.base.copyWith(
+      fontSize: 15,
+      height: 1.2,
       color: active ? theme.accent : colors.textPrimary,
-      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
       decoration: TextDecoration.none,
+      shadows: const [Shadow(color: Color(0x59000000), blurRadius: 6)],
     );
     final count = screen.screens.length;
     return Padding(
-      padding: const EdgeInsetsDirectional.only(start: 4, end: 4, bottom: 6),
+      padding: const EdgeInsetsDirectional.only(start: 2, end: 2, bottom: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           IgnorePointer(
             child: SizedBox.square(
-              dimension: 22,
+              dimension: 26,
               child: FittedBox(
                 child: DesktopApplicationIcon(appId: screen.appId),
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 10),
           Flexible(
             child: IgnorePointer(
               child: Text(
@@ -425,19 +429,20 @@ class _ScreenCardLabel extends StatelessWidget {
                       : () => onExpand!(screen.appId),
                   child: Container(
                     key: const ValueKey<String>('screens-overview-stack-badge'),
-                    constraints: const BoxConstraints(minWidth: 26),
-                    height: 22,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    constraints: const BoxConstraints(minWidth: 28),
+                    height: 26,
+                    padding: const EdgeInsets.symmetric(horizontal: 9),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: theme.accent,
-                      borderRadius: BorderRadius.circular(11),
+                      borderRadius: BorderRadius.circular(13),
                     ),
                     child: Text(
                       '$count',
                       style: style.copyWith(
                         color: theme.accentPalette.onPrimary,
                         fontWeight: FontWeight.w700,
+                        shadows: const <Shadow>[],
                       ),
                     ),
                   ),
@@ -449,18 +454,6 @@ class _ScreenCardLabel extends StatelessWidget {
       ),
     );
   }
-}
-
-/// The overview zoom, clamped to the camera's range.
-class _DeckZoom extends Animation<double>
-    with AnimationWithParentMixin<double> {
-  _DeckZoom(this.parent);
-
-  @override
-  final Animation<double> parent;
-
-  @override
-  double get value => parent.value.clamp(0.0, 1.0).toDouble();
 }
 
 /// Lays out its child at [rect], read again on every tick of [motion].

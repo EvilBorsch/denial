@@ -232,7 +232,10 @@ class _Screen {
 /// workspace overview.
 abstract final class DesktopScreensOverviewLayout {
   static const double maximumScale = 0.55;
-  static const double labelExtent = 34.0;
+
+  /// Room above each card for its label: the app's icon and the window's
+  /// title, legible from arm's length on the tablet.
+  static const double labelExtent = 40.0;
 
   /// The narrowest a gap's drop zone gets, however close the cards are.
   static const double minimumGapZone = 32.0;

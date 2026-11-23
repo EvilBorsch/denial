@@ -752,6 +752,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get desktopSearchApplications => 'Search applications';
 
   @override
+  String get desktopSearchWindowsAndApplications => 'Search windows and apps';
+
+  @override
+  String get desktopSearchWindowsSection => 'Windows';
+
+  @override
+  String get desktopSearchApplicationsSection => 'Apps';
+
+  @override
+  String get desktopSearchNoResults => 'Nothing found';
+
+  @override
+  String get desktopClearSearch => 'Clear search';
+
+  @override
   String get desktopSystemProfile => 'System profile';
 
   @override
