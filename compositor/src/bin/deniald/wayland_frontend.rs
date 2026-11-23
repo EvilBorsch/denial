@@ -281,6 +281,7 @@ pub(super) use input::{init_libinput, reset_all_input_devices};
 #[cfg(feature = "flutter")]
 pub(super) use input::{
     install_keyboard_settings, install_mouse_settings, install_touchpad_settings,
+    set_mac_keys_enabled,
 };
 #[cfg(feature = "flutter")]
 use input_method::EditorEndpoint;
@@ -555,6 +556,10 @@ pub(super) struct WaylandFrontend {
     input_layout: Option<InputLayoutSnapshot>,
     #[cfg(feature = "flutter")]
     shell_keyboard_focus: Option<KeyboardFocusTarget>,
+    /// The app the held app switcher took the keyboard from
+    /// (`focus::park_keyboard_focus_for_switcher`).
+    #[cfg(feature = "flutter")]
+    switcher_keyboard_focus: Option<KeyboardFocusTarget>,
     #[cfg(feature = "flutter")]
     input_root_ids: HashMap<ObjectId, u64>,
     /// The touchpad gesture the client under the pointer has under way.

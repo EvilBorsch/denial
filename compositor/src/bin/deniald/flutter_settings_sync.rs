@@ -514,7 +514,26 @@ pub(super) fn synchronize_settings(
     publish_settings_document(events)?;
     synchronize_committed_theme(runtime, events)?;
     synchronize_stay_awake(events);
+    synchronize_shortcut_preset(events);
     Ok(())
+}
+
+/// Follows `shortcuts.preset` at start and after every settings change: the
+/// preset's shortcuts join the file's and, for "Like a Mac", the keys are
+/// translated for apps (`mac_keys`). Held keys keep their state.
+#[cfg(feature = "flutter")]
+pub(super) fn synchronize_shortcut_preset(events: &mut RuntimeState) {
+    let preset = events.frontend().settings.shortcut_preset();
+    if events.native_escape_shortcut.preset() == preset
+        && events.frontend().shortcuts.preset() == preset
+        && events.mac_keys.enabled() == (preset == native_shortcut::ShortcutPreset::Mac)
+    {
+        return;
+    }
+    events.frontend_mut().shortcuts.set_preset(preset);
+    events.native_escape_shortcut.set_preset(preset);
+    wayland_frontend::set_mac_keys_enabled(events, preset == native_shortcut::ShortcutPreset::Mac);
+    info!(preset = preset.settings_name(), "shortcut preset in effect");
 }
 
 #[cfg(feature = "flutter")]
@@ -1030,11 +1049,18 @@ fn control_shortcut_snapshot(
 ) -> Result<serde_json::Value, OutputControlFailure> {
     let manager = &events.frontend().shortcuts;
     let inputs = native_shortcut::supported_inputs();
+    // deniald's own actions, which the shell's catalog does not list.
+    let mut actions = events.plugin_actions.actions.clone();
+    actions.extend(native_shortcut::BuiltinAction::descriptors());
     Ok(json!({
         "revision": manager.revision(),
         "shortcuts": manager.file().shortcuts,
+        // `shortcuts.preset` and its shortcuts that the file leaves in
+        // effect. Editing or deleting one writes to the file.
+        "preset": manager.preset().settings_name(),
+        "preset_shortcuts": manager.preset_shortcuts(),
         "supported_actions": native_shortcut::ShortcutAction::ALL.iter().filter(|a| **a != native_shortcut::ShortcutAction::OpenApplications).collect::<Vec<_>>(),
-        "plugin_actions": events.plugin_actions.actions,
+        "plugin_actions": actions,
         "action_generation": events.plugin_actions.generation,
         "supported_inputs": inputs.into_iter().map(|input| json!({
             "canonical": input.canonical,

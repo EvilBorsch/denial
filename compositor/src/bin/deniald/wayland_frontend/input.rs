@@ -17,7 +17,7 @@ use smithay::backend::session::libseat::LibSeatSession;
 use smithay::desktop::{WindowSurfaceType, utils::under_from_surface_tree};
 use smithay::input::keyboard::{FilterResult, KeyboardHandle, Keycode};
 #[cfg(feature = "flutter")]
-use smithay::input::keyboard::{XkbConfig, xkb};
+use smithay::input::keyboard::{KeyboardSource, XkbConfig, xkb};
 use smithay::input::pointer::{
     AxisFrame, ButtonEvent, MotionEvent, PointerHandle, RelativeMotionEvent,
 };
@@ -47,6 +47,10 @@ use super::super::PendingWindowEvent;
 #[cfg(feature = "flutter")]
 use super::super::lid_switch;
 use super::super::lifecycle::ShutdownReason;
+#[cfg(feature = "flutter")]
+use super::super::mac_keys;
+#[cfg(feature = "flutter")]
+use super::super::native_shortcut::AppSwitcherStep;
 use super::super::native_shortcut::{
     ShortcutAction, ShortcutDisposition, ShortcutGesture, ShortcutTarget,
 };
@@ -75,6 +79,8 @@ use super::touch_gestures::{
     self, TouchGestureUpdate, TouchWindowTarget, WINDOW_TOUCH_CORNER_SIZE,
     WINDOW_TOUCH_STRIP_HEIGHT,
 };
+#[cfg(feature = "flutter")]
+use denial_core::portal_protocol::DesktopPresentation;
 
 #[path = "input/client_gestures.rs"]
 mod client_gestures;
@@ -92,7 +98,8 @@ pub(super) use client_gestures::ClientGestures;
 use client_gestures::{cancel_client_gesture, process_client_gesture};
 #[cfg(feature = "flutter")]
 use flutter_route::process_flutter_input_event;
-use flutter_route::process_wayland_keyboard_transition;
+#[cfg(feature = "flutter")]
+use flutter_route::process_wayland_keyboard_transition_from;
 #[cfg(feature = "flutter")]
 pub(crate) use flutter_route::reconcile_flutter_pointer_route;
 #[cfg(feature = "flutter")]
@@ -586,7 +593,7 @@ fn inject_shell_key_stroke(
     let shift_keycode = Keycode::new(LEFT_SHIFT + XKB_KEYCODE_OFFSET);
     let mut delivered = false;
     let mut send = |state: &mut RuntimeState, keycode: Keycode, key_state: KeyState| {
-        delivered |= process_keyboard_transition(state, keycode, key_state, time);
+        delivered |= process_shell_keyboard_transition(state, keycode, key_state, time);
     };
 
     if inject_ctrl {
@@ -633,7 +640,7 @@ pub(super) fn inject_shell_key_transition(
             seat_pressed,
         )
     };
-    accepted && process_keyboard_transition(state, keycode, key_state, time)
+    accepted && process_shell_keyboard_transition(state, keycode, key_state, time)
 }
 
 /// Linux evdev `KEY_BACK`: a phone's hardware Back key. XKB names it
@@ -1500,6 +1507,8 @@ impl WaylandFrontend {
     }
 }
 
+/// A key from a keyboard: shortcuts first, then the Mac preset's
+/// translation, then the seat.
 #[cfg(feature = "flutter")]
 fn process_keyboard_transition(
     state: &mut RuntimeState,
@@ -1507,23 +1516,183 @@ fn process_keyboard_transition(
     key_state: KeyState,
     time: InputTime,
 ) -> bool {
+    process_key_transition(state, keycode, key_state, time, false)
+}
+
+/// A key the shell's own keyboard types: the Mac preset leaves it as it is,
+/// so the on-screen Alt stays Alt.
+#[cfg(feature = "flutter")]
+fn process_shell_keyboard_transition(
+    state: &mut RuntimeState,
+    keycode: Keycode,
+    key_state: KeyState,
+    time: InputTime,
+) -> bool {
+    process_key_transition(state, keycode, key_state, time, true)
+}
+
+#[cfg(feature = "flutter")]
+fn process_key_transition(
+    state: &mut RuntimeState,
+    keycode: Keycode,
+    key_state: KeyState,
+    time: InputTime,
+    from_shell: bool,
+) -> bool {
     state.note_user_activity();
-    if intercept_native_escape(state, keycode.raw(), key_state) {
+    let consumed = intercept_native_escape(state, keycode.raw(), key_state);
+    let Some(evdev_keycode) = keycode.raw().checked_sub(8) else {
+        if !consumed {
+            deliver_key(state, keycode, key_state, time, KeyboardSource::MAIN);
+        }
         return true;
+    };
+    let pressed = key_state == KeyState::Pressed;
+    let context = mac_keys::KeyContext {
+        client: if pressed && !consumed {
+            focused_client_kind(state)
+        } else {
+            mac_keys::ClientKind::Ordinary
+        },
+        consumed,
+        raw: from_shell || keys_reach_apps_raw(state),
+    };
+    let events = state.mac_keys.key(evdev_keycode, pressed, context);
+    if !events.is_empty() {
+        if !state.secure_session_locked() {
+            focus_exclusive_layer_for_keyboard_event(state);
+        }
+        deliver_mac_key_events(state, &events, time);
     }
-    if !state.secure_session_locked() {
-        focus_exclusive_layer_for_keyboard_event(state);
+    // The app the app switcher took the keyboard from gets it back once the
+    // switcher's modifier went up, past the shell, or Escape closed it.
+    if !state.native_escape_shortcut.app_switcher_held() {
+        super::focus::restore_keyboard_focus_after_switcher(state);
     }
+    true
+}
+
+/// Feeds the Mac preset's transitions to the seat.
+#[cfg(feature = "flutter")]
+fn deliver_mac_key_events(
+    state: &mut RuntimeState,
+    events: &[mac_keys::KeyEvent],
+    time: InputTime,
+) {
+    for event in events {
+        let source = match event.source {
+            mac_keys::KeySource::Physical => KeyboardSource::MAIN,
+            mac_keys::KeySource::Synthetic => mac_keys_source(),
+        };
+        let key_state = if event.pressed {
+            KeyState::Pressed
+        } else {
+            KeyState::Released
+        };
+        deliver_key(state, Keycode::new(event.key + 8), key_state, time, source);
+    }
+}
+
+#[cfg(feature = "flutter")]
+fn deliver_key(
+    state: &mut RuntimeState,
+    keycode: Keycode,
+    key_state: KeyState,
+    time: InputTime,
+    source: KeyboardSource,
+) {
     if state.flutter_active {
-        return process_flutter_keyboard_transition(state, keycode, key_state, time);
+        process_flutter_keyboard_transition(state, keycode, key_state, time, source);
+        return;
     }
     if state.secure_session_locked() {
         // Native lock state remains authoritative if Flutter is restarting or
         // unavailable. No keyboard source may fall through to a client.
-        return true;
+        return;
     }
-    process_wayland_keyboard_transition(state, keycode, key_state, time);
-    true
+    process_wayland_keyboard_transition_from(state, keycode, key_state, time, source);
+}
+
+/// The keyboard source of the keys the Mac preset adds: a synthetic Ctrl
+/// joins a held physical Ctrl instead of replacing it.
+#[cfg(feature = "flutter")]
+fn mac_keys_source() -> KeyboardSource {
+    static SOURCE: std::sync::OnceLock<KeyboardSource> = std::sync::OnceLock::new();
+    *SOURCE.get_or_init(KeyboardSource::new_auxiliary)
+}
+
+/// Keys reach the focused app as they are: the session is locked, or the
+/// app holds Denial's shortcuts (a remote desktop, a virtual machine).
+#[cfg(feature = "flutter")]
+fn keys_reach_apps_raw(state: &RuntimeState) -> bool {
+    state.secure_session_locked()
+        || state
+            .wayland
+            .as_ref()
+            .is_some_and(|frontend| frontend.shortcuts_inhibit.active())
+}
+
+/// Whether the keyboard's focus is a terminal, by its app ID or X11 class.
+/// The shell and windows without an ID are ordinary.
+#[cfg(feature = "flutter")]
+fn focused_client_kind(state: &RuntimeState) -> mac_keys::ClientKind {
+    let Some(frontend) = state.wayland.as_ref() else {
+        return mac_keys::ClientKind::Ordinary;
+    };
+    let Some(keyboard) = frontend.seat.get_keyboard() else {
+        return mac_keys::ClientKind::Ordinary;
+    };
+    let metadata = match keyboard.current_focus() {
+        Some(super::focus::KeyboardFocusTarget::Wayland(surface)) => {
+            let root = frontend
+                .owning_toplevel_surface(&surface)
+                .unwrap_or(surface);
+            super::focus::KeyboardFocusTarget::Wayland(root).window_metadata()
+        }
+        Some(focus) => focus.window_metadata(),
+        None => None,
+    };
+    metadata.map_or(mac_keys::ClientKind::Ordinary, |(_, app_id)| {
+        mac_keys::client_kind(&app_id)
+    })
+}
+
+/// The Mac preset follows `shortcuts.preset`. Turning it off lets go of the
+/// keys it holds for an app.
+#[cfg(feature = "flutter")]
+pub(in super::super) fn set_mac_keys_enabled(state: &mut RuntimeState, enabled: bool) {
+    let events = state.mac_keys.set_enabled(enabled);
+    if !events.is_empty() {
+        deliver_mac_key_events(state, &events, InputTime::now());
+    }
+}
+
+/// Whether the focused app saw a modifier that is still held go down, as
+/// Alt does in the standard keys: the app switcher then takes the keyboard
+/// from the app until it ends.
+#[cfg(feature = "flutter")]
+fn app_saw_a_held_modifier(state: &RuntimeState) -> bool {
+    [
+        mac_keys::KEY_LEFTALT,
+        mac_keys::KEY_RIGHTALT,
+        mac_keys::KEY_LEFTCTRL,
+        mac_keys::KEY_RIGHTCTRL,
+        mac_keys::KEY_LEFTSHIFT,
+        mac_keys::KEY_RIGHTSHIFT,
+    ]
+    .into_iter()
+    .any(|key| state.mac_keys.delivers(key))
+}
+
+/// A pointer button goes down: with ⌘ held in the Mac preset, the app gets
+/// Ctrl with it (⌘-click).
+#[cfg(feature = "flutter")]
+fn note_mac_keys_pointer_button(state: &mut RuntimeState) {
+    let raw = keys_reach_apps_raw(state);
+    let events = state.mac_keys.pointer_button(raw);
+    if !events.is_empty() {
+        deliver_mac_key_events(state, &events, InputTime::now());
+    }
 }
 
 fn focus_exclusive_layer_for_keyboard_event(state: &mut RuntimeState) {
@@ -2507,6 +2676,13 @@ fn process_input_event(
     }
 
     #[cfg(feature = "flutter")]
+    if let InputEvent::PointerButton { event, .. } = &event
+        && event.state() == ButtonState::Pressed
+    {
+        note_mac_keys_pointer_button(state);
+    }
+
+    #[cfg(feature = "flutter")]
     if state.flutter_active {
         return process_flutter_input_event(state, event);
     }
@@ -2594,6 +2770,11 @@ pub(in super::super) fn install_keyboard_settings(
         i32::try_from(settings.repeat_rate_hz)?,
         i32::try_from(settings.repeat_delay_ms)?,
     );
+    #[cfg(feature = "flutter")]
+    {
+        let altgr = right_alt_types(state, &keyboard);
+        state.mac_keys.set_right_alt_is_command(!altgr);
+    }
     {
         let frontend = state.frontend_mut();
         #[cfg(feature = "flutter")]
@@ -2610,6 +2791,30 @@ pub(in super::super) fn install_keyboard_settings(
         i32::try_from(settings.repeat_delay_ms)?,
     );
     Ok(layout_names)
+}
+
+/// Whether Right Alt types in a layout of the keymap: AltGr
+/// (ISO_Level3_Shift) or Mode_switch. The Mac preset then leaves it alone.
+#[cfg(feature = "flutter")]
+fn right_alt_types(state: &mut RuntimeState, keyboard: &KeyboardHandle<RuntimeState>) -> bool {
+    keyboard.with_xkb_state(state, |context| {
+        let xkb = context.xkb().lock().unwrap();
+        // SAFETY: the keymap reference is used only while the owning XKB
+        // mutex is held and is not retained beyond this closure.
+        let keymap = unsafe { xkb.keymap() };
+        let right_alt = Keycode::new(mac_keys::KEY_RIGHTALT + 8);
+        (0..keymap.num_layouts_for_key(right_alt)).any(|layout| {
+            keymap
+                .key_get_syms_by_level(right_alt, layout, 0)
+                .iter()
+                .any(|&sym| {
+                    matches!(
+                        xkb::keysym_get_name(sym).as_str(),
+                        "ISO_Level3_Shift" | "Mode_switch"
+                    )
+                })
+        })
+    })
 }
 
 /// An X server's keymap holds four layouts at most.
@@ -2694,7 +2899,19 @@ fn reset_input_devices(state: &mut RuntimeState, reset: InputDeviceReset) {
     if reset.keyboard {
         state.native_escape_shortcut.reset();
         #[cfg(feature = "flutter")]
-        cancel_flutter_repeat(state);
+        {
+            cancel_flutter_repeat(state);
+            // The keys the Mac preset holds go with the device's.
+            state.mac_keys.reset();
+            if let Some(keyboard) = state
+                .wayland
+                .as_ref()
+                .and_then(|frontend| frontend.seat.get_keyboard())
+            {
+                keyboard.release_source(state, mac_keys_source());
+            }
+            super::focus::restore_keyboard_focus_after_switcher(state);
+        }
     }
     #[cfg(feature = "flutter")]
     if reset.pointer {
@@ -3427,6 +3644,77 @@ fn execute_shortcut_disposition_at(
             state.queue_shell_action(super::super::wire::ShellAction::WindowSwitcherEnd, None);
             !forward
         }
+        ShortcutDisposition::RequestAppSwitcher(step) => {
+            #[cfg(feature = "flutter")]
+            {
+                // The app switcher is the desktop's; the tablet's keys go to
+                // the app.
+                if state.shell_presentation != DesktopPresentation::Desktop {
+                    return false;
+                }
+                if app_saw_a_held_modifier(state) {
+                    super::focus::park_keyboard_focus_for_switcher(state);
+                }
+                let action = match step {
+                    AppSwitcherStep::Next => super::super::wire::ShellAction::AppSwitcherNext,
+                    AppSwitcherStep::Previous => {
+                        super::super::wire::ShellAction::AppSwitcherPrevious
+                    }
+                    AppSwitcherStep::WindowNext => {
+                        super::super::wire::ShellAction::AppSwitcherWindowNext
+                    }
+                    AppSwitcherStep::WindowPrevious => {
+                        super::super::wire::ShellAction::AppSwitcherWindowPrevious
+                    }
+                };
+                let monitor_id = prepare_shell_overlay_action(state, _position);
+                state.queue_shell_action(action, monitor_id);
+            }
+            #[cfg(not(feature = "flutter"))]
+            let _ = step;
+            true
+        }
+        ShortcutDisposition::RequestAppSwitcherEnd { forward } => {
+            #[cfg(feature = "flutter")]
+            state.queue_shell_action(super::super::wire::ShellAction::AppSwitcherEnd, None);
+            !forward
+        }
+        ShortcutDisposition::RequestAppSwitcherCancel => {
+            #[cfg(feature = "flutter")]
+            state.queue_shell_action(super::super::wire::ShellAction::AppSwitcherCancel, None);
+            true
+        }
+        ShortcutDisposition::RequestSearch => {
+            #[cfg(feature = "flutter")]
+            {
+                if state.shell_presentation != DesktopPresentation::Desktop {
+                    return false;
+                }
+                let monitor_id = prepare_shell_overlay_action(state, _position);
+                state.queue_shell_action(super::super::wire::ShellAction::Search, monitor_id);
+            }
+            true
+        }
+        ShortcutDisposition::RequestHideApplication => {
+            #[cfg(feature = "flutter")]
+            super::window_management::minimize_focused_application(state);
+            true
+        }
+        ShortcutDisposition::RequestCaptureScreen => {
+            #[cfg(feature = "flutter")]
+            {
+                state.screenshot_requested = true;
+            }
+            true
+        }
+        ShortcutDisposition::RequestAppWindows => {
+            #[cfg(feature = "flutter")]
+            {
+                let monitor_id = prepare_shell_overlay_action(state, _position);
+                state.queue_shell_action(super::super::wire::ShellAction::AppWindows, monitor_id);
+            }
+            true
+        }
         ShortcutDisposition::RequestClipboard => {
             #[cfg(feature = "flutter")]
             {
@@ -3841,6 +4129,7 @@ fn process_flutter_keyboard_transition(
     keycode: Keycode,
     key_state: KeyState,
     time: InputTime,
+    source: KeyboardSource,
 ) -> bool {
     let secure_locked = state.secure_session_locked();
     let keyboard = state
@@ -3848,7 +4137,8 @@ fn process_flutter_keyboard_transition(
         .seat
         .get_keyboard()
         .expect("seat has no keyboard");
-    let consume_retired = {
+    // A device reset retires physical keys only.
+    let consume_retired = source == KeyboardSource::MAIN && {
         let frontend = state.frontend_mut();
         retired_key_consumes_transition(
             &mut frontend.retired_keyboard_keys,
@@ -3861,9 +4151,10 @@ fn process_flutter_keyboard_transition(
             keyboard.current_focus(),
             Some(super::focus::KeyboardFocusTarget::Flutter)
         );
-    super::input_method::input_key(
+    super::input_method::input_key_from(
         state,
         &keyboard,
+        source,
         keycode,
         key_state,
         SERIAL_COUNTER.next_serial(),

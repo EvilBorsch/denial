@@ -1471,6 +1471,24 @@ pub(super) fn process_wayland_keyboard_transition(
     key_state: KeyState,
     time: InputTime,
 ) {
+    process_wayland_keyboard_transition_from(
+        state,
+        keycode,
+        key_state,
+        time,
+        smithay::input::keyboard::KeyboardSource::MAIN,
+    );
+}
+
+/// A key of `source` for the focused client. Only the physical source's
+/// keys can be retired by a device reset.
+pub(super) fn process_wayland_keyboard_transition_from(
+    state: &mut RuntimeState,
+    keycode: Keycode,
+    key_state: KeyState,
+    time: InputTime,
+    source: smithay::input::keyboard::KeyboardSource,
+) {
     #[cfg(not(feature = "flutter"))]
     focus_exclusive_layer_for_keyboard_event(state);
     let keyboard = state
@@ -1478,14 +1496,16 @@ pub(super) fn process_wayland_keyboard_transition(
         .seat
         .get_keyboard()
         .expect("seat has no keyboard");
-    let consume_retired = retired_key_consumes_transition(
-        &mut state.frontend_mut().retired_keyboard_keys,
-        keycode.raw(),
-        key_state,
-    );
-    super::super::input_method::input_key(
+    let consume_retired = source == smithay::input::keyboard::KeyboardSource::MAIN
+        && retired_key_consumes_transition(
+            &mut state.frontend_mut().retired_keyboard_keys,
+            keycode.raw(),
+            key_state,
+        );
+    super::super::input_method::input_key_from(
         state,
         &keyboard,
+        source,
         keycode,
         key_state,
         SERIAL_COUNTER.next_serial(),

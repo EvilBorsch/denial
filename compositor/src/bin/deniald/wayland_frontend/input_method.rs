@@ -289,9 +289,37 @@ pub(super) fn input_key<F>(
 ) where
     F: FnOnce(&mut RuntimeState, &ModifiersState, KeysymHandle<'_>) -> FilterResult<()>,
 {
+    input_key_from(
+        state,
+        keyboard,
+        KeyboardSource::MAIN,
+        keycode,
+        key_state,
+        serial,
+        time,
+        filter,
+    );
+}
+
+/// [`input_key`] for a key of `source`: the seat holds a key while any
+/// source does, so the Mac preset's synthetic Ctrl never lets go of a Ctrl
+/// held on the keyboard.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn input_key_from<F>(
+    state: &mut RuntimeState,
+    keyboard: &KeyboardHandle<RuntimeState>,
+    source: KeyboardSource,
+    keycode: Keycode,
+    key_state: KeyState,
+    serial: Serial,
+    time: InputTime,
+    filter: F,
+) where
+    F: FnOnce(&mut RuntimeState, &ModifiersState, KeysymHandle<'_>) -> FilterResult<()>,
+{
     // None: another source already holds or released this key.
     let Some((filter_result, mods_changed)) =
-        keyboard.input_intercept(KeyboardSource::MAIN, state, keycode, key_state, filter)
+        keyboard.input_intercept(source, state, keycode, key_state, filter)
     else {
         return;
     };

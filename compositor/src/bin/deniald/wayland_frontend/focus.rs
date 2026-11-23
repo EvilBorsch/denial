@@ -519,6 +519,73 @@ pub(in super::super) fn suspend_keyboard_focus_for_shell(state: &mut RuntimeStat
     }
 }
 
+/// Takes the keyboard from the focused app while the app switcher is held on
+/// a modifier the app saw go down (Alt in the standard keys). The app gets
+/// `wl_keyboard.leave`, so it neither sees the modifier go up alone, which
+/// Firefox takes for a tap that opens its menu bar, nor the switcher's keys.
+/// [`restore_keyboard_focus_after_switcher`] gives it back when the switcher
+/// ends; switching to another app moves the focus on from there.
+#[cfg(feature = "flutter")]
+pub(in super::super) fn park_keyboard_focus_for_switcher(state: &mut RuntimeState) {
+    let frontend = state.frontend();
+    if frontend.switcher_keyboard_focus.is_some() || frontend.text_input.shell_captures_keyboard() {
+        return;
+    }
+    let keyboard = frontend.seat.get_keyboard().expect("seat has no keyboard");
+    let Some(focus) = keyboard
+        .current_focus()
+        .filter(|focus| focus.alive() && !matches!(focus, KeyboardFocusTarget::Flutter))
+    else {
+        return;
+    };
+    state.frontend_mut().switcher_keyboard_focus = Some(focus);
+    keyboard.set_focus(
+        state,
+        Some(KeyboardFocusTarget::Flutter),
+        smithay::utils::SERIAL_COUNTER.next_serial(),
+    );
+    if keyboard.current_focus() != Some(KeyboardFocusTarget::Flutter) {
+        // An app's open menu holds a popup grab, which refuses focus
+        // changes: switching apps closes it, as on any desktop.
+        keyboard.unset_grab(state);
+        keyboard.set_focus(
+            state,
+            Some(KeyboardFocusTarget::Flutter),
+            smithay::utils::SERIAL_COUNTER.next_serial(),
+        );
+    }
+}
+
+/// Gives the keyboard back to the app [`park_keyboard_focus_for_switcher`]
+/// took it from, unless something else has it by now.
+#[cfg(feature = "flutter")]
+pub(in super::super) fn restore_keyboard_focus_after_switcher(state: &mut RuntimeState) {
+    let Some(focus) = state
+        .wayland
+        .as_mut()
+        .and_then(|frontend| frontend.switcher_keyboard_focus.take())
+        .filter(IsAlive::alive)
+    else {
+        return;
+    };
+    let keyboard = state
+        .frontend()
+        .seat
+        .get_keyboard()
+        .expect("seat has no keyboard");
+    if matches!(
+        keyboard.current_focus(),
+        None | Some(KeyboardFocusTarget::Flutter)
+    ) {
+        request_keyboard_focus(
+            state,
+            &keyboard,
+            Some(focus),
+            smithay::utils::SERIAL_COUNTER.next_serial(),
+        );
+    }
+}
+
 #[cfg(feature = "flutter")]
 pub(in super::super) fn restore_shell_keyboard_focus(state: &mut RuntimeState) {
     let keyboard = state
