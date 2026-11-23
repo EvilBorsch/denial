@@ -200,6 +200,19 @@ pub enum WindowCommand {
         target_window_id: u64,
         before: bool,
     },
+    /// Split View in the mobile presentation: `window_id` and
+    /// `target_window_id` share the phone's screen, `window_id` on the left
+    /// when `window_on_left`, the left window taking `ratio` of the width.
+    SplitView {
+        window_id: u64,
+        target_window_id: u64,
+        window_on_left: bool,
+        ratio: f64,
+    },
+    /// Split View: the pair of `window_id` comes apart.
+    LeaveSplitView {
+        window_id: u64,
+    },
     /// The hold a desktop pet the user drags would take if let go now: the
     /// window's object id, one protocol hold value and the share along an
     /// edge. None leaves it free.
@@ -397,7 +410,9 @@ impl WindowCommand {
             | Self::DropOnWorkspace { window_id, .. }
             | Self::PreviewWorkspaceDrop { window_id, .. }
             | Self::JoinScreen { window_id, .. }
-            | Self::MoveToScreen { window_id, .. } => Some(*window_id),
+            | Self::MoveToScreen { window_id, .. }
+            | Self::SplitView { window_id, .. }
+            | Self::LeaveSplitView { window_id } => Some(*window_id),
         }
     }
 }
@@ -907,6 +922,11 @@ pub struct WindowDescription {
     pub layout_screen_rect: Option<WindowGeometry>,
     /// The window floats over that screen instead of being one of its tiles.
     pub layout_screen_floating: bool,
+    /// Split View in the mobile presentation: the stable id of the window
+    /// this one shares the phone's screen with (0 when none), and the left
+    /// window's share of the width (0 when none).
+    pub split_view_partner_id: u64,
+    pub split_view_ratio: f64,
 }
 
 /// A desktop pet (denial-pet-v1) as the shell knows it. A held pet is drawn

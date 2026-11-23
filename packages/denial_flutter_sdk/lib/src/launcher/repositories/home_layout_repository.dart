@@ -9,7 +9,8 @@ class HomeSavedLayouts {
     this.layouts = const {},
     this.unassigned,
     this.pages = const {},
-    this.drawer = false,
+    this.drawer = true,
+    this.drawerChosen = false,
     this.sharedBottomRow = false,
   });
 
@@ -19,8 +20,15 @@ class HomeSavedLayouts {
   /// shows at least as many pages as its items need.
   final Map<HomeOrientation, int> pages;
 
-  /// A swipe up on home opens every app in a drawer.
+  /// A swipe up on home opens every app in a drawer. On unless the user
+  /// turned it off ([drawerChosen]).
   final bool drawer;
+
+  /// The user set [drawer] with the page editor's switch. Files written
+  /// before eb18 stored `drawer` on every save, chosen or not, so a stored
+  /// value without this mark is the old default (off) or, when on, the
+  /// user's: either way the drawer is on.
+  final bool drawerChosen;
 
   /// The bottom row of the first page shows on every page; the other pages
   /// leave their bottom row free.
@@ -54,6 +62,7 @@ class HomeLayoutRepository {
         _ => null,
       };
       final pages = decoded['pages'];
+      final drawerChosen = decoded['drawerChosen'] == true;
       return HomeSavedLayouts(
         layouts: {
           for (final orientation in HomeOrientation.values)
@@ -66,7 +75,8 @@ class HomeLayoutRepository {
               if (pages[orientation.name] case final int count when count > 0)
                 orientation: count,
         },
-        drawer: decoded['drawer'] == true,
+        drawer: !drawerChosen || decoded['drawer'] == true,
+        drawerChosen: drawerChosen,
         sharedBottomRow: decoded['sharedBottomRow'] == true,
       );
     } on Object {
@@ -89,7 +99,10 @@ class HomeLayoutRepository {
             for (final MapEntry(:key, :value) in saved.pages.entries)
               key.name: value,
           },
+        // The effective value: a shell from before the choice reads only
+        // this, and keeps the drawer as the user last saw it.
         'drawer': saved.drawer,
+        if (saved.drawerChosen) 'drawerChosen': true,
         'sharedBottomRow': saved.sharedBottomRow,
       });
       await file.writeAsString('$payload\n', flush: true);

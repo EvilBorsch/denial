@@ -5096,6 +5096,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String get moveToMonitor => '移到显示器';
 
   @override
+  String recentsCloseAppWindows(String app, int count) {
+    return '关闭“$app”的全部 $count 个窗口';
+  }
+
+  @override
+  String recentsSplitWith(String app) {
+    return '与 $app 并排';
+  }
+
+  @override
+  String get splitViewDivider => '应用之间的分隔条';
+
+  @override
+  String splitViewHandle(String app) {
+    return '移动$app';
+  }
+
+  @override
   String get setupWelcome => '欢迎';
 
   @override
@@ -5282,6 +5300,27 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get homeDrawerSemantics => '所有应用';
+
+  @override
+  String get homeSearchSemantics => '搜索';
+
+  @override
+  String get homeSearchHint => '搜索应用和窗口';
+
+  @override
+  String get homeSearchClear => '清除搜索';
+
+  @override
+  String get homeSearchWindows => '已打开的窗口';
+
+  @override
+  String get homeSearchApps => '应用';
+
+  @override
+  String get homeSearchRecentApps => '最近打开';
+
+  @override
+  String get homeSearchNoResults => '未找到结果';
 
   @override
   String get powerActionRestartDenial => '重启 Denial';

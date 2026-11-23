@@ -5351,6 +5351,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get moveToMonitor => 'Move to monitor';
 
   @override
+  String recentsCloseAppWindows(String app, int count) {
+    return 'Close all $count windows of $app';
+  }
+
+  @override
+  String recentsSplitWith(String app) {
+    return 'Side by side with $app';
+  }
+
+  @override
+  String get splitViewDivider => 'Divider between the apps';
+
+  @override
+  String splitViewHandle(String app) {
+    return 'Move $app';
+  }
+
+  @override
   String get setupWelcome => 'Welcome';
 
   @override
@@ -5546,6 +5564,27 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get homeDrawerSemantics => 'All apps';
+
+  @override
+  String get homeSearchSemantics => 'Search';
+
+  @override
+  String get homeSearchHint => 'Search apps and windows';
+
+  @override
+  String get homeSearchClear => 'Clear search';
+
+  @override
+  String get homeSearchWindows => 'Open windows';
+
+  @override
+  String get homeSearchApps => 'Apps';
+
+  @override
+  String get homeSearchRecentApps => 'Recently opened';
+
+  @override
+  String get homeSearchNoResults => 'Nothing found';
 
   @override
   String get powerActionRestartDenial => 'Restart Denial';

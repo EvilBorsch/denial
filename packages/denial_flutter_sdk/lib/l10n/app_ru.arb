@@ -7198,6 +7198,40 @@
   "@moveToMonitor": {
     "description": "Button on a phone recents card: moves the app to the external monitor."
   },
+  "recentsCloseAppWindows": "Закрыть все окна приложения «{app}» ({count})",
+  "@recentsCloseAppWindows": {
+    "description": "Accessibility label of the button on a tablet recents card that closes every window of the card's app.",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "recentsSplitWith": "Рядом с приложением {app}",
+  "@recentsSplitWith": {
+    "description": "Tablet recents: label of the screen sides a long-pressed card is dropped on to share the screen with the app in front (Split View).",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
+  "splitViewDivider": "Разделитель между приложениями",
+  "@splitViewDivider": {
+    "description": "Accessibility label of the divider between two apps side by side (Split View) on the tablet."
+  },
+  "splitViewHandle": "Переместить приложение {app}",
+  "@splitViewHandle": {
+    "description": "Accessibility label of the handle on top of an app side by side with another (Split View) on the tablet.",
+    "placeholders": {
+      "app": {
+        "type": "String"
+      }
+    }
+  },
   "setupWelcome": "Добро пожаловать",
   "@setupWelcome": {
     "description": "First-boot setup: title of the language step."
@@ -7457,6 +7491,34 @@
   "homeDrawerSemantics": "Все приложения",
   "@homeDrawerSemantics": {
     "description": "Accessibility label of the full-screen app drawer."
+  },
+  "homeSearchSemantics": "Поиск",
+  "@homeSearchSemantics": {
+    "description": "Accessibility label of the search pulled down over the tablet's home screen."
+  },
+  "homeSearchHint": "Поиск приложений и окон",
+  "@homeSearchHint": {
+    "description": "Hint in the search field of the tablet's app drawer and of the search pulled down over home."
+  },
+  "homeSearchClear": "Очистить поиск",
+  "@homeSearchClear": {
+    "description": "Accessibility label of the button that empties the tablet's search field."
+  },
+  "homeSearchWindows": "Открытые окна",
+  "@homeSearchWindows": {
+    "description": "Heading of the open windows in the tablet's search results."
+  },
+  "homeSearchApps": "Приложения",
+  "@homeSearchApps": {
+    "description": "Heading of the matching apps in the tablet's search results."
+  },
+  "homeSearchRecentApps": "Недавно открытые",
+  "@homeSearchRecentApps": {
+    "description": "Heading of the apps started most recently, which the tablet's search shows before anything is typed."
+  },
+  "homeSearchNoResults": "Ничего не найдено",
+  "@homeSearchNoResults": {
+    "description": "Shown when the tablet's search matches no window and no app."
   },
   "powerActionRestartDenial": "Перезапустить Denial",
   "@powerActionRestartDenial": {

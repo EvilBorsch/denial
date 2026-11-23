@@ -11,7 +11,7 @@ import 'package:denial_flutter_sdk/rendering.dart';
 import 'package:denial_flutter_sdk/shell_color_scheme.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 
-import '../desktop/window_application.dart';
+import '../launcher/window_application.dart';
 import '../state/desktop_app_switcher.dart';
 import '../state/reference_shell_controller.dart';
 

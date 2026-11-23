@@ -302,6 +302,7 @@ class DenialWireCodec {
     int targetWindowId = 0,
     int screenSide = 0,
     bool before = false,
+    double splitRatio = 0.0,
   }) {
     return _encodeEnvelope(
       generated.PayloadTypeId.WindowRequest,
@@ -311,6 +312,7 @@ class DenialWireCodec {
         targetWindowId: targetWindowId,
         screenSide: screenSide,
         before: before,
+        splitRatio: splitRatio,
         geometry: geometry == null ? null : _rectBuilder(geometry),
         appId: appId,
         title: title,
@@ -1724,6 +1726,19 @@ class DenialWireCodec {
         },
         layoutScreenFloating:
             window.layoutScreen > 0 && window.layoutScreenFloating,
+        // A share outside (0, 1) is no pair this shell can draw.
+        splitViewPartnerObjectId:
+            window.splitViewPartnerId != 0 &&
+                window.splitViewRatio > 0 &&
+                window.splitViewRatio < 1
+            ? window.splitViewPartnerId
+            : null,
+        splitViewRatio:
+            window.splitViewPartnerId != 0 &&
+                window.splitViewRatio > 0 &&
+                window.splitViewRatio < 1
+            ? window.splitViewRatio
+            : 0.0,
       );
       // FlatBuffers getters parse their field on each access. Validate the
       // materialized snapshot so geometry and layer fields are read only once.

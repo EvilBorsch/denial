@@ -13,6 +13,8 @@ import 'package:denial_flutter_sdk/system_services.dart'
     show hapticsServiceProvider;
 
 import '../state/reference_shell_controller.dart';
+import '../state/reference_shell_metrics.dart';
+import '../widgets/back_gesture_layer.dart';
 import 'home_drag_controller.dart';
 import 'home_grid_geometry.dart';
 import 'home_icon_locator.dart';
@@ -20,6 +22,8 @@ import 'home_interactions.dart';
 import 'home_launch.dart';
 import 'home_pager.dart';
 import 'home_resize_controller.dart';
+import 'home_search.dart';
+import 'home_sheets.dart';
 import 'widgets/home_app_drawer.dart';
 import 'widgets/home_backdrop.dart';
 import 'widgets/home_drag_layer.dart';
@@ -27,6 +31,7 @@ import 'widgets/home_folder_panel.dart';
 import 'widgets/home_grid_page.dart';
 import 'widgets/home_page_editor.dart';
 import 'widgets/home_resize_frame.dart';
+import 'widgets/home_search_sheet.dart';
 
 /// The mobile home screen: paged apps, folders and widgets over the
 /// wallpaper.
@@ -101,11 +106,15 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     duration: const Duration(milliseconds: 320),
   );
 
-  /// A swipe up on home moves the drawer.
-  bool _drawerDragging = false;
+  /// 0 closed, 1 open: search, pulled down over home, follows the finger
+  /// between.
+  final _search = AnimationController(
+    vsync: const _UnmutedTickers(),
+    duration: const Duration(milliseconds: 320),
+  );
 
-  /// Opening or closing faster than this decides on release.
-  static const double _drawerFlick = 600;
+  /// A vertical drag on home: up it moves the drawer, down search.
+  HomeSheetDrag? _sheetDrag;
 
   @override
   void initState() {
@@ -135,6 +144,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     _locator.detach(_iconFor);
     _backgroundHold?.cancel();
     _drawer.dispose();
+    _search.dispose();
     drag.dispose();
     resize.dispose();
     folders.dispose();
@@ -147,12 +157,15 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     _heldWidget = null;
     _taps.reset();
     _backgroundHold?.cancel();
-    _drawerDragging = false;
-    // Still on screen, as under the recents gesture: the drawer slides away.
+    _sheetDrag = null;
+    // Still on screen, as under the recents gesture: the drawer and search
+    // slide away.
     if (widget.active) {
       _animateDrawer(0);
+      _animateSearch(0);
     } else {
       _drawer.value = 0;
+      _search.value = 0;
     }
     if (_editing) setState(() => _editing = false);
     resize.exit();
@@ -255,6 +268,31 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
   void _launchFromDrawer(HomeGridItem app, Rect iconRect) {
     launch(app, iconRect);
     _drawer.value = 0;
+    _search.value = 0;
+  }
+
+  /// A window found by search comes to the front, growing out of its icon
+  /// in the results like an app out of its home icon.
+  void _openWindowFromSearch(HomeSearchWindow found, Rect iconRect) {
+    if (_swallowTap || drag.active) return;
+    final shell = ref.read(referenceShellProvider.notifier);
+    final window =
+        shell.state.deckFocusOf(found.window.objectId) ?? found.window;
+    final app = found.app;
+    if (window.isLocalFlutter && app != null) {
+      // An in-bundle app comes back through its own launch.
+      launch(app, iconRect);
+    } else {
+      shell.activateAppFromLauncher(
+        window: window,
+        appName: found.appName,
+        iconPath: app?.app?.iconPath,
+        sourceRect: iconRect,
+        sourceItemId: app?.id,
+      );
+    }
+    _drawer.value = 0;
+    _search.value = 0;
   }
 
   @override
@@ -301,6 +339,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
         !_swallowTap &&
         !_editing &&
         _drawer.value == 0 &&
+        _search.value == 0 &&
         !resize.active &&
         folders.open.value == null &&
         !_onItem(event.position);
@@ -416,32 +455,52 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     }
   }
 
-  // Drawer -------------------------------------------------------------------
+  // Drawer and search -------------------------------------------------------
 
-  bool get _drawerAllowed =>
-      (grid?.drawer ?? false) &&
-      !_editing &&
-      !drag.active &&
-      !resize.active &&
-      folders.open.value == null;
+  bool get _sheetsAllowed =>
+      !_editing && !drag.active && !resize.active && folders.open.value == null;
 
-  void _drawerDragStart(DragStartDetails details) {
-    _drawerDragging = _drawerAllowed;
-    if (_drawerDragging) {
-      _backgroundHold?.cancel();
-      _drawer.stop();
+  bool get _drawerAllowed => (grid?.drawer ?? false) && _sheetsAllowed;
+
+  void _sheetDragStart(DragStartDetails details) {
+    _sheetDrag = _sheetsAllowed
+        ? HomeSheetDrag(drawerAllowed: _drawerAllowed)
+        : null;
+    if (_sheetDrag != null) _backgroundHold?.cancel();
+  }
+
+  void _sheetDragUpdate(DragUpdateDetails details) {
+    final drag = _sheetDrag;
+    if (drag == null) return;
+    final decided = drag.sheet != null;
+    switch (drag.move(details.delta.dy)) {
+      case HomeSheet.drawer:
+        if (!decided) _drawer.stop();
+        _moveDrawer(details.delta.dy);
+      case HomeSheet.search:
+        if (!decided) _search.stop();
+        _moveSearch(details.delta.dy);
+      case null:
+        break;
     }
   }
 
-  void _drawerDragUpdate(DragUpdateDetails details) {
-    if (!_drawerDragging) return;
-    _moveDrawer(details.delta.dy);
-  }
+  void _sheetDragEnd(DragEndDetails details) =>
+      _endSheetDrag(details.velocity.pixelsPerSecond.dy);
 
-  void _drawerDragEnd(DragEndDetails details) {
-    if (!_drawerDragging) return;
-    _drawerDragging = false;
-    _settleDrawer(details.velocity.pixelsPerSecond.dy);
+  void _sheetDragCancel() => _endSheetDrag(0);
+
+  void _endSheetDrag(double downVelocity) {
+    final sheet = _sheetDrag?.sheet;
+    _sheetDrag = null;
+    switch (sheet) {
+      case HomeSheet.drawer:
+        _settleDrawer(downVelocity);
+      case HomeSheet.search:
+        _settleSearch(downVelocity);
+      case null:
+        break;
+    }
   }
 
   /// Moves the drawer [down] logical pixels.
@@ -452,23 +511,56 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
   }
 
   void _settleDrawer(double downVelocity) {
-    final open = downVelocity < -_drawerFlick
-        ? true
-        : downVelocity > _drawerFlick
-        ? false
-        : _drawer.value > 0.4;
+    final open = homeSheetOpens(
+      openness: _drawer.value,
+      openingVelocity: -downVelocity,
+      openShare: homeDrawerOpenShare,
+    );
     _animateDrawer(open ? 1 : 0);
   }
 
-  void _animateDrawer(double target) {
-    if (_drawer.value == target) return;
+  void _animateDrawer(double target) => _animateSheet(_drawer, target);
+
+  /// Moves search [down] logical pixels.
+  void _moveSearch(double down) {
+    final height = context.size?.height ?? 0;
+    if (height <= 0) return;
+    _search.value += down / height;
+  }
+
+  void _settleSearch(double downVelocity) {
+    final open = homeSheetOpens(
+      openness: _search.value,
+      openingVelocity: downVelocity,
+      openShare: homeSearchOpenShare,
+    );
+    _animateSearch(open ? 1 : 0);
+  }
+
+  void _animateSearch(double target) => _animateSheet(_search, target);
+
+  /// The system Back over the drawer or search: the keyboard goes first,
+  /// then the sheet.
+  void _sheetBack() {
+    final shell = ref.read(referenceShellProvider.notifier);
+    if (shell.state.edgePanelVisible) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      shell.closeEdgePanel();
+      return;
+    }
+    _animateDrawer(0);
+    _animateSearch(0);
+  }
+
+  void _animateSheet(AnimationController sheet, double target) {
+    if (sheet.value == target) return;
     unawaited(
-      _drawer.animateTo(
+      sheet.animateTo(
         target,
         curve: Curves.easeOutCubic,
         duration: MediaQuery.disableAnimationsOf(context)
             ? Duration.zero
-            : _drawer.duration,
+            : sheet.duration,
       ),
     );
   }
@@ -642,17 +734,29 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
       duration: const Duration(milliseconds: 200),
       child: IgnorePointer(ignoring: _editing, child: grid),
     );
-    final content = contents.drawer
-        ? GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onVerticalDragStart: _drawerDragStart,
-            onVerticalDragUpdate: _drawerDragUpdate,
-            onVerticalDragEnd: _drawerDragEnd,
-            onVerticalDragCancel: () => _drawerDragging = false,
-            child: shown,
-          )
-        : shown;
-    final apps = contents.drawer ? this.grid?.apps : null;
+    final content = GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onVerticalDragStart: _sheetDragStart,
+      onVerticalDragUpdate: _sheetDragUpdate,
+      onVerticalDragEnd: _sheetDragEnd,
+      onVerticalDragCancel: _sheetDragCancel,
+      child: shown,
+    );
+    final apps = this.grid?.apps;
+    final keyboard = ref.watch(
+      referenceShellProvider.select(
+        (state) => (
+          progress: state.edgePanelDragProgress,
+          shortcuts: state.oskShortcuts,
+        ),
+      ),
+    );
+    final keyboardInset =
+        ReferenceShellMetrics.edgePanelHeight(
+          MediaQuery.sizeOf(context),
+          shortcuts: keyboard.shortcuts,
+        ) *
+        keyboard.progress;
     return Offstage(
       offstage: !widget.active,
       child: TickerMode(
@@ -674,15 +778,37 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
                   content
                 else
                   FadeSnapshot(opacity: opacity, child: content),
-                if (apps != null && _geometry != null)
+                if (contents.drawer && apps != null && _geometry != null)
                   HomeAppDrawer(
                     openness: _drawer,
                     apps: apps,
                     columns: _geometry!.columns,
                     onLaunch: _launchFromDrawer,
+                    onOpenWindow: _openWindowFromSearch,
                     onDrag: _moveDrawer,
                     onDragEnd: _settleDrawer,
+                    keyboardInset: keyboardInset,
                   ),
+                if (apps != null && _geometry != null)
+                  HomeSearchSheet(
+                    openness: _search,
+                    apps: apps,
+                    columns: _geometry!.columns,
+                    onLaunch: _launchFromDrawer,
+                    onOpenWindow: _openWindowFromSearch,
+                    onClose: () => _animateSearch(0),
+                    onDrag: _moveSearch,
+                    onDragEnd: _settleSearch,
+                    keyboardInset: keyboardInset,
+                  ),
+                // Back closes an open sheet: home has no app to go back in.
+                ListenableBuilder(
+                  listenable: Listenable.merge([_drawer, _search]),
+                  builder: (context, _) =>
+                      _drawer.value > 0 || _search.value > 0
+                      ? MobileBackGestureLayer(onBack: _sheetBack)
+                      : const SizedBox.shrink(),
+                ),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 220),
                   child: _editing

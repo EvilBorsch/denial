@@ -541,6 +541,8 @@ impl WaylandFrontend {
             mobile_shell: denial_core::environment::var("DENIAL_SHELL_PROFILE").as_deref()
                 == Ok("mobile"),
             #[cfg(feature = "flutter")]
+            split_views: Default::default(),
+            #[cfg(feature = "flutter")]
             last_press_output: None,
             #[cfg(feature = "flutter")]
             idle_inhibitors,

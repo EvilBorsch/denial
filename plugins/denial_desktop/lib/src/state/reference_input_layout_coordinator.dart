@@ -8,6 +8,7 @@ import 'package:denial_flutter_sdk/platform.dart';
 import 'phone_desk_input.dart';
 import 'reference_shell_state.dart';
 import 'reference_shell_metrics.dart';
+import 'split_view.dart';
 
 /// Publishes the mobile shell's immutable native input-routing snapshot.
 class ReferenceInputLayoutCoordinator {
@@ -197,8 +198,18 @@ class ReferenceInputLayoutCoordinator {
               ),
           ];
 
+    final split = inputWindow == null ? null : state.primarySplit;
     final inputRegions = inputWindow == null
         ? const <InputWindowRegion>[]
+        : split != null
+        ? _splitInputRegions(
+            state: state,
+            pair: split,
+            viewSize: viewSize,
+            contentOffset: contentOffset,
+            inputBottom: inputBottom,
+            topInset: topInset,
+          )
         : _inputRegionsForWindow(
             window: inputWindow,
             viewSize: viewSize,
@@ -236,25 +247,66 @@ class ReferenceInputLayoutCoordinator {
     ];
   }
 
+  /// A Split View pair in front: every window of its card takes touches in
+  /// its half, the windows opened over them above them.
+  List<InputWindowRegion> _splitInputRegions({
+    required ReferenceShellState state,
+    required SplitPair pair,
+    required Size viewSize,
+    required double contentOffset,
+    required double inputBottom,
+    required double topInset,
+  }) {
+    final card = state.deckAppOf(pair.left.objectId);
+    if (card == null) return const <InputWindowRegion>[];
+    final windows = state.deckCardWindows(card);
+    final placement = splitPlacement(windows);
+    return [
+      for (final (index, window) in windows.indexed)
+        ..._inputRegionsForWindow(
+          window: window,
+          viewSize: viewSize,
+          contentOffset: contentOffset,
+          inputBottom: inputBottom,
+          topInset: topInset,
+          box: Rect.fromLTRB(
+            placement[window.objectId]!.left * viewSize.width,
+            0,
+            placement[window.objectId]!.right * viewSize.width,
+            viewSize.height,
+          ),
+          // Later windows are in front: dialogs over their app.
+          zBase: index * _splitZStride,
+        ),
+    ];
+  }
+
+  /// Room in z for one window's popups below the next window.
+  static const int _splitZStride = 1 << 16;
+
   List<InputWindowRegion> _inputRegionsForWindow({
     required DenialWindow window,
     required Size viewSize,
     required double contentOffset,
     required double inputBottom,
     required double topInset,
+    Rect? box,
+    int zBase = 0,
   }) {
     final frame = window.presentationCoordinateRect;
     final content = window.contentCoordinateRect;
     if (frame.isEmpty || content.isEmpty) {
       return const <InputWindowRegion>[];
     }
+    // The window covers [box], the whole view unless it shares it.
+    final area = box ?? Offset.zero & viewSize;
     // Match the texture's top-centred BoxFit.cover, including the interval
     // between an output configure and the client's replacement buffer.
-    final widthScale = viewSize.width / frame.width;
+    final widthScale = area.width / frame.width;
     final heightScale =
         (viewSize.height - topInset).clamp(0.0, viewSize.height) / frame.height;
     final scale = widthScale > heightScale ? widthScale : heightScale;
-    final frameLeft = (viewSize.width - frame.width * scale) / 2.0;
+    final frameLeft = area.left + (area.width - frame.width * scale) / 2.0;
     final frameTop = topInset - contentOffset;
     final fullContentRect = Rect.fromLTWH(
       frameLeft,
@@ -268,7 +320,7 @@ class ReferenceInputLayoutCoordinator {
       content.width * scale,
       content.height * scale,
     );
-    final clip = Rect.fromLTRB(0, topInset, viewSize.width, inputBottom);
+    final clip = Rect.fromLTRB(area.left, topInset, area.right, inputBottom);
     final rect = clientRect.intersect(clip);
     if (rect.isEmpty) {
       return const <InputWindowRegion>[];
@@ -301,7 +353,7 @@ class ReferenceInputLayoutCoordinator {
             clipped.width * scaleX,
             clipped.height * scaleY,
           ),
-          z: popup.compositionOrder + 1,
+          z: zBase + popup.compositionOrder + 1,
           geometryLocked: true,
         ),
       );
@@ -314,7 +366,7 @@ class ReferenceInputLayoutCoordinator {
         surfaceId: window.objectId,
         rect: rect,
         sourceRect: sourceRect,
-        z: 0,
+        z: zBase,
         geometryLocked: true,
       ),
     );

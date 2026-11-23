@@ -397,10 +397,10 @@ impl flatbuffers::SimpleToVerifyInSlice for WindowOpacityClass {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_WINDOW_REQUEST_KIND: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_WINDOW_REQUEST_KIND: u8 = 13;
+pub const ENUM_MAX_WINDOW_REQUEST_KIND: u8 = 15;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_WINDOW_REQUEST_KIND: [WindowRequestKind; 14] = [
+pub const ENUM_VALUES_WINDOW_REQUEST_KIND: [WindowRequestKind; 16] = [
   WindowRequestKind::ListWindows,
   WindowRequestKind::GetDisplayLayout,
   WindowRequestKind::CloseWindow,
@@ -415,6 +415,8 @@ pub const ENUM_VALUES_WINDOW_REQUEST_KIND: [WindowRequestKind; 14] = [
   WindowRequestKind::MoveWindowToOutput,
   WindowRequestKind::JoinScreen,
   WindowRequestKind::MoveToScreen,
+  WindowRequestKind::SplitView,
+  WindowRequestKind::LeaveSplitView,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -436,9 +438,11 @@ impl WindowRequestKind {
   pub const MoveWindowToOutput: Self = Self(11);
   pub const JoinScreen: Self = Self(12);
   pub const MoveToScreen: Self = Self(13);
+  pub const SplitView: Self = Self(14);
+  pub const LeaveSplitView: Self = Self(15);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 13;
+  pub const ENUM_MAX: u8 = 15;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::ListWindows,
     Self::GetDisplayLayout,
@@ -454,6 +458,8 @@ impl WindowRequestKind {
     Self::MoveWindowToOutput,
     Self::JoinScreen,
     Self::MoveToScreen,
+    Self::SplitView,
+    Self::LeaveSplitView,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -472,6 +478,8 @@ impl WindowRequestKind {
       Self::MoveWindowToOutput => Some("MoveWindowToOutput"),
       Self::JoinScreen => Some("JoinScreen"),
       Self::MoveToScreen => Some("MoveToScreen"),
+      Self::SplitView => Some("SplitView"),
+      Self::LeaveSplitView => Some("LeaveSplitView"),
       _ => None,
     }
   }
@@ -4970,6 +4978,8 @@ impl<'a> Window<'a> {
   pub const VT_LAYOUT_SCREEN: flatbuffers::VOffsetT = 110;
   pub const VT_LAYOUT_SCREEN_RECT: flatbuffers::VOffsetT = 112;
   pub const VT_LAYOUT_SCREEN_FLOATING: flatbuffers::VOffsetT = 114;
+  pub const VT_SPLIT_VIEW_PARTNER_ID: flatbuffers::VOffsetT = 116;
+  pub const VT_SPLIT_VIEW_RATIO: flatbuffers::VOffsetT = 118;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -4981,6 +4991,8 @@ impl<'a> Window<'a> {
     args: &'args WindowArgs<'args>
   ) -> flatbuffers::WIPOffset<Window<'bldr>> {
     let mut builder = WindowBuilder::new(_fbb);
+    builder.add_split_view_ratio(args.split_view_ratio);
+    builder.add_split_view_partner_id(args.split_view_partner_id);
     builder.add_pet_anchor_y(args.pet_anchor_y);
     builder.add_pet_anchor_x(args.pet_anchor_x);
     builder.add_held_share(args.held_share);
@@ -5433,6 +5445,20 @@ impl<'a> Window<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<bool>(Window::VT_LAYOUT_SCREEN_FLOATING, Some(false)).unwrap()}
   }
+  #[inline]
+  pub fn split_view_partner_id(&self) -> u64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<u64>(Window::VT_SPLIT_VIEW_PARTNER_ID, Some(0)).unwrap()}
+  }
+  #[inline]
+  pub fn split_view_ratio(&self) -> f64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(Window::VT_SPLIT_VIEW_RATIO, Some(0.0)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for Window<'_> {
@@ -5498,6 +5524,8 @@ impl flatbuffers::Verifiable for Window<'_> {
      .visit_field::<u32>("layout_screen", Self::VT_LAYOUT_SCREEN, false)?
      .visit_field::<WireRect>("layout_screen_rect", Self::VT_LAYOUT_SCREEN_RECT, false)?
      .visit_field::<bool>("layout_screen_floating", Self::VT_LAYOUT_SCREEN_FLOATING, false)?
+     .visit_field::<u64>("split_view_partner_id", Self::VT_SPLIT_VIEW_PARTNER_ID, false)?
+     .visit_field::<f64>("split_view_ratio", Self::VT_SPLIT_VIEW_RATIO, false)?
      .finish();
     Ok(())
   }
@@ -5559,6 +5587,8 @@ pub struct WindowArgs<'a> {
     pub layout_screen: u32,
     pub layout_screen_rect: Option<&'a WireRect>,
     pub layout_screen_floating: bool,
+    pub split_view_partner_id: u64,
+    pub split_view_ratio: f64,
 }
 impl<'a> Default for WindowArgs<'a> {
   #[inline]
@@ -5620,6 +5650,8 @@ impl<'a> Default for WindowArgs<'a> {
       layout_screen: 0,
       layout_screen_rect: None,
       layout_screen_floating: false,
+      split_view_partner_id: 0,
+      split_view_ratio: 0.0,
     }
   }
 }
@@ -5854,6 +5886,14 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> WindowBuilder<'a, 'b, A> {
     self.fbb_.push_slot::<bool>(Window::VT_LAYOUT_SCREEN_FLOATING, layout_screen_floating, false);
   }
   #[inline]
+  pub fn add_split_view_partner_id(&mut self, split_view_partner_id: u64) {
+    self.fbb_.push_slot::<u64>(Window::VT_SPLIT_VIEW_PARTNER_ID, split_view_partner_id, 0);
+  }
+  #[inline]
+  pub fn add_split_view_ratio(&mut self, split_view_ratio: f64) {
+    self.fbb_.push_slot::<f64>(Window::VT_SPLIT_VIEW_RATIO, split_view_ratio, 0.0);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> WindowBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     WindowBuilder {
@@ -5927,6 +5967,8 @@ impl core::fmt::Debug for Window<'_> {
       ds.field("layout_screen", &self.layout_screen());
       ds.field("layout_screen_rect", &self.layout_screen_rect());
       ds.field("layout_screen_floating", &self.layout_screen_floating());
+      ds.field("split_view_partner_id", &self.split_view_partner_id());
+      ds.field("split_view_ratio", &self.split_view_ratio());
       ds.finish()
   }
 }
@@ -6610,6 +6652,7 @@ impl<'a> WindowRequest<'a> {
   pub const VT_TARGET_WINDOW_ID: flatbuffers::VOffsetT = 30;
   pub const VT_SCREEN_SIDE: flatbuffers::VOffsetT = 32;
   pub const VT_BEFORE: flatbuffers::VOffsetT = 34;
+  pub const VT_SPLIT_RATIO: flatbuffers::VOffsetT = 36;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -6621,6 +6664,7 @@ impl<'a> WindowRequest<'a> {
     args: &'args WindowRequestArgs<'args>
   ) -> flatbuffers::WIPOffset<WindowRequest<'bldr>> {
     let mut builder = WindowRequestBuilder::new(_fbb);
+    builder.add_split_ratio(args.split_ratio);
     builder.add_target_window_id(args.target_window_id);
     builder.add_maximize_padding(args.maximize_padding);
     builder.add_system_bar_thickness(args.system_bar_thickness);
@@ -6753,6 +6797,13 @@ impl<'a> WindowRequest<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<bool>(WindowRequest::VT_BEFORE, Some(false)).unwrap()}
   }
+  #[inline]
+  pub fn split_ratio(&self) -> f64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(WindowRequest::VT_SPLIT_RATIO, Some(0.0)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for WindowRequest<'_> {
@@ -6778,6 +6829,7 @@ impl flatbuffers::Verifiable for WindowRequest<'_> {
      .visit_field::<u64>("target_window_id", Self::VT_TARGET_WINDOW_ID, false)?
      .visit_field::<u32>("screen_side", Self::VT_SCREEN_SIDE, false)?
      .visit_field::<bool>("before", Self::VT_BEFORE, false)?
+     .visit_field::<f64>("split_ratio", Self::VT_SPLIT_RATIO, false)?
      .finish();
     Ok(())
   }
@@ -6799,6 +6851,7 @@ pub struct WindowRequestArgs<'a> {
     pub target_window_id: u64,
     pub screen_side: u32,
     pub before: bool,
+    pub split_ratio: f64,
 }
 impl<'a> Default for WindowRequestArgs<'a> {
   #[inline]
@@ -6820,6 +6873,7 @@ impl<'a> Default for WindowRequestArgs<'a> {
       target_window_id: 0,
       screen_side: 0,
       before: false,
+      split_ratio: 0.0,
     }
   }
 }
@@ -6894,6 +6948,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> WindowRequestBuilder<'a, 'b, A>
     self.fbb_.push_slot::<bool>(WindowRequest::VT_BEFORE, before, false);
   }
   #[inline]
+  pub fn add_split_ratio(&mut self, split_ratio: f64) {
+    self.fbb_.push_slot::<f64>(WindowRequest::VT_SPLIT_RATIO, split_ratio, 0.0);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> WindowRequestBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     WindowRequestBuilder {
@@ -6927,6 +6985,7 @@ impl core::fmt::Debug for WindowRequest<'_> {
       ds.field("target_window_id", &self.target_window_id());
       ds.field("screen_side", &self.screen_side());
       ds.field("before", &self.before());
+      ds.field("split_ratio", &self.split_ratio());
       ds.finish()
   }
 }

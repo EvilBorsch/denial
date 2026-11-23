@@ -245,6 +245,8 @@ class DenialWindow {
     this.layoutScreen = 0,
     this.layoutScreenRect,
     this.layoutScreenFloating = false,
+    this.splitViewPartnerObjectId,
+    this.splitViewRatio = 0.0,
   });
 
   final int objectId;
@@ -312,6 +314,18 @@ class DenialWindow {
   /// The window floats over [layoutScreen] (fixed-size and parentless)
   /// instead of being one of its tiles.
   final bool layoutScreenFloating;
+
+  /// Split View in the mobile presentation: the window this one shares the
+  /// phone's screen with, by object id; null when it shares it with none.
+  /// Its [geometry] is its half.
+  final int? splitViewPartnerObjectId;
+
+  /// Split View: the left window's share of the width; 0 outside Split
+  /// View.
+  final double splitViewRatio;
+
+  /// The window shares the phone's screen in Split View.
+  bool get inSplitView => splitViewPartnerObjectId != null;
 
   /// The window holding this layer surface, if it is a pet one holds. A held
   /// pet is drawn and hit with that window instead of in its layer's plane.
@@ -577,6 +591,8 @@ class DenialWindow {
         other.layoutScreen == layoutScreen &&
         other.layoutScreenRect == layoutScreenRect &&
         other.layoutScreenFloating == layoutScreenFloating &&
+        other.splitViewPartnerObjectId == splitViewPartnerObjectId &&
+        other.splitViewRatio == splitViewRatio &&
         listEquals(other.surfaceLayers, surfaceLayers);
   }
 
@@ -636,6 +652,8 @@ class DenialWindow {
     layoutScreen,
     layoutScreenRect,
     layoutScreenFloating,
+    splitViewPartnerObjectId,
+    splitViewRatio,
     ...surfaceLayers,
   ]);
 }

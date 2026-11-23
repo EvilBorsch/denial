@@ -219,6 +219,9 @@ mod screencopy;
 #[path = "wayland_frontend/screens.rs"]
 mod screens;
 #[cfg(feature = "flutter")]
+#[path = "wayland_frontend/split_view.rs"]
+mod split_view;
+#[cfg(feature = "flutter")]
 pub(crate) use dividers::{DividerHit, DividerPress, TouchDivider, TouchDividers};
 #[path = "wayland_frontend/startup.rs"]
 mod startup;
@@ -703,6 +706,9 @@ pub(super) struct WaylandFrontend {
     pets: pet::Pets,
     #[cfg(feature = "flutter")]
     mobile_shell: bool,
+    /// Split View pairs on the phone, in the mobile presentation.
+    #[cfg(feature = "flutter")]
+    split_views: split_view::SplitViews,
     /// The output under the last touch down or button press.
     #[cfg(feature = "flutter")]
     last_press_output: Option<OutputId>,

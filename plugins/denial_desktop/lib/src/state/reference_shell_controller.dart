@@ -11,7 +11,9 @@ import 'package:denial_flutter_sdk/motion.dart' show ShellSprings;
 import 'package:denial_flutter_sdk/platform.dart';
 import 'package:denial_flutter_sdk/state.dart';
 
+import '../launcher/home_icon_locator.dart' show launcherAppIdentity;
 import 'app_deck.dart';
+import 'deck_order.dart';
 import 'reference_shell_state.dart';
 import 'input_deck.dart';
 import 'left_app.dart';
@@ -22,6 +24,7 @@ import 'reference_shell_metrics.dart';
 import 'reference_shell_presentation.dart';
 import 'reference_shell_profile.dart';
 import 'reference_input_layout_coordinator.dart';
+import 'split_view.dart';
 
 final referenceShellProvider =
     NotifierProvider<ReferenceShellController, ReferenceShellState>(
@@ -112,6 +115,13 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
     ];
   }
 
+  /// The phone's apps, the one in front or last there first: the order the
+  /// tablet's search lists open windows in.
+  List<DenialWindow> get appsMostRecentFirst {
+    final open = state.deckAppsByObjectId;
+    return [for (final id in _recencyOrder().reversed) ?open[id]];
+  }
+
   /// Apps kept running behind a window opened over them, such as their
   /// dialog; see [leaveApps].
   Set<int> _heldBehind = const <int>{};
@@ -134,11 +144,19 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
       front: next.foregroundObjectId,
       held: _heldBehind,
       parentOf: (id) => windows[id]?.transientParentObjectId,
+      partnerOf: (id) => switch (windows[id]) {
+        final window? => next.splitPartnerOf(window)?.objectId,
+        null => null,
+      },
     );
     _heldBehind = left.held;
+    final sent = <int>{};
     for (final id in left.minimize) {
       final window = windows[id];
       if (window == null || window.minimized) continue;
+      // deniald minimizes a Split View pair as one.
+      if (sent.contains(next.splitPartnerOf(window)?.objectId)) continue;
+      sent.add(id);
       _bridge.minimizeWindow(window);
     }
   }
@@ -182,6 +200,8 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
       _launchRequestTimer = null;
       _appSwitchOrderTimer?.cancel();
       _appSwitchOrderTimer = null;
+      _pendingSplitTimer?.cancel();
+      _pendingSplitTimer = null;
       unawaited(_textInputStateSubscription?.cancel());
       _textInputStateSubscription = null;
     });
@@ -373,6 +393,9 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
     _appSwitchOrderTimer = null;
     _legacyTextInputAppIds.clear();
     _backgroundLaunchAppIds.clear();
+    _pendingSplit = null;
+    _pendingSplitTimer?.cancel();
+    _pendingSplitTimer = null;
   }
 
   void _handleTextInputState(DenialTextInputState input) {
@@ -529,6 +552,7 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
     state = state.copyWith(platform: platform, desk: desk);
     if (previous.locked != platform.locked) _resetSecurePresentation();
     if (windowsChanged) _reconcileWindowSnapshot();
+    if (windowsChanged) _checkPendingSplit();
     if (previous.activationRevision != platform.activationRevision) {
       final window = platform.foregroundWindow;
       if (window != null) _handleNativeWindowActivated(window.windowId);
@@ -736,12 +760,19 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
         velocity: slides ? -toward : 0,
       );
       _deck.attached.settle(1, ShellSprings.appStrip);
-      // Out of an app the previous app comes to the middle; otherwise the
-      // row settles on the card nearest, never on home.
+      // Recents shows the windows of one app side by side, the cards moving
+      // into place as they shrink.
+      _deck.reorder(
+        groupedByApp(_deck.order, deckAppKeyOf),
+        ShellSprings.recentsOpen,
+      );
+      // Out of an app the app used before it comes to the middle; otherwise
+      // the row settles on the card nearest, never on home.
       final last = _deck.length - 1;
       final row = _deck.row;
+      final frontApp = state.deckAppOf(state.foregroundObjectId);
       final target = front != null && !caught
-          ? (front > 0 ? front - 1 : math.min(last, front + 1))
+          ? _deck.indexOf(_appBefore(frontApp)) ?? _deck.indexOf(frontApp) ?? 0
           : row.target.round().clamp(0, math.max(0, last));
       if (last >= 0 && row.target != target) {
         row.settle(target.toDouble(), ShellSprings.recentsOpen);
@@ -1175,7 +1206,9 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
 
   /// The deck at rest: the row is the frozen switch order while it lasts,
   /// else the stacking order, and the screen is on the app in front, or on
-  /// home past the newest app.
+  /// home past the newest app. Recents groups it by app when it opens
+  /// ([openOverview]); the home pill's quick switch keeps this order, so the
+  /// app used before is always one swipe away.
   void _arrangeDeck() {
     if (_deck.presenting.value) return;
     final current = state;
@@ -1192,6 +1225,131 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
       current.deckAppOf(current.foregroundObjectId) ?? -1,
     );
     _deck.arrange(order, rowAt: (front < 0 ? order.length : front).toDouble());
+  }
+
+  /// The app in front most recently before [front], or null without one.
+  int? _appBefore(int? front) {
+    final order = _recencyOrder();
+    for (final id in order.reversed) {
+      if (id != front) return id;
+    }
+    return null;
+  }
+
+  /// The app a deck window belongs to, as Recents groups them: the window's
+  /// app id; none for a window without one, or for a Split View pair, whose
+  /// card holds two apps.
+  String? deckAppKeyOf(int objectId) {
+    final window = state.openAppWindowsByObjectId[objectId];
+    if (window == null || state.splitPartnerOf(window) != null) return null;
+    final key = launcherAppIdentity(window.appId);
+    return key.isEmpty ? null : key;
+  }
+
+  // Split View -----------------------------------------------------------
+
+  /// A pair asked of deniald from Recents: once it stands, its card opens.
+  ({int window, int partner})? _pendingSplit;
+  Timer? _pendingSplitTimer;
+
+  /// How long Recents waits for deniald to make a pair before it opens the
+  /// card alone.
+  static const Duration _pendingSplitTimeout = Duration(seconds: 1);
+
+  /// The window a card dropped on a side of Recents shares the screen with:
+  /// the app in front when Recents opened. None from home, and none for the
+  /// card of that app itself.
+  DenialWindow? splitTargetFor(DenialWindow window) {
+    final front = state.foregroundWindow;
+    if (front == null || !window.isUserApp) return null;
+    if (state.deckAppOf(front.objectId) == state.deckAppOf(window.objectId)) {
+      return null;
+    }
+    // A dialog in front shares through the app it belongs to.
+    final card = state.deckAppOf(front.objectId);
+    return front.transientParentObjectId == null
+        ? front
+        : state.windowByObjectId(card);
+  }
+
+  /// From Recents: [window]'s card was dropped on the left ([onLeft]) or
+  /// right side, and it shares the screen with the app in front, which
+  /// takes the other side. Once deniald has the pair, Recents opens on it.
+  bool splitWithFront(DenialWindow window, {required bool onLeft}) {
+    final target = splitTargetFor(window);
+    if (target == null) return false;
+    _bridge.splitView(
+      window,
+      target,
+      windowOnLeft: onLeft,
+      ratio: splitViewStartShare,
+    );
+    _pendingSplit = (window: window.objectId, partner: target.objectId);
+    _pendingSplitTimer?.cancel();
+    final generation = _buildGeneration;
+    _pendingSplitTimer = Timer(_pendingSplitTimeout, () {
+      if (isBuildGenerationActive(generation)) _openPendingSplit();
+    });
+    return true;
+  }
+
+  /// The pair asked from Recents stands, or the wait is over: its card
+  /// opens.
+  void _openPendingSplit() {
+    final pending = _pendingSplit;
+    _pendingSplit = null;
+    _pendingSplitTimer?.cancel();
+    _pendingSplitTimer = null;
+    final window = state.windowByObjectId(pending?.window);
+    if (window == null || !state.overviewVisible) return;
+    // The card that was dropped comes to the front, beside the app it now
+    // shares the screen with.
+    focusWindow(window);
+  }
+
+  void _checkPendingSplit() {
+    final pending = _pendingSplit;
+    if (pending == null) return;
+    final window = state.windowByObjectId(pending.window);
+    if (window == null) {
+      _pendingSplit = null;
+      _pendingSplitTimer?.cancel();
+      return;
+    }
+    if (state.splitPartnerOf(window)?.objectId == pending.partner) {
+      _openPendingSplit();
+    }
+  }
+
+  /// The divider of [pair] came to rest at [share] of the width.
+  void setSplitShare(SplitPair pair, double share) {
+    if ((pair.share - share).abs() < 1e-6) return;
+    _bridge.splitView(pair.left, pair.right, windowOnLeft: true, ratio: share);
+  }
+
+  /// The two apps of [pair] change sides, each keeping its width.
+  void swapSplit(SplitPair pair) {
+    _bridge.splitView(
+      pair.left,
+      pair.right,
+      windowOnLeft: false,
+      ratio: 1 - pair.share,
+    );
+  }
+
+  /// [pair] comes apart: [stays] fills the screen in front, and the other
+  /// app leaves the screen, as an app left for another does.
+  void leaveSplit(SplitPair pair, {required DenialWindow stays}) {
+    final leaves = stays.objectId == pair.left.objectId
+        ? pair.right
+        : pair.left;
+    _bridge.leaveSplitView(stays);
+    _heldBehind = {
+      for (final id in _heldBehind)
+        if (id != leaves.objectId) id,
+    };
+    _bridge.minimizeWindow(leaves);
+    focusWindow(stays);
   }
 
   /// The row while the deck presents: its own order, without the apps that

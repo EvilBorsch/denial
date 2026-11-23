@@ -3,6 +3,7 @@ import 'package:denial_flutter_sdk/models.dart';
 import 'package:denial_flutter_sdk/state.dart' show ShellState;
 
 import 'reference_shell_metrics.dart';
+import 'split_view.dart';
 
 /// Which way the bottom gesture drags the shell's visuals, if at all.
 ///
@@ -291,13 +292,29 @@ class ReferenceShellState {
 
   int get openAppWindowCount => openAppWindows.length;
 
+  /// The open window [window] shares the screen with in Split View; null
+  /// outside Split View.
+  DenialWindow? splitPartnerOf(DenialWindow window) {
+    final partner = openAppWindowsByObjectId[window.splitViewPartnerObjectId];
+    return partner?.splitViewPartnerObjectId == window.objectId
+        ? partner
+        : null;
+  }
+
+  /// A window in Split View rides on its partner's card when the partner
+  /// has the lower object id: a pair is one card, and always the same one.
+  bool _ridesPartner(DenialWindow window) =>
+      (splitPartnerOf(window)?.objectId ?? window.objectId) < window.objectId;
+
   /// The phone's apps as the deck shows them, one card each: a window opened
   /// over an open app, such as a dialog Android runs in a task of its own,
-  /// rides on that app's card.
+  /// rides on that app's card, and so does the second window of a Split
+  /// View pair.
   List<DenialWindow> get deckApps {
     final open = openAppWindowsByObjectId;
     bool rides(DenialWindow window) =>
-        open.containsKey(window.transientParentObjectId);
+        open.containsKey(window.transientParentObjectId) ||
+        _ridesPartner(window);
     if (!openAppWindows.any(rides)) return openAppWindows;
     return [
       for (final window in openAppWindows)
@@ -321,8 +338,26 @@ class ReferenceShellState {
       if (parent == null || !open.containsKey(parent)) break;
       id = parent;
     }
-    return id;
+    // The second window of a pair shares its partner's card.
+    final root = open[id]!;
+    return _ridesPartner(root) ? root.splitViewPartnerObjectId! : id;
   }
+
+  /// The Split View pair on screen: the card in front holds a pair, and
+  /// neither of its windows fills the screen.
+  SplitPair? get primarySplit {
+    final card = deckAppOf(primaryWindow?.objectId);
+    return card == null
+        ? null
+        : splitPairOf(openAppWindowsByObjectId[card], openAppWindowsByObjectId);
+  }
+
+  /// The windows of [objectId]'s card, back to front: the app, its Split
+  /// View partner and the windows opened over them.
+  List<DenialWindow> deckCardWindows(int objectId) => [
+    for (final window in openAppWindows)
+      if (deckAppOf(window.objectId) == objectId) window,
+  ];
 
   /// The windows riding on app [objectId]'s card, in stacking order.
   List<DenialWindow> deckWindowsOver(int objectId) => [
@@ -343,10 +378,17 @@ class ReferenceShellState {
   }
 
   /// The window a card brings to the front: the newest one riding on it, so
-  /// an app comes back with its dialog, or the app.
-  DenialWindow? deckFocusOf(int objectId) =>
-      deckWindowsOver(objectId).lastOrNull ??
-      openAppWindowsByObjectId[objectId];
+  /// an app comes back with its dialog, or the app; for a Split View pair
+  /// the window on top, the one touched last.
+  DenialWindow? deckFocusOf(int objectId) {
+    final card = deckCardWindows(objectId);
+    // A Split View pair comes back with the app touched last, on top.
+    if (card.any((window) => splitPartnerOf(window) != null)) {
+      return card.lastOrNull;
+    }
+    return deckWindowsOver(objectId).lastOrNull ??
+        openAppWindowsByObjectId[objectId];
+  }
 
   /// A sideways swipe of the bottom gesture has an app to bring in.
   bool get canSwitchApps {

@@ -842,6 +842,8 @@ fn create_window_snapshot<'a>(
                     .map(|rect| fb::WireRect::new(rect.x, rect.y, rect.width, rect.height))
                     .as_ref(),
                 layout_screen_floating: description.layout_screen_floating,
+                split_view_partner_id: description.split_view_partner_id,
+                split_view_ratio: description.split_view_ratio,
                 ..Default::default()
             },
         ));

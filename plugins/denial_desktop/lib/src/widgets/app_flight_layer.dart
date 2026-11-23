@@ -16,6 +16,7 @@ import 'package:denial_flutter_sdk/motion.dart'
 import 'package:denial_flutter_sdk/rendering.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 
+import '../features/mobile/mobile_split_stage.dart' show CardWindows;
 import '../launcher/home_grid_geometry.dart';
 import '../launcher/home_icon_locator.dart';
 import '../launcher/widgets/home_item_icon.dart';
@@ -564,6 +565,21 @@ class _AppFlightLayerState extends ConsumerState<AppFlightLayer>
       referenceShellProvider.select((state) => state.deckWindowsByApp),
     );
     if (_flights.isEmpty) return const SizedBox.expand();
+    final shell = ref.read(referenceShellProvider);
+    // A window flies with its whole card: a dialog over it, or the app it
+    // shares the screen with in Split View, whichever of the two it is.
+    List<DenialWindow> overOf(DenialWindow? window) {
+      if (window == null) return const <DenialWindow>[];
+      final card = shell.deckAppOf(window.objectId);
+      if (card == null || card == window.objectId) {
+        return riding[window.objectId] ?? const <DenialWindow>[];
+      }
+      return [
+        for (final other in shell.deckCardWindows(card))
+          if (other.objectId != window.objectId) other,
+      ];
+    }
+
     final glass = WindowBackdropCache.maybeOf(context);
     final shading = ShellTheme.of(context).windowGlassShading;
     final launchSurface = context.shellColors.launchSurface;
@@ -584,8 +600,7 @@ class _AppFlightLayerState extends ConsumerState<AppFlightLayer>
                 },
                 child: _FlightView(
                   flight: flight,
-                  over:
-                      riding[flight.window?.objectId] ?? const <DenialWindow>[],
+                  over: overOf(flight.window),
                   glass: glass == null
                       ? FadeTransition(
                           opacity: flight.glassFade,
@@ -644,21 +659,7 @@ class _FlightView extends StatelessWidget {
                         top: ReferenceShellMetrics.statusBarHeight,
                       ),
                     )
-                  : Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        for (final shown in [window, ...over])
-                          WindowSurface(
-                            key: ValueKey<int>(shown.objectId),
-                            window: shown,
-                            // Glass would hide the app beneath.
-                            applyBackdrop: shown == window,
-                            contentPadding: const EdgeInsets.only(
-                              top: ReferenceShellMetrics.statusBarHeight,
-                            ),
-                          ),
-                      ],
-                    ),
+                  : CardWindows(windows: [window, ...over]),
             ),
           ),
         if (flight.placeholder)

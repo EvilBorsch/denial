@@ -48,7 +48,8 @@ class HomeGridState {
     required List<HomeGridItem?> slots,
     this.page = 0,
     this.pages = 0,
-    this.drawer = false,
+    this.drawer = true,
+    this.drawerChosen = false,
     this.sharedBottomRow = false,
   }) : slots = List.unmodifiable(slots);
 
@@ -57,6 +58,7 @@ class HomeGridState {
     required this.page,
     required this.pages,
     required this.drawer,
+    required this.drawerChosen,
     required this.sharedBottomRow,
   });
 
@@ -70,6 +72,10 @@ class HomeGridState {
   /// A swipe up on home opens every app in a drawer.
   final bool drawer;
 
+  /// The user set [drawer] with the page editor's switch; otherwise it is
+  /// the default, on.
+  final bool drawerChosen;
+
   /// The first page's bottom row shows on every page.
   final bool sharedBottomRow;
 
@@ -81,6 +87,7 @@ class HomeGridState {
     int? page,
     int? pages,
     bool? drawer,
+    bool? drawerChosen,
     bool? sharedBottomRow,
   }) {
     return HomeGridState._(
@@ -88,6 +95,7 @@ class HomeGridState {
       page: page ?? this.page,
       pages: pages ?? this.pages,
       drawer: drawer ?? this.drawer,
+      drawerChosen: drawerChosen ?? this.drawerChosen,
       sharedBottomRow: sharedBottomRow ?? this.sharedBottomRow,
     );
   }
@@ -172,6 +180,7 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
         slots: slots,
         pages: orientation == null ? 0 : saved.pages[orientation] ?? 0,
         drawer: saved.drawer,
+        drawerChosen: saved.drawerChosen,
         sharedBottomRow: saved.sharedBottomRow,
       );
       if (!_isBuildActive(generation)) {
@@ -429,10 +438,13 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
     _save(slots);
   }
 
+  /// The page editor's switch: the user's choice, kept from now on.
   void setDrawer(bool drawer) {
     final current = state.asData?.value;
-    if (current == null || current.drawer == drawer) return;
-    state = AsyncData(current.copyWith(drawer: drawer));
+    if (current == null || (current.drawer == drawer && current.drawerChosen)) {
+      return;
+    }
+    state = AsyncData(current.copyWith(drawer: drawer, drawerChosen: true));
     _save(current.slots);
   }
 
@@ -608,7 +620,8 @@ class HomeGridController extends AsyncNotifier<HomeGridState> {
                 for (final MapEntry(:key, :value) in _pages.entries)
                   if (value > 0) key: value,
               },
-              drawer: shown?.drawer ?? false,
+              drawer: shown?.drawer ?? true,
+              drawerChosen: shown?.drawerChosen ?? false,
               sharedBottomRow: shown?.sharedBottomRow ?? false,
             ),
           ),

@@ -1355,6 +1355,8 @@ fn scene_window(id: u64) -> WindowDescription {
         layout_screen: 0,
         layout_screen_rect: None,
         layout_screen_floating: false,
+        split_view_partner_id: 0,
+        split_view_ratio: 0.0,
     }
 }
 
@@ -2302,6 +2304,146 @@ fn windows_carry_their_screen_only_in_the_screens_layout() {
     );
     assert_eq!(windows.get(1).layout_screen(), 0);
     assert!(windows.get(1).layout_screen_rect().is_none());
+}
+
+fn split_view_request(
+    kind: fb::WindowRequestKind,
+    window_id: u64,
+    target_window_id: u64,
+    screen_side: u32,
+    split_ratio: f64,
+) -> Vec<u8> {
+    let mut builder = FlatBufferBuilder::new();
+    let request = fb::WindowRequest::create(
+        &mut builder,
+        &fb::WindowRequestArgs {
+            kind,
+            window_id,
+            target_window_id,
+            screen_side,
+            split_ratio,
+            ..Default::default()
+        },
+    );
+    let envelope = fb::Envelope::create(
+        &mut builder,
+        &fb::EnvelopeArgs {
+            protocol_version: PROTOCOL_VERSION,
+            sequence: 4,
+            payload_type: fb::Payload::WindowRequest,
+            payload: Some(request.as_union_value()),
+            ..Default::default()
+        },
+    );
+    fb::finish_envelope_buffer(&mut builder, envelope);
+    builder.finished_data().to_vec()
+}
+
+#[test]
+fn split_view_requests_name_both_windows_the_side_and_the_share() {
+    let mut bridge = bridge();
+    for (side, window_on_left) in [(0, true), (1, false)] {
+        assert!(
+            bridge
+                .handle(&split_view_request(
+                    fb::WindowRequestKind::SplitView,
+                    4,
+                    9,
+                    side,
+                    2.0 / 3.0
+                ))
+                .unwrap()
+                .is_none()
+        );
+        let commands = bridge.drain_window_commands().collect::<Vec<_>>();
+        assert_eq!(
+            commands,
+            vec![WindowCommand::SplitView {
+                window_id: 4,
+                target_window_id: 9,
+                window_on_left,
+                ratio: 2.0 / 3.0,
+            }]
+        );
+        assert_eq!(commands[0].window_id(), Some(4));
+    }
+    assert!(
+        bridge
+            .handle(&split_view_request(
+                fb::WindowRequestKind::LeaveSplitView,
+                9,
+                0,
+                0,
+                0.0
+            ))
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        bridge.drain_window_commands().collect::<Vec<_>>(),
+        vec![WindowCommand::LeaveSplitView { window_id: 9 }]
+    );
+}
+
+#[test]
+fn malformed_split_view_requests_are_refused() {
+    let mut bridge = bridge();
+    for request in [
+        split_view_request(fb::WindowRequestKind::SplitView, 0, 9, 0, 0.5),
+        split_view_request(fb::WindowRequestKind::SplitView, 4, 0, 0, 0.5),
+        split_view_request(fb::WindowRequestKind::SplitView, 4, 4, 0, 0.5),
+        split_view_request(fb::WindowRequestKind::LeaveSplitView, 0, 0, 0, 0.0),
+    ] {
+        assert!(matches!(bridge.handle(&request), Err(WireError::Identity)));
+    }
+    assert!(matches!(
+        bridge.handle(&split_view_request(
+            fb::WindowRequestKind::SplitView,
+            4,
+            9,
+            2,
+            0.5
+        )),
+        Err(WireError::Flags)
+    ));
+    // The share is a share of the width: strictly between none and all.
+    for ratio in [0.0, 1.0, -0.5, 1.5, f64::NAN, f64::INFINITY] {
+        assert!(matches!(
+            bridge.handle(&split_view_request(
+                fb::WindowRequestKind::SplitView,
+                4,
+                9,
+                0,
+                ratio
+            )),
+            Err(WireError::Geometry)
+        ));
+    }
+    assert_eq!(bridge.drain_window_commands().count(), 0);
+}
+
+#[test]
+fn windows_in_split_view_carry_their_partner_and_share() {
+    let mut bridge = bridge();
+    let mut left = scene_window(1);
+    left.split_view_partner_id = 2;
+    left.split_view_ratio = 1.0 / 3.0;
+    let mut right = scene_window(2);
+    right.split_view_partner_id = 1;
+    right.split_view_ratio = 1.0 / 3.0;
+    let (bytes, _) = bridge
+        .update_windows(1, vec![left, right, scene_window(3)], &BTreeSet::new())
+        .unwrap();
+    let snapshot = fb::root_as_envelope(bytes.unwrap())
+        .unwrap()
+        .payload_as_window_snapshot()
+        .unwrap();
+    let windows = snapshot.windows().unwrap();
+    assert_eq!(windows.get(0).split_view_partner_id(), 2);
+    assert_eq!(windows.get(1).split_view_partner_id(), 1);
+    assert!((windows.get(0).split_view_ratio() - 1.0 / 3.0).abs() < 1e-12);
+    assert_eq!(windows.get(2).split_view_partner_id(), 0);
+    assert_eq!(windows.get(2).split_view_ratio(), 0.0);
 }
 
 #[test]

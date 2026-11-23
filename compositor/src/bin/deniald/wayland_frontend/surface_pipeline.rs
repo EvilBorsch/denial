@@ -1461,6 +1461,10 @@ impl WaylandFrontend {
             };
             let minimized = self.surface_is_minimized(&surface.id());
             let transient_parent_id = self.transient_parent_stable_id(&window);
+            let split_view = self.split_views.pair_of(stable_id).and_then(|pair| {
+                pair.partner_of(stable_id)
+                    .map(|partner| (partner, pair.ratio))
+            });
             if !minimized
                 && let Some(parent_id) = transient_parent_id
                 && let Some(parent_location) = self.workspace_location(parent_id)
@@ -1593,6 +1597,8 @@ impl WaylandFrontend {
                     height: f64::from(screen.rect.size.h),
                 }),
                 layout_screen_floating: window_screen.is_some_and(|screen| screen.floating),
+                split_view_partner_id: split_view.map_or(0, |(partner, _)| partner),
+                split_view_ratio: split_view.map_or(0.0, |(_, ratio)| ratio),
             };
             if let Some(previous) = windows.get_mut(window_count) {
                 *previous = description;
@@ -1705,6 +1711,8 @@ impl WaylandFrontend {
                 layout_screen: 0,
                 layout_screen_rect: None,
                 layout_screen_floating: false,
+                split_view_partner_id: 0,
+                split_view_ratio: 0.0,
             };
             if let Some(previous) = windows.get_mut(window_count) {
                 *previous = description;
@@ -1890,6 +1898,8 @@ impl WaylandFrontend {
                     layout_screen: 0,
                     layout_screen_rect: None,
                     layout_screen_floating: false,
+                    split_view_partner_id: 0,
+                    split_view_ratio: 0.0,
                 };
                 if let Some(previous) = windows.get_mut(window_count) {
                     *previous = description;
@@ -2045,6 +2055,8 @@ impl WaylandFrontend {
                     layout_screen: 0,
                     layout_screen_rect: None,
                     layout_screen_floating: false,
+                    split_view_partner_id: 0,
+                    split_view_ratio: 0.0,
                 };
                 if let Some(previous) = windows.get_mut(window_count) {
                     *previous = description;

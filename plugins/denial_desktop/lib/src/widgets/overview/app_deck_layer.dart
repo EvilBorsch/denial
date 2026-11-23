@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:motor/motor.dart' as motor;
 
 import 'package:denial_flutter_sdk/localization.dart';
@@ -15,6 +16,9 @@ import 'package:denial_flutter_sdk/motion.dart';
 import 'package:denial_flutter_sdk/rendering.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 
+import '../../launcher/home_icon_locator.dart' show launcherAppIdentity;
+import '../../features/mobile/mobile_split_stage.dart' show CardWindows;
+import '../../launcher/window_application.dart';
 import 'overview_card_label.dart';
 import 'overview_chrome.dart';
 
@@ -25,6 +29,8 @@ import 'overview_chrome.dart';
 ///
 /// In recents a tap opens a card, a card swiped up closes its app, a
 /// sideways drag scrolls the row, and a tap beside the cards goes home.
+/// Cards of an app with several windows name their window under the app,
+/// and carry a button that closes them all.
 class AppDeckLayer extends StatefulWidget {
   const AppDeckLayer({
     super.key,
@@ -40,6 +46,9 @@ class AppDeckLayer extends StatefulWidget {
     required this.onDismissWindow,
     required this.onOpenWindow,
     this.onMoveWindowToDesk,
+    this.splitTargetOf,
+    this.onSplit,
+    this.onLift,
   });
 
   final AppDeck deck;
@@ -72,6 +81,18 @@ class AppDeckLayer extends StatefulWidget {
   /// Moves an app to the monitor beside the phone; none without a monitor.
   final ValueChanged<DenialWindow>? onMoveWindowToDesk;
 
+  /// The app a card's window can share the screen with in Split View: the
+  /// app in front; null when there is none to share with.
+  final DenialWindow? Function(DenialWindow window)? splitTargetOf;
+
+  /// A card lifted by a long press was dropped on the left ([onLeft]) or
+  /// right side of the screen: its window shares the screen with
+  /// [splitTargetOf]'s.
+  final void Function(DenialWindow window, {required bool onLeft})? onSplit;
+
+  /// A card was lifted by a long press, for a tap of the haptic motor.
+  final VoidCallback? onLift;
+
   @override
   State<AppDeckLayer> createState() => _AppDeckLayerState();
 }
@@ -101,6 +122,23 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
   );
   var _windows = <int, DenialWindow>{};
   final _poses = <int, ValueNotifier<WindowPose>>{};
+
+  /// The deck's windows of each app, by window: the window's app's windows.
+  var _appWindows = <int, List<int>>{};
+
+  /// Cards told to leave by a close-all: they go as a flung card goes.
+  var _closing = <int>{};
+
+  /// A card lifted to share the screen: its window, the app it would share
+  /// it with, and where the finger is, in this layer's coordinates.
+  final _lifted =
+      ValueNotifier<
+        ({DenialWindow window, DenialWindow target, Offset position})?
+      >(null);
+
+  /// The share of the width at each side of the screen that a lifted card
+  /// is dropped on to share the screen.
+  static const double _splitZone = 0.3;
 
   /// The apps drawn, back to front.
   List<int> _drawn = const <int>[];
@@ -154,11 +192,66 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
       pose.dispose();
     }
     _open.dispose();
+    _lifted.dispose();
     super.dispose();
+  }
+
+  Offset _local(Offset global) {
+    final box = context.findRenderObject();
+    return box is RenderBox && box.hasSize ? box.globalToLocal(global) : global;
+  }
+
+  /// The side of the screen a lifted card over [position] would take:
+  /// true left, false right, null neither.
+  bool? _splitSide(Offset position) {
+    final width = widget.deck.geometry.size.width;
+    if (width <= 0) return null;
+    if (position.dx < width * _splitZone) return true;
+    if (position.dx > width * (1 - _splitZone)) return false;
+    return null;
+  }
+
+  void _liftMoved(DenialWindow window, Offset? global) {
+    if (global == null) {
+      _lifted.value = null;
+      return;
+    }
+    final target = _lifted.value?.target ?? widget.splitTargetOf?.call(window);
+    if (target == null) return;
+    if (_lifted.value == null) widget.onLift?.call();
+    _lifted.value = (window: window, target: target, position: _local(global));
+  }
+
+  void _liftDropped(DenialWindow window, Offset global) {
+    final side = _splitSide(_local(global));
+    final lifted = _lifted.value;
+    _lifted.value = null;
+    if (side == null || lifted == null) return;
+    widget.onSplit?.call(window, onLeft: side);
   }
 
   void _indexWindows() {
     _windows = {for (final window in widget.windows) window.objectId: window};
+    final byApp = <String, List<int>>{};
+    final appWindows = <int, List<int>>{};
+    for (final window in widget.windows) {
+      final over = widget.windowsOver[window.objectId] ?? const [];
+      final app = over.any((other) => other.inSplitView)
+          ? ''
+          : launcherAppIdentity(window.appId);
+      if (app.isEmpty) {
+        appWindows[window.objectId] = [window.objectId];
+        continue;
+      }
+      final windows = byApp[app] ??= <int>[];
+      windows.add(window.objectId);
+      appWindows[window.objectId] = windows;
+    }
+    _appWindows = appWindows;
+    _closing = {
+      for (final id in _closing)
+        if (_windows.containsKey(id)) id,
+    };
     _poses.removeWhere((id, pose) {
       if (_windows.containsKey(id)) return false;
       WidgetsBinding.instance.addPostFrameCallback((_) => pose.dispose());
@@ -195,6 +288,28 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
         _presenting = presenting;
         _drawn = ids;
       });
+    }
+  }
+
+  /// The close-all of [window]'s card: every card of its app leaves, as a
+  /// flung card does. Cards off screen have nothing to show and leave at
+  /// once.
+  void _closeApp(DenialWindow window) {
+    final windows = _appWindows[window.objectId] ?? [window.objectId];
+    final drawn = _drawn.toSet();
+    final animated = <int>{};
+    for (final id in windows) {
+      final card = _windows[id];
+      if (card == null) continue;
+      if (drawn.contains(id)) {
+        animated.add(id);
+      } else {
+        widget.onLeaveWindow(card);
+        widget.onDismissWindow(card);
+      }
+    }
+    if (animated.isNotEmpty) {
+      setState(() => _closing = {..._closing, ...animated});
     }
   }
 
@@ -323,6 +438,20 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
                   ),
                   if (deck.length == 0)
                     EmptyOverviewState(progress: _openAnimation),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: ValueListenableBuilder(
+                        valueListenable: _lifted,
+                        builder: (context, lifted, _) => lifted == null
+                            ? const SizedBox.shrink()
+                            : _SplitZones(
+                                target: lifted.target,
+                                side: _splitSide(lifted.position),
+                                zone: _splitZone,
+                              ),
+                      ),
+                    ),
+                  ),
                   for (final id in _drawn)
                     if ((_windows[id], _poses[id]) case (
                       final window?,
@@ -335,9 +464,18 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
                         pose: pose,
                         labelWidth: geometry.card.width,
                         labelOpacity: _labelOpacity,
+                        appWindowCount: _appWindows[id]?.length ?? 1,
+                        closing: _closing.contains(id),
+                        onLiftMove:
+                            widget.onSplit == null ||
+                                widget.splitTargetOf?.call(window) == null
+                            ? null
+                            : _liftMoved,
+                        onLiftDrop: _liftDropped,
                         onOpen: widget.onOpenWindow,
                         onLeaving: widget.onLeaveWindow,
                         onDismissed: widget.onDismissWindow,
+                        onCloseApp: _closeApp,
                         onMoveToDesk: widget.onMoveWindowToDesk,
                       ),
                 ],
@@ -360,9 +498,14 @@ class _DeckCard extends StatefulWidget {
     required this.pose,
     required this.labelWidth,
     required this.labelOpacity,
+    this.appWindowCount = 1,
+    this.closing = false,
+    this.onLiftMove,
+    this.onLiftDrop,
     required this.onOpen,
     required this.onLeaving,
     required this.onDismissed,
+    this.onCloseApp,
     this.onMoveToDesk,
   });
 
@@ -375,6 +518,21 @@ class _DeckCard extends StatefulWidget {
 
   /// The app's icon and name above the card; none without it.
   final Animation<double>? labelOpacity;
+
+  /// How many windows of the card's app Recents shows. With more than one,
+  /// the label names the window and offers to close them all.
+  final int appWindowCount;
+
+  /// A close-all of the app sends the card away.
+  final bool closing;
+
+  /// A long press lifts the card, and it follows the finger, which this
+  /// hears of (null once it is let go); none when the card cannot share
+  /// the screen with the app in front.
+  final void Function(DenialWindow window, Offset? global)? onLiftMove;
+
+  /// The lifted card was let go at this global position.
+  final void Function(DenialWindow window, Offset global)? onLiftDrop;
   final ValueChanged<DenialWindow> onOpen;
 
   /// The card was thrown away: the row may close over it at once.
@@ -382,6 +540,9 @@ class _DeckCard extends StatefulWidget {
 
   /// The thrown card has left the screen: its app closes.
   final ValueChanged<DenialWindow> onDismissed;
+
+  /// Closes every window of the card's app.
+  final ValueChanged<DenialWindow>? onCloseApp;
   final ValueChanged<DenialWindow>? onMoveToDesk;
 
   @override
@@ -397,6 +558,9 @@ class _DeckCardState extends State<_DeckCard>
   static const double _dismissFlingVelocity = 1000.0;
   static const double _offscreenMargin = 16.0;
 
+  /// How fast a close-all sends a card up, in logical pixels per second.
+  static const double _closeAllVelocity = 2400.0;
+
   /// A card swiped away shrinks as it leaves.
   static const double _dismissShrink = 0.1;
 
@@ -404,6 +568,9 @@ class _DeckCardState extends State<_DeckCard>
   late final motor.SingleMotionController _throw;
   late final _CardPose _pose;
   double _drag = 0;
+
+  /// The card lifted by a long press, and where its finger went.
+  bool _lifted = false;
   double _exit = -double.maxFinite;
   bool _leaving = false;
   bool _dismissed = false;
@@ -419,10 +586,45 @@ class _DeckCardState extends State<_DeckCard>
     _pose = _CardPose(widget.pose, _throw);
   }
 
+  void _liftStart(LongPressStartDetails details) {
+    final move = widget.onLiftMove;
+    if (_leaving || move == null) return;
+    _lifted = true;
+    _pose.lift(Offset.zero);
+    move(widget.window, details.globalPosition);
+  }
+
+  void _liftMove(LongPressMoveUpdateDetails details) {
+    if (!_lifted) return;
+    _pose.lift(details.offsetFromOrigin);
+    widget.onLiftMove?.call(widget.window, details.globalPosition);
+  }
+
+  void _liftEnd(LongPressEndDetails details) {
+    if (!_lifted) return;
+    _lifted = false;
+    _pose.lift(null);
+    widget.onLiftDrop?.call(widget.window, details.globalPosition);
+  }
+
+  void _liftCancel() {
+    if (!_lifted) return;
+    _lifted = false;
+    _pose.lift(null);
+    widget.onLiftMove?.call(widget.window, null);
+  }
+
   @override
   void didUpdateWidget(covariant _DeckCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.pose != oldWidget.pose) _pose.base = widget.pose;
+    if (widget.closing && !oldWidget.closing) {
+      _pose.length = math.max(
+        1.0,
+        _pose.base.value.rect.bottom + _offscreenMargin,
+      );
+      _leave(-_closeAllVelocity);
+    }
   }
 
   @override
@@ -480,15 +682,22 @@ class _DeckCardState extends State<_DeckCard>
     // The release's direction comes before distance: thrown back down, a
     // card returns even past the threshold.
     if (flingUp || (passed && !flingDown)) {
-      _leaving = true;
-      _exit = -_pose.length;
-      _throw
-        ..motion = ShellSprings.cardDismiss
-        ..animateTo(_exit, withVelocity: velocity);
-      widget.onLeaving(widget.window);
+      _leave(velocity);
     } else {
       _settleBack(velocity);
     }
+  }
+
+  /// The card leaves upward at [velocity], and its window closes once it
+  /// is gone.
+  void _leave(double velocity) {
+    if (_leaving) return;
+    _leaving = true;
+    _exit = -_pose.length;
+    _throw
+      ..motion = ShellSprings.cardDismiss
+      ..animateTo(_exit, withVelocity: velocity);
+    widget.onLeaving(widget.window);
   }
 
   void _settleBack([double velocity = 0]) {
@@ -514,10 +723,41 @@ class _DeckCardState extends State<_DeckCard>
     });
   }
 
+  /// The Split View partner riding on this card, if any.
+  DenialWindow? get _splitPartner {
+    final partner = widget.window.splitViewPartnerObjectId;
+    if (partner == null) return null;
+    for (final window in widget.over) {
+      if (window.objectId == partner) return window;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final labelOpacity = widget.labelOpacity;
     final onMoveToDesk = widget.onMoveToDesk;
+    final onCloseApp = widget.appWindowCount > 1 ? widget.onCloseApp : null;
+    final buttons = [
+      if (onCloseApp != null)
+        _CloseAppButton(
+          window: widget.window,
+          count: widget.appWindowCount,
+          onTap: () {
+            if (!_leaving) onCloseApp(widget.window);
+          },
+        ),
+      if (onMoveToDesk != null)
+        _MoveToDeskButton(
+          onTap: () {
+            if (!_leaving) onMoveToDesk(widget.window);
+          },
+        ),
+    ];
+    final buttonsWidth =
+        (onCloseApp == null ? 0.0 : _CloseAppButton.width) +
+        (onMoveToDesk == null ? 0.0 : _MoveToDeskButton.size) +
+        (buttons.length > 1 ? OverviewCardLabel.gap : 0.0);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -533,21 +773,7 @@ class _DeckCardState extends State<_DeckCard>
                         top: ReferenceShellMetrics.statusBarHeight,
                       ),
                     )
-                  : Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        for (final window in [widget.window, ...widget.over])
-                          WindowSurface(
-                            key: ValueKey<int>(window.objectId),
-                            window: window,
-                            // Glass would hide the app beneath.
-                            applyBackdrop: window == widget.window,
-                            contentPadding: const EdgeInsets.only(
-                              top: ReferenceShellMetrics.statusBarHeight,
-                            ),
-                          ),
-                      ],
-                    ),
+                  : CardWindows(windows: [widget.window, ...widget.over]),
             ),
           ),
         ),
@@ -565,9 +791,11 @@ class _DeckCardState extends State<_DeckCard>
                   opacity: labelOpacity,
                   child: OverviewCardLabel(
                     window: widget.window,
-                    trailingSpace: onMoveToDesk == null
+                    partner: _splitPartner,
+                    showsTitle: widget.appWindowCount > 1,
+                    trailingSpace: buttons.isEmpty
                         ? 0
-                        : _MoveToDeskButton.size + OverviewCardLabel.gap,
+                        : buttonsWidth + OverviewCardLabel.gap,
                   ),
                 ),
               ),
@@ -584,10 +812,14 @@ class _DeckCardState extends State<_DeckCard>
             onVerticalDragUpdate: _moveDrag,
             onVerticalDragEnd: _endDrag,
             onVerticalDragCancel: _settleBack,
+            onLongPressStart: widget.onLiftMove == null ? null : _liftStart,
+            onLongPressMoveUpdate: widget.onLiftMove == null ? null : _liftMove,
+            onLongPressEnd: widget.onLiftMove == null ? null : _liftEnd,
+            onLongPressCancel: widget.onLiftMove == null ? null : _liftCancel,
           ),
         ),
-        if (labelOpacity != null && onMoveToDesk != null)
-          // The translation spans the deck, so a tap on the button is tested
+        if (labelOpacity != null && buttons.isNotEmpty)
+          // The translation spans the deck, so a tap on a button is tested
           // where the label is drawn, not at the label's untranslated slot.
           Positioned.fill(
             child: CompositedTranslation(
@@ -604,10 +836,15 @@ class _DeckCardState extends State<_DeckCard>
                       opacity: labelOpacity,
                       child: Align(
                         alignment: AlignmentDirectional.centerEnd,
-                        child: _MoveToDeskButton(
-                          onTap: () {
-                            if (!_leaving) onMoveToDesk(widget.window);
-                          },
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            for (final (index, button) in buttons.indexed) ...[
+                              if (index > 0)
+                                const SizedBox(width: OverviewCardLabel.gap),
+                              button,
+                            ],
+                          ],
                         ),
                       ),
                     ),
@@ -635,6 +872,18 @@ class _CardPose extends ChangeNotifier implements ValueListenable<WindowPose> {
   /// How far the card travels to leave the screen.
   double length = 1;
 
+  /// Where a card lifted by a long press was moved; null when it rests.
+  Offset? _lift;
+
+  /// A lifted card shrinks this much.
+  static const double _liftScale = 0.9;
+
+  void lift(Offset? offset) {
+    if (offset == _lift) return;
+    _lift = offset;
+    _changed();
+  }
+
   /// Where the card's label goes: above its top edge.
   final label = ValueNotifier(Offset.zero);
 
@@ -648,6 +897,8 @@ class _CardPose extends ChangeNotifier implements ValueListenable<WindowPose> {
 
   @override
   WindowPose get value {
+    final lifted = _liftedPose;
+    if (lifted != null) return lifted;
     final pose = _base.value;
     final dy = _throw.value;
     if (dy == 0) return pose;
@@ -661,6 +912,22 @@ class _CardPose extends ChangeNotifier implements ValueListenable<WindowPose> {
         height: rect.height * shrink,
       ),
       pose.radius * shrink,
+      opacity: pose.opacity,
+    );
+  }
+
+  WindowPose? get _liftedPose {
+    final lift = _lift;
+    if (lift == null) return null;
+    final pose = _base.value;
+    final rect = pose.rect;
+    return WindowPose(
+      Rect.fromCenter(
+        center: rect.center + lift,
+        width: rect.width * _liftScale,
+        height: rect.height * _liftScale,
+      ),
+      pose.radius * _liftScale,
       opacity: pose.opacity,
     );
   }
@@ -715,6 +982,144 @@ class _RenderPoseHitRegion extends RenderProxyBox {
       return false;
     }
     return super.hitTest(result, position: position);
+  }
+}
+
+/// The sides of the screen a lifted card is dropped on to share the screen
+/// with [target], the app in front; the one under the finger ([side], true
+/// for the left) lights up.
+class _SplitZones extends StatelessWidget {
+  const _SplitZones({
+    required this.target,
+    required this.side,
+    required this.zone,
+  });
+
+  final DenialWindow target;
+  final bool? side;
+  final double zone;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth * zone;
+        return Stack(
+          children: [
+            for (final left in [true, false])
+              Positioned(
+                left: left ? 16 : null,
+                right: left ? null : 16,
+                top: 64,
+                bottom: 64,
+                width: width - 24,
+                child: _SplitZone(target: target, lit: side == left),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SplitZone extends ConsumerWidget {
+  const _SplitZone({required this.target, required this.lit});
+
+  final DenialWindow target;
+  final bool lit;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final application = ref.watch(windowApplicationProvider(target.appId));
+    final name = application.name ?? localizedWindowTitle(context, target);
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 160),
+      decoration: BoxDecoration(
+        color: lit ? const Color(0x59ffffff) : const Color(0x26ffffff),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(
+          color: lit ? const Color(0xccffffff) : const Color(0x4dffffff),
+          width: 2,
+        ),
+      ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            context.l10n.recentsSplitWith(name),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xfff7f7f8),
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0,
+              decoration: TextDecoration.none,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Closes every window of a card's app: a × and how many.
+class _CloseAppButton extends ConsumerWidget {
+  const _CloseAppButton({
+    required this.window,
+    required this.count,
+    required this.onTap,
+  });
+
+  static const double width = 72;
+  static const double height = 44;
+
+  final DenialWindow window;
+  final int count;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final dark = ShellTheme.of(context).brightness == Brightness.dark;
+    final ink = dark ? const Color(0xFFF5F5F7) : const Color(0xFF1C1C1E);
+    final application = ref.watch(windowApplicationProvider(window.appId));
+    final app = application.name ?? localizedWindowTitle(context, window);
+    return Semantics(
+      button: true,
+      label: context.l10n.recentsCloseAppWindows(app, count),
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(height / 2),
+            color: dark ? const Color(0x73000000) : const Color(0x8CFFFFFF),
+            border: Border.all(
+              color: dark ? const Color(0x24FFFFFF) : const Color(0x1F000000),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.close_rounded, size: 20, color: ink),
+              const SizedBox(width: 4),
+              Text(
+                '$count',
+                style: TextStyle(
+                  color: ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

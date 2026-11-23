@@ -5404,6 +5404,24 @@ class AppLocalizationsRu extends AppLocalizations {
   String get moveToMonitor => 'Перенести на монитор';
 
   @override
+  String recentsCloseAppWindows(String app, int count) {
+    return 'Закрыть все окна приложения «$app» ($count)';
+  }
+
+  @override
+  String recentsSplitWith(String app) {
+    return 'Рядом с приложением $app';
+  }
+
+  @override
+  String get splitViewDivider => 'Разделитель между приложениями';
+
+  @override
+  String splitViewHandle(String app) {
+    return 'Переместить приложение $app';
+  }
+
+  @override
   String get setupWelcome => 'Добро пожаловать';
 
   @override
@@ -5602,6 +5620,27 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get homeDrawerSemantics => 'Все приложения';
+
+  @override
+  String get homeSearchSemantics => 'Поиск';
+
+  @override
+  String get homeSearchHint => 'Поиск приложений и окон';
+
+  @override
+  String get homeSearchClear => 'Очистить поиск';
+
+  @override
+  String get homeSearchWindows => 'Открытые окна';
+
+  @override
+  String get homeSearchApps => 'Приложения';
+
+  @override
+  String get homeSearchRecentApps => 'Недавно открытые';
+
+  @override
+  String get homeSearchNoResults => 'Ничего не найдено';
 
   @override
   String get powerActionRestartDenial => 'Перезапустить Denial';
