@@ -690,6 +690,33 @@ impl Session<'_, '_> {
         events.topology_dirty = true;
     }
 
+    /// Lets the display policy follow Stay awake: under it the closed lid
+    /// leaves the built-in panels lit. A topology rescan follows only while
+    /// the lid is closed.
+    pub(super) fn apply_stay_awake_display_policy(&mut self) {
+        let Self {
+            output_configuration,
+            active_output_confirmation,
+            events,
+            ..
+        } = self;
+        let stay_awake = events.idle_policy.stay_awake();
+        if stay_awake == output_configuration.stay_awake {
+            return;
+        }
+        output_configuration.stay_awake = stay_awake;
+        if let Some(pending) = active_output_confirmation.as_mut() {
+            pending.rollback_configuration.stay_awake = stay_awake;
+        }
+        if output_configuration.lid_closed {
+            info!(
+                stay_awake,
+                "the closed lid's display policy follows Stay awake"
+            );
+            events.topology_dirty = true;
+        }
+    }
+
     pub(super) fn expire_output_confirmation(&mut self, now: Instant) {
         let Self {
             active_output_confirmation: active_confirmation,

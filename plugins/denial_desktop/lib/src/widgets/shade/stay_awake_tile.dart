@@ -5,11 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'quick_settings_tiles.dart';
 
-/// The Stay awake tile. While it is lit the idle timeout does not suspend
-/// the system ([ShellPowerSettings.stayAwake]); the screen still goes dark
-/// and locks, and closing the lid still suspends. Its state is the persisted
-/// setting, so it can be switched off here at any time and it outlives a
-/// restart of the shell.
+/// The Stay awake tile. While it is lit the screen stays on and the session
+/// unlocked ([ShellPowerSettings.stayAwake]): nothing darkens, locks or
+/// suspends on inactivity, by the power button or by closing the cover.
+/// Its state is the persisted setting, so it can be switched off here at any
+/// time and it outlives a restart of the shell.
 ///
 /// Until the settings document has loaded the tile cannot tell on from off
 /// and cannot be switched.

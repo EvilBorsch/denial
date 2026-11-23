@@ -161,54 +161,6 @@ pub(super) fn synchronize_wake_key(scanouts: &[Scanout], events: &mut RuntimeSta
     info!(output = %panel.output.name, "wake key requested display wake");
 }
 
-/// While Denial handles the lid switch (Stay awake), the closed cover turns
-/// the displays off and the opened cover lights them again; the session
-/// stays as it was, unlocked if it was. Otherwise logind acts on the cover as
-/// configured.
-#[cfg(feature = "flutter")]
-pub(super) fn synchronize_cover(scanouts: &[Scanout], events: &mut RuntimeState, lid_closed: bool) {
-    let handled = events
-        .system_controls
-        .as_ref()
-        .is_some_and(system_controls::SystemControls::handles_lid_switch);
-    // As logind's default HandleLidSwitchDocked=ignore: another display goes
-    // on showing the desktop, and the display policy already leaves the
-    // panel under the cover off.
-    let docked = scanouts
-        .iter()
-        .any(|scanout| !output_policy::is_internal_panel(&scanout.output.name));
-    match events.cover.update(lid_closed, handled, docked) {
-        None => {}
-        Some(lid_switch::CoverAction::Darken) => {
-            // Queued requests are the effective state until the atomic KMS
-            // gate runs. Blanked as the power button blanks, so that playback
-            // does not light the panel again, but without locking.
-            let outputs = scanouts
-                .iter()
-                .map(|scanout| {
-                    let output = scanout.output.id;
-                    (
-                        output,
-                        events
-                            .output_power_requests
-                            .get(&output)
-                            .copied()
-                            .unwrap_or(scanout.powered)
-                            && !events.ambient_display.refreshing(output),
-                    )
-                })
-                .collect::<Vec<_>>();
-            let requests = events.idle_policy.blank_now(outputs);
-            events.queue_idle_power_requests(requests);
-            info!("the cover closed while Denial handles the lid; turned the display off");
-        }
-        Some(lid_switch::CoverAction::Light) => {
-            events.note_user_activity();
-            info!("the cover opened; turned the display on");
-        }
-    }
-}
-
 #[cfg(feature = "flutter")]
 /// Tells the idle policy whether a desk shares the session with the phone,
 /// and locks if the phone's panel is left dark and alone.
@@ -281,7 +233,10 @@ pub(super) fn synchronize_power_button(scanouts: &[Scanout], events: &mut Runtim
         return;
     }
     let action = events.idle_policy.power_button_action();
-    if action != idle_policy::PowerButtonAction::Dpms {
+    // Stay awake keeps the screen on: the press neither suspends nor powers
+    // off, whatever the button is set to do, and leaves a lit screen lit.
+    let stay_awake = events.idle_policy.stay_awake();
+    if action != idle_policy::PowerButtonAction::Dpms && !stay_awake {
         if events
             .system_controls
             .as_ref()
@@ -293,8 +248,11 @@ pub(super) fn synchronize_power_button(scanouts: &[Scanout], events: &mut Runtim
         }
         return;
     }
-    toggle_screen(scanouts, events);
-    info!("power button requested compositor-owned display power toggle");
+    if toggle_screen(scanouts, events) {
+        info!("power button requested compositor-owned display power toggle");
+    } else if stay_awake {
+        info!("power button left the screen on: Stay awake is on");
+    }
 }
 
 /// Whether the screen the power button turns off is lit. An output lit only
@@ -318,11 +276,11 @@ fn power_button_screen_lit(
         })
 }
 
-/// Turns the screen off or on as the power button does.
-fn toggle_screen(scanouts: &[Scanout], events: &mut RuntimeState) {
-    events.fingerprint.independent_wake();
-    // Queued requests are the effective state until the atomic KMS gate runs.
-    let outputs = scanouts
+/// The outputs and whether each is lit, as the power button sees them.
+/// Queued requests are the effective state until the atomic KMS gate runs,
+/// and an output lit only to draw the always-on clock counts as dark.
+fn button_outputs(scanouts: &[Scanout], events: &RuntimeState) -> Vec<(OutputId, bool)> {
+    scanouts
         .iter()
         .map(|scanout| {
             let output = scanout.output.id;
@@ -336,21 +294,50 @@ fn toggle_screen(scanouts: &[Scanout], events: &mut RuntimeState) {
                     && !events.ambient_display.refreshing(output),
             )
         })
-        .collect::<Vec<_>>();
+        .collect()
+}
+
+/// Turns the screen off or on as the power button does. Returns whether it
+/// did anything: under Stay awake a lit screen stays as it is.
+fn toggle_screen(scanouts: &[Scanout], events: &mut RuntimeState) -> bool {
+    let outputs = button_outputs(scanouts, events);
     let actions = events.idle_policy.toggle_now(outputs, Instant::now());
+    apply_screen_actions(events, actions)
+}
+
+/// Turns a lit screen off as the shell asks: its Screen off tile, a double
+/// tap. The power button's press, locking alike, except under Stay awake,
+/// where it darkens the screen without locking. Returns whether the screen
+/// was lit.
+#[cfg(feature = "flutter")]
+fn turn_screen_off(scanouts: &[Scanout], events: &mut RuntimeState) -> bool {
+    let outputs = button_outputs(scanouts, events);
+    let actions = events.idle_policy.screen_off_now(outputs, Instant::now());
+    apply_screen_actions(events, actions)
+}
+
+fn apply_screen_actions(
+    events: &mut RuntimeState,
+    actions: idle_policy::IdlePolicyActions,
+) -> bool {
+    if actions.power_requests.is_empty() && !actions.lock {
+        return false;
+    }
+    events.fingerprint.independent_wake();
     if actions.lock {
         if let Some(authentication) = events.authentication.as_ref() {
             // Close the security gate before queuing DPMS off. Waking only
             // restores display power; authentication remains locked.
             if authentication.lock_automatically() {
                 synchronize_authentication_boundary(events);
-                info!("locked the session before power-button display off");
+                info!("locked the session before display off");
             }
         } else {
             warn!("could not lock on power button: authentication is unavailable");
         }
     }
     events.queue_idle_power_requests(actions.power_requests);
+    true
 }
 
 #[cfg(feature = "flutter")]
@@ -472,20 +459,16 @@ pub(super) fn synchronize_requested_display_power(
     match runtime.take_display_power_request() {
         None => {}
         Some(idle_policy::DisplayPowerRequest::Off) => {
-            // A double tap to sleep is the power button pressed on a lit
-            // screen: beside a desk it turns off the phone's panel alone.
+            // The Screen off tile and a double tap to sleep are the power
+            // button pressed on a lit screen: beside a desk they turn off the
+            // phone's panel alone. Under Stay awake they still darken it,
+            // without locking.
             synchronize_phone_with_desk(events, Instant::now());
-            let phone = events.idle_policy.phone_output();
-            if power_button_screen_lit(phone, scanouts, events) {
-                toggle_screen(scanouts, events);
+            if turn_screen_off(scanouts, events) {
                 info!("shell turned the screen off as the power button does");
             }
         }
         Some(idle_policy::DisplayPowerRequest::On) => {
-            if events.cover.darkened() {
-                debug!("the closed cover keeps the display off");
-                return;
-            }
             // The idle timer starts again, so the screen stays on for the
             // usual timeout; clients are not told of user activity.
             let requests = events.idle_policy.note_activity(Instant::now());

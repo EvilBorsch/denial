@@ -1321,3 +1321,233 @@ fn idle_inhibitor_over_a_sleep_inhibitor_holds_everything_until_both_end() {
             .suspend
     );
 }
+
+/// The phone's policy as the mobile shell configures it on the tablet: the
+/// screen goes dark after 30 s and locks with it, and the system suspends
+/// after 5 min.
+fn phone_policy(now: Instant) -> IdlePolicy {
+    let mut policy = IdlePolicy::default();
+    policy.configure(
+        IdlePolicyConfiguration {
+            lock_after_screen_off: Some(Duration::ZERO),
+            ..configuration(
+                None,
+                Some(Duration::from_secs(30)),
+                Some(Duration::from_secs(300)),
+            )
+        },
+        now,
+    );
+    policy
+}
+
+#[test]
+fn stay_awake_keeps_the_screen_on_and_unlocked_through_inactivity() {
+    let now = Instant::now();
+    let mut policy = phone_policy(now);
+    assert!(policy.set_stay_awake(true, now).is_empty());
+    assert!(policy.stay_awake());
+    // Nothing is due: the compositor sleeps until input or a setting.
+    assert_eq!(policy.next_deadline(), None);
+    for idle in [30, 31, 300, 3600] {
+        let actions = policy.evaluate(now + Duration::from_secs(idle), false, [(output(1), true)]);
+        assert_eq!(actions, IdlePolicyActions::default(), "after {idle} s");
+    }
+
+    // Off again: a full interval counts from that moment.
+    let off = now + Duration::from_secs(3600);
+    assert!(policy.set_stay_awake(false, off).is_empty());
+    assert_eq!(policy.next_deadline(), Some(off + Duration::from_secs(30)));
+    let dark = policy.evaluate(off + Duration::from_secs(30), false, [(output(1), true)]);
+    assert!(!dark.power_requests[0].powered);
+    assert!(dark.lock);
+}
+
+#[test]
+fn stay_awake_lights_a_screen_that_went_dark_and_drops_its_pending_lock() {
+    let now = Instant::now();
+    let mut policy = IdlePolicy::default();
+    policy.configure(
+        IdlePolicyConfiguration {
+            lock_after_screen_off: Some(Duration::from_secs(10)),
+            ..configuration(None, Some(Duration::from_secs(30)), None)
+        },
+        now,
+    );
+    let dark = policy.evaluate(now + Duration::from_secs(30), false, [(output(1), true)]);
+    assert!(!dark.power_requests[0].powered);
+    assert!(!dark.lock);
+
+    let on = now + Duration::from_secs(31);
+    assert_eq!(
+        policy.set_stay_awake(true, on),
+        [IdlePowerRequest {
+            output: output(1),
+            powered: true,
+        }]
+    );
+    // The screen-off delay passes: nothing locks.
+    assert!(
+        !policy
+            .evaluate(now + Duration::from_secs(45), false, [(output(1), true)])
+            .lock
+    );
+    // Repeating the setting changes nothing.
+    assert!(policy.set_stay_awake(true, on).is_empty());
+}
+
+#[test]
+fn the_power_button_turns_the_screen_off_and_locks_without_stay_awake() {
+    let now = Instant::now();
+    let mut policy = phone_policy(now);
+    let press = policy.toggle_now([(output(1), true)], now);
+    assert!(press.lock);
+    assert!(!press.suspend);
+    assert_eq!(
+        press.power_requests,
+        [IdlePowerRequest {
+            output: output(1),
+            powered: false,
+        }]
+    );
+}
+
+#[test]
+fn under_stay_awake_the_power_button_leaves_a_lit_screen_on() {
+    let now = Instant::now();
+    let mut policy = phone_policy(now);
+    policy.set_stay_awake(true, now);
+    let press = policy.toggle_now([(output(1), true)], now);
+    assert_eq!(press, IdlePolicyActions::default());
+    // Beside a desk too, for the phone's lit panel.
+    let mut policy = phone_beside_desk(now);
+    policy.set_stay_awake(true, now);
+    assert_eq!(
+        policy.toggle_now([(output(1), true), (output(2), true)], now),
+        IdlePolicyActions::default()
+    );
+}
+
+#[test]
+fn the_screen_off_request_turns_the_screen_off_and_locks_without_stay_awake() {
+    let now = Instant::now();
+    let mut policy = phone_policy(now);
+    let request = policy.screen_off_now([(output(1), true)], now);
+    assert!(request.lock);
+    assert!(!request.suspend);
+    assert!(!request.power_requests[0].powered);
+
+    // With a screen-off delay it locks after the delay, as the button does.
+    let mut policy = IdlePolicy::default();
+    policy.configure(
+        IdlePolicyConfiguration {
+            lock_after_screen_off: Some(Duration::from_secs(5)),
+            ..configuration(None, None, None)
+        },
+        now,
+    );
+    assert!(!policy.screen_off_now([(output(1), true)], now).lock);
+    assert!(
+        policy
+            .evaluate(now + Duration::from_secs(5), false, [(output(1), false)])
+            .lock
+    );
+}
+
+#[test]
+fn under_stay_awake_the_screen_off_request_darkens_without_locking() {
+    let now = Instant::now();
+    let mut policy = IdlePolicy::default();
+    policy.configure(
+        IdlePolicyConfiguration {
+            lock_after_screen_off: Some(Duration::from_secs(5)),
+            ..configuration(
+                Some(Duration::from_secs(60)),
+                Some(Duration::from_secs(30)),
+                Some(Duration::from_secs(300)),
+            )
+        },
+        now,
+    );
+    policy.set_stay_awake(true, now);
+    let request = policy.screen_off_now([(output(1), true)], now);
+    assert!(!request.lock);
+    assert!(!request.suspend);
+    assert_eq!(
+        request.power_requests,
+        [IdlePowerRequest {
+            output: output(1),
+            powered: false,
+        }]
+    );
+    // No screen-off lock, idle lock or suspend follows, and playback does
+    // not light the screen the user turned off.
+    assert_eq!(policy.next_deadline(), None);
+    for idle in [5, 60, 300, 3600] {
+        let later = now + Duration::from_secs(idle);
+        assert_eq!(
+            policy.evaluate(later, false, [(output(1), false)]),
+            IdlePolicyActions::default()
+        );
+        assert_eq!(
+            policy.evaluate(later, true, [(output(1), false)]),
+            IdlePolicyActions::default()
+        );
+    }
+    // The power button lights it again, without the lock screen.
+    let wake = policy.toggle_now([(output(1), false)], now + Duration::from_secs(3600));
+    assert!(!wake.lock);
+    assert!(wake.power_requests[0].powered);
+}
+
+#[test]
+fn under_stay_awake_input_lights_the_screen_the_shell_turned_off() {
+    let now = Instant::now();
+    let mut policy = phone_policy(now);
+    policy.set_stay_awake(true, now);
+    policy.screen_off_now([(output(1), true)], now);
+    assert_eq!(
+        policy.note_activity(now + Duration::from_secs(1)),
+        [IdlePowerRequest {
+            output: output(1),
+            powered: true,
+        }]
+    );
+}
+
+#[test]
+fn the_screen_off_request_leaves_a_dark_screen_dark() {
+    let now = Instant::now();
+    for stay_awake in [false, true] {
+        let mut policy = phone_policy(now);
+        policy.set_stay_awake(stay_awake, now);
+        assert_eq!(
+            policy.screen_off_now([(output(1), false)], now),
+            IdlePolicyActions::default()
+        );
+        assert_eq!(policy.screen_off_now([], now), IdlePolicyActions::default());
+    }
+}
+
+#[test]
+fn the_screen_off_request_beside_a_desk_darkens_only_the_phone() {
+    let now = Instant::now();
+    for stay_awake in [false, true] {
+        let mut policy = phone_beside_desk(now);
+        policy.set_stay_awake(stay_awake, now);
+        let off = policy.screen_off_now([(output(1), true), (output(2), true)], now);
+        assert_eq!(
+            off.power_requests,
+            [IdlePowerRequest {
+                output: output(1),
+                powered: false,
+            }]
+        );
+        assert!(!off.lock);
+        // The phone is dark already: the lit desk does not count.
+        assert_eq!(
+            policy.screen_off_now([(output(1), false), (output(2), true)], now),
+            IdlePolicyActions::default()
+        );
+    }
+}

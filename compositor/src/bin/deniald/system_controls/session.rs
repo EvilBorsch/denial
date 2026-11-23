@@ -16,7 +16,7 @@ const LOGIND_MANAGER: &str = "org.freedesktop.login1.Manager";
 const LID_SWITCH_INHIBITOR: (&str, &str, &str, &str) = (
     "handle-lid-switch",
     "Denial",
-    "Stay awake is on: closing the cover turns the screen off instead of suspending",
+    "Stay awake is on: closing the cover keeps the screen on",
     "block",
 );
 static SUSPEND_MODE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
