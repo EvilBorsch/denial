@@ -13,6 +13,12 @@
 //! Stay awake (`power.stayAwake`) keeps the screen on and the session
 //! unlocked ([`IdlePolicy::set_stay_awake`]): nothing happens on inactivity,
 //! and the power button does not turn a lit screen off.
+//!
+//! The system suspends as a phone sleeps: the suspend timeout counts from
+//! the moment the screen went dark, whatever turned it off (the display
+//! timeout, the power button, the shell's Screen off, the cover, a client),
+//! and any input restarts it. The policy sees the screen dark when every
+//! output it is given is off.
 
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -58,6 +64,9 @@ pub(super) struct IdlePowerRequest {
 pub(super) struct IdlePolicyConfiguration {
     pub(super) lock_timeout: Option<Duration>,
     pub(super) dpms_timeout: Option<Duration>,
+    /// How long after the screen went dark the system suspends, whatever
+    /// turned it off: the display timeout, the power button, the shell's
+    /// Screen off, the cover. Independent of the other two timeouts.
     pub(super) suspend_timeout: Option<Duration>,
     pub(super) suspend_mode: SuspendMode,
     pub(super) power_button_action: PowerButtonAction,
@@ -191,7 +200,6 @@ pub(super) enum IdlePolicyPacketError {
         action: &'static str,
         milliseconds: u64,
     },
-    TimeoutAfterSuspend(&'static str),
 }
 
 impl fmt::Display for IdlePolicyPacketError {
@@ -243,10 +251,6 @@ impl fmt::Display for IdlePolicyPacketError {
             } => write!(
                 formatter,
                 "idle {action} timeout {milliseconds} ms exceeds the seven-day limit"
-            ),
-            Self::TimeoutAfterSuspend(action) => write!(
-                formatter,
-                "idle {action} timeout must not exceed the suspend timeout"
             ),
         }
     }
@@ -372,15 +376,9 @@ pub(super) fn decode_configuration(
     }
     let lock_timeout = decode_packet_timeout("lock", &packet[8..16])?;
     let dpms_timeout = decode_packet_timeout("display power-off", &packet[16..24])?;
+    // The suspend counts from the screen going dark, so it may be shorter
+    // than the display or lock timeout.
     let suspend_timeout = decode_packet_timeout("suspend", &packet[24..32])?;
-    if lock_timeout > suspend_timeout {
-        return Err(IdlePolicyPacketError::TimeoutAfterSuspend("lock"));
-    }
-    if dpms_timeout > suspend_timeout {
-        return Err(IdlePolicyPacketError::TimeoutAfterSuspend(
-            "display power-off",
-        ));
-    }
 
     Ok(IdlePolicyConfiguration {
         lock_timeout: (flags & LOCK_ENABLED != 0).then_some(lock_timeout),
@@ -582,8 +580,11 @@ pub(super) struct IdlePolicy {
     /// Stay awake is on: the screen stays on and the session unlocked.
     stay_awake: bool,
     /// When the last sleep inhibitor ended: the suspend timeout counts from
-    /// there if that came after the last activity.
+    /// there if that came after the screen went dark.
     sleep_released_at: Option<Instant>,
+    /// Since when every output has been off, as [`Self::evaluate`] saw them,
+    /// in this idle interval: the suspend timeout counts from there.
+    dark_since: Option<Instant>,
     /// The withheld suspend was reported in this idle interval.
     suspend_withheld: bool,
     blanked_outputs: BTreeSet<OutputId>,
@@ -608,6 +609,7 @@ impl Default for IdlePolicy {
             sleep_inhibited: false,
             stay_awake: false,
             sleep_released_at: None,
+            dark_since: None,
             suspend_withheld: false,
             blanked_outputs: BTreeSet::new(),
             manually_blanked: false,
@@ -1009,11 +1011,13 @@ impl IdlePolicy {
             }
         }
 
-        // If display-off and suspend share a threshold, give the compositor
-        // one dispatch boundary to commit DPMS before logind suspends.
-        // Beside a desk, nothing suspends while a screen is still lit.
+        // The suspend counts from the moment every output is off; nothing
+        // suspends while a screen is lit, beside a desk either. A display
+        // power-off asked for in this turn is committed before it counts.
+        let dark = !outputs.clone().any(|(_, powered)| powered);
+        self.note_outputs_dark(dark, now);
         if actions.power_requests.is_empty()
-            && (phone.is_none() || !outputs.clone().any(|(_, powered)| powered))
+            && dark
             && !self.suspend_triggered
             && self
                 .suspend_deadline()
@@ -1081,16 +1085,27 @@ impl IdlePolicy {
     }
 
     /// When inactivity suspends the system: the suspend timeout after the
-    /// last activity, or after the last sleep inhibitor ended if that came
-    /// later.
+    /// screen went dark, or after the last sleep inhibitor ended if that came
+    /// later. None while the screen is lit.
     fn suspend_deadline(&self) -> Option<Instant> {
-        let timeout = self.effective_suspend_timeout()?;
+        let timeout = self.configuration.suspend_timeout?;
+        let dark = self.dark_since?;
         let start = self
             .sleep_released_at
-            .map_or(self.last_activity, |released| {
-                released.max(self.last_activity)
-            });
+            .map_or(dark, |released| released.max(dark));
         Some(start + timeout)
+    }
+
+    /// Follows whether every output is off, as the compositor commits them:
+    /// the suspend timeout counts from the moment they all went off, and a
+    /// lit output stops it. An output lit only to draw the always-on clock
+    /// counts as off.
+    pub(super) fn note_outputs_dark(&mut self, dark: bool, now: Instant) {
+        if !dark {
+            self.dark_since = None;
+        } else if self.dark_since.is_none() {
+            self.dark_since = Some(now);
+        }
     }
 
     pub(super) fn limit_dispatch_timeout(&self, now: Instant, timeout: Duration) -> Duration {
@@ -1118,6 +1133,11 @@ impl IdlePolicy {
         self.suspend_triggered = false;
         self.sleep_released_at = None;
         self.suspend_withheld = false;
+        // Input, a resume or a new policy starts the suspend timeout again
+        // on a screen that stays dark; one that lights up stops it.
+        if self.dark_since.is_some() {
+            self.dark_since = Some(now);
+        }
     }
 
     /// The screen just went dark: with a screen-off delay configured,
@@ -1139,13 +1159,6 @@ impl IdlePolicy {
             } else {
                 timeout
             }
-        })
-    }
-
-    fn effective_suspend_timeout(&self) -> Option<Duration> {
-        self.configuration.suspend_timeout.map(|timeout| {
-            self.effective_lock_timeout()
-                .map_or(timeout, |lock_timeout| timeout.max(lock_timeout))
         })
     }
 

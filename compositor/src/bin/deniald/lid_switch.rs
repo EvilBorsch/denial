@@ -8,10 +8,11 @@
 //! switch says whether the lid is closed, through either; nothing else is
 //! taken for it.
 //!
-//! logind acts on the lid by itself. While Denial holds its
-//! `handle-lid-switch` inhibitor (Stay awake), logind leaves the lid alone
-//! and the closed cover changes nothing on screen: the panel stays lit and
-//! the session as it was.
+//! logind acts on the lid by itself, locking as configured, and the closed
+//! cover turns the screen off ([`Cover`]), so that the suspend timeout counts
+//! from the closing. While Denial holds its `handle-lid-switch` inhibitor
+//! (Stay awake), logind leaves the lid alone and the closed cover changes
+//! nothing on screen: the panel stays lit and the session as it was.
 //!
 //! In any mode, the built-in touchscreen and pen are ignored while the lid
 //! is closed ([`ignored_under_closed_lid`]): they register touches through
@@ -137,6 +138,36 @@ impl LidSwitch {
     }
 }
 
+/// The cover opening or closing, as the compositor loop sees the lid.
+#[cfg(feature = "flutter")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum CoverChange {
+    Closed,
+    Opened,
+}
+
+/// Turns the lid position into changes, once each, whether libinput or a
+/// logind reading reported it. The position at startup is no change.
+#[cfg(feature = "flutter")]
+#[derive(Debug, Default)]
+pub(super) struct Cover {
+    closed: Option<bool>,
+}
+
+#[cfg(feature = "flutter")]
+impl Cover {
+    pub(super) fn update(&mut self, closed: bool) -> Option<CoverChange> {
+        match self.closed.replace(closed) {
+            Some(previous) if previous != closed => Some(if closed {
+                CoverChange::Closed
+            } else {
+                CoverChange::Opened
+            }),
+            _ => None,
+        }
+    }
+}
+
 /// Linux input bus types (`linux/input.h`) of devices plugged in or paired
 /// and of virtual ones: none of them is under the cover.
 #[cfg(feature = "flutter")]
@@ -210,6 +241,21 @@ mod tests {
         assert!(lid.closed());
         assert_eq!(lid.take_pending(), Some(true));
         assert!(lid.closed());
+    }
+
+    #[test]
+    fn the_cover_reports_each_closing_and_opening_once() {
+        let mut cover = Cover::default();
+        // The position at startup is no change.
+        assert_eq!(cover.update(true), None);
+        assert_eq!(cover.update(false), Some(CoverChange::Opened));
+        assert_eq!(cover.update(false), None);
+        assert_eq!(cover.update(true), Some(CoverChange::Closed));
+        assert_eq!(cover.update(true), None);
+        assert_eq!(cover.update(false), Some(CoverChange::Opened));
+        let mut cover = Cover::default();
+        assert_eq!(cover.update(false), None);
+        assert_eq!(cover.update(true), Some(CoverChange::Closed));
     }
 
     /// `linux/input.h`
