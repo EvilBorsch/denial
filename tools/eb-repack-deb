@@ -9,7 +9,9 @@
 # only with its deniald). denialctl, the polkit agent, Settings' Wi-Fi country
 # helper and the conffiles stay the release's, the postinst also gives deniald CAP_SYS_NICE (see
 # below), and the package still depends on the release's
-# denial-flutter-engine (= 0.6.8-1). See docs/EB-BUILD.md.
+# denial-flutter-engine (= 0.6.8-1). Its libc6 and libinput10 dependencies
+# rise to the newest symbol versions the new binaries import. See
+# docs/EB-BUILD.md.
 #
 # Usage: [EB_PORTAL=DENIAL_PORTAL] tools/eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY [DENIALD [SETTINGS]]
 #   e.g. tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb1 ~/debs
@@ -83,6 +85,7 @@ rm -rf -- "$flutter/data/flutter_assets"
 cp -a -- "$BUNDLE/data/flutter_assets" "$flutter/data/flutter_assets"
 chmod -R u=rwX,go=rX -- "$flutter/data/flutter_assets"
 glibc_needed=''
+libinput_needed=''
 replaced=()
 if [[ -n "$DENIALD" ]]; then
     install -m755 -- "$DENIALD" "$stage/denial/usr/bin/deniald"
@@ -103,6 +106,13 @@ if ((${#replaced[@]})); then
     # than the release's, they may need a newer libc than the package names.
     glibc_needed="$(aarch64-linux-gnu-objdump -T "${replaced[@]}" \
         | grep -o 'GLIBC_[0-9.]*' | sed 's/^GLIBC_//' | sort -V | tail -1)"
+    # Likewise libinput: libinput names each symbol version after the release
+    # that brought it (LIBINPUT_1.26 for the clickfinger button map, which the
+    # touchpad's two-finger click sets), and the release's package depends on
+    # libinput10 without a version. grep finds none in a binary that does not
+    # link libinput.
+    libinput_needed="$(aarch64-linux-gnu-objdump -T "${replaced[@]}" \
+        | { grep -o 'LIBINPUT_[0-9.]*' || true; } | sed 's/^LIBINPUT_//' | sort -V | tail -1)"
 fi
 
 # Under a display manager deniald runs as the user and cannot raise its
@@ -126,11 +136,11 @@ PY2
 
 control="$stage/denial/DEBIAN/control"
 python3 -I - "$control" "$VERSION" "$MAINTAINER" "$(git -C "$ROOT" rev-parse HEAD)" \
-    "$glibc_needed" "$DENIALD" "$settings_revision" "${PORTAL:+portal}" <<'PY'
+    "$glibc_needed" "$DENIALD" "$settings_revision" "${PORTAL:+portal}" "$libinput_needed" <<'PY'
 import re
 import sys
 import textwrap
-path, version, maintainer, revision, glibc, deniald, settings, portal = sys.argv[1:9]
+path, version, maintainer, revision, glibc, deniald, settings, portal, libinput = sys.argv[1:10]
 
 
 def newer(a, b):
@@ -151,6 +161,11 @@ for line in lines:
         assert match, 'Depends has no libc6 version'
         if glibc and newer(glibc, match.group(1)):
             line = line.replace(match.group(0), 'libc6 (>= ' + glibc + ')')
+        if libinput:
+            match = re.search(r'(?<![\w.+-])libinput10(?: \(>= ([0-9.]+)\))?(?=,|$)', line)
+            assert match, 'Depends has no libinput10'
+            if match.group(1) is None or newer(libinput, match.group(1)):
+                line = line.replace(match.group(0), 'libinput10 (>= ' + libinput + ')')
         line = line + ', libcap2-bin'
         out.append(line)
         # deniald is the session's notification server
