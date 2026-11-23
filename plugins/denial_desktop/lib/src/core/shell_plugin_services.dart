@@ -51,7 +51,7 @@ final _connectedWifi = Provider.autoDispose(
 final _workspacesEnabled = Provider.autoDispose(
   (ref) => ref.watch(
     shellSettingsProvider.select(
-      (settings) => settings.layout.workspacesEnabled,
+      (settings) => settings.layout.effectiveWorkspacesEnabled,
     ),
   ),
 );

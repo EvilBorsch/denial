@@ -2686,7 +2686,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsWindowLayoutDescription =>
-      '堆叠允许窗口相互重叠。平铺动态划分桌面。滚动平铺将窗口排列成跟随焦点的长带；其方向可按显示器配置，默认跟随显示器旋转。';
+      '堆叠允许窗口相互重叠。平铺动态划分桌面。滚动平铺将窗口排列成跟随焦点的长带；其方向可按显示器配置，默认跟随显示器旋转。全屏应用让每个应用拥有自己的屏幕，三指滑动即可切换。';
 
   @override
   String get settingsWindowLayoutDwindle => '平铺';
@@ -5329,4 +5329,25 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get monthShortDecember => '十二月';
+
+  @override
+  String get settingsWindowLayoutScreens => '全屏应用';
+
+  @override
+  String screensOverviewStackCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count 个窗口',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String screensOverviewStackExpand(String app) {
+    return '分别显示 $app 的窗口';
+  }
+
+  @override
+  String get appWindowsEmpty => '没有窗口';
 }

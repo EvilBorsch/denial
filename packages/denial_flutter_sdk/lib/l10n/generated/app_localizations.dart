@@ -5032,7 +5032,7 @@ abstract class AppLocalizations {
   /// Explains the available desktop window layouts.
   ///
   /// In en, this message translates to:
-  /// **'Stacking lets windows overlap. Tiling divides the desktop dynamically. Scrolling follows focus along a strip; its axis is configured per display and follows rotation by default.'**
+  /// **'Stacking lets windows overlap. Tiling divides the desktop dynamically. Scrolling follows focus along a strip; its axis is configured per display and follows rotation by default. Full screen gives every app its own screen; swipe with three fingers to move between them.'**
   String get settingsWindowLayoutDescription;
 
   /// Label for the Dwindle tiling window layout.
@@ -10007,6 +10007,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Dec'**
   String get monthShortDecember;
+
+  /// Label for the full-screen apps window layout: every app is its own screen, swiped through with three fingers.
+  ///
+  /// In en, this message translates to:
+  /// **'Full screen'**
+  String get settingsWindowLayoutScreens;
+
+  /// Badge of a stack of screens that show windows of one app in the screens overview; activating it shows them one by one.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{{count} window} other{{count} windows}}'**
+  String screensOverviewStackCount(int count);
+
+  /// Accessible label of the count badge that expands a stack of screens of one app.
+  ///
+  /// In en, this message translates to:
+  /// **'Show each window of {app}'**
+  String screensOverviewStackExpand(String app);
+
+  /// Shown by the app windows view when the focused app has no window to show.
+  ///
+  /// In en, this message translates to:
+  /// **'No windows'**
+  String get appWindowsEmpty;
 }
 
 class _AppLocalizationsDelegate

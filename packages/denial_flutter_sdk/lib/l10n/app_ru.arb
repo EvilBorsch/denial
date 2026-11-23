@@ -3821,7 +3821,7 @@
   "@settingsLayoutTitle": {
     "description": "English UI text for settingsLayoutTitle."
   },
-  "settingsWindowLayoutDescription": "В режиме наложения окна могут перекрываться. Мозаика динамически делит рабочий стол. Прокрутка следует за фокусом вдоль ленты; её ось настраивается для каждого экрана и по умолчанию зависит от поворота.",
+  "settingsWindowLayoutDescription": "В режиме наложения окна могут перекрываться. Мозаика динамически делит рабочий стол. Прокрутка следует за фокусом вдоль ленты; её ось настраивается для каждого экрана и по умолчанию зависит от поворота. На весь экран: у каждой программы свой экран, между экранами — смахивание тремя пальцами.",
   "@settingsWindowLayoutDescription": {
     "description": "Explains the available desktop window layouts."
   },
@@ -7524,5 +7524,9 @@
   "monthShortDecember": "дек.",
   "@monthShortDecember": {
     "description": "December as a short date writes it: the system bar and notifications from another day."
-  }
+  },
+  "settingsWindowLayoutScreens": "На весь экран",
+  "screensOverviewStackCount": "{count, plural, one{{count} окно} few{{count} окна} many{{count} окон} other{{count} окна}}",
+  "screensOverviewStackExpand": "Показать каждое окно: {app}",
+  "appWindowsEmpty": "Нет окон"
 }

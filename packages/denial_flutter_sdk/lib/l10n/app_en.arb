@@ -3795,7 +3795,7 @@
   "@settingsLayoutTitle": {
     "description": "English UI text for settingsLayoutTitle."
   },
-  "settingsWindowLayoutDescription": "Stacking lets windows overlap. Tiling divides the desktop dynamically. Scrolling follows focus along a strip; its axis is configured per display and follows rotation by default.",
+  "settingsWindowLayoutDescription": "Stacking lets windows overlap. Tiling divides the desktop dynamically. Scrolling follows focus along a strip; its axis is configured per display and follows rotation by default. Full screen gives every app its own screen; swipe with three fingers to move between them.",
   "@settingsWindowLayoutDescription": {
     "description": "Explains the available desktop window layouts."
   },
@@ -7191,5 +7191,13 @@
   "monthShortNovember": "Nov",
   "@monthShortNovember": {"description": "November as a short date writes it: the system bar and notifications from another day."},
   "monthShortDecember": "Dec",
-  "@monthShortDecember": {"description": "December as a short date writes it: the system bar and notifications from another day."}
+  "@monthShortDecember": {"description": "December as a short date writes it: the system bar and notifications from another day."},
+  "settingsWindowLayoutScreens": "Full screen",
+  "@settingsWindowLayoutScreens": {"description": "Label for the full-screen apps window layout: every app is its own screen, swiped through with three fingers."},
+  "screensOverviewStackCount": "{count, plural, one{{count} window} other{{count} windows}}",
+  "@screensOverviewStackCount": {"description": "Badge of a stack of screens that show windows of one app in the screens overview; activating it shows them one by one.", "placeholders": {"count": {"type": "int"}}},
+  "screensOverviewStackExpand": "Show each window of {app}",
+  "@screensOverviewStackExpand": {"description": "Accessible label of the count badge that expands a stack of screens of one app.", "placeholders": {"app": {"type": "String"}}},
+  "appWindowsEmpty": "No windows",
+  "@appWindowsEmpty": {"description": "Shown by the app windows view when the focused app has no window to show."}
 }

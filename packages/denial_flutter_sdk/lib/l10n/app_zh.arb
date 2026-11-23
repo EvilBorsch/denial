@@ -817,7 +817,7 @@
   "settingsLayoutDescription": "控制普通窗口和最大化窗口周围的预留间距。",
   "settingsLayoutSection": "桌面布局",
   "settingsLayoutTitle": "给每个窗口留出呼吸空间。",
-  "settingsWindowLayoutDescription": "堆叠允许窗口相互重叠。平铺动态划分桌面。滚动平铺将窗口排列成跟随焦点的长带；其方向可按显示器配置，默认跟随显示器旋转。",
+  "settingsWindowLayoutDescription": "堆叠允许窗口相互重叠。平铺动态划分桌面。滚动平铺将窗口排列成跟随焦点的长带；其方向可按显示器配置，默认跟随显示器旋转。全屏应用让每个应用拥有自己的屏幕，三指滑动即可切换。",
   "settingsWindowLayoutDwindle": "平铺",
   "settingsWindowLayoutStacking": "堆叠",
   "settingsWindowLayoutScrolling": "滚动平铺",
@@ -1677,5 +1677,9 @@
   "monthShortSeptember": "九月",
   "monthShortOctober": "十月",
   "monthShortNovember": "十一月",
-  "monthShortDecember": "十二月"
+  "monthShortDecember": "十二月",
+  "settingsWindowLayoutScreens": "全屏应用",
+  "screensOverviewStackCount": "{count, plural, other{{count} 个窗口}}",
+  "screensOverviewStackExpand": "分别显示 {app} 的窗口",
+  "appWindowsEmpty": "没有窗口"
 }

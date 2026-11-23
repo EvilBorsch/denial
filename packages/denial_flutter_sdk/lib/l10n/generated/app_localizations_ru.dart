@@ -2842,7 +2842,7 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get settingsWindowLayoutDescription =>
-      'В режиме наложения окна могут перекрываться. Мозаика динамически делит рабочий стол. Прокрутка следует за фокусом вдоль ленты; её ось настраивается для каждого экрана и по умолчанию зависит от поворота.';
+      'В режиме наложения окна могут перекрываться. Мозаика динамически делит рабочий стол. Прокрутка следует за фокусом вдоль ленты; её ось настраивается для каждого экрана и по умолчанию зависит от поворота. На весь экран: у каждой программы свой экран, между экранами — смахивание тремя пальцами.';
 
   @override
   String get settingsWindowLayoutDwindle => 'Мозаика';
@@ -5652,4 +5652,28 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get monthShortDecember => 'дек.';
+
+  @override
+  String get settingsWindowLayoutScreens => 'На весь экран';
+
+  @override
+  String screensOverviewStackCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count окна',
+      many: '$count окон',
+      few: '$count окна',
+      one: '$count окно',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String screensOverviewStackExpand(String app) {
+    return 'Показать каждое окно: $app';
+  }
+
+  @override
+  String get appWindowsEmpty => 'Нет окон';
 }

@@ -2814,7 +2814,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsWindowLayoutDescription =>
-      'Stacking lets windows overlap. Tiling divides the desktop dynamically. Scrolling follows focus along a strip; its axis is configured per display and follows rotation by default.';
+      'Stacking lets windows overlap. Tiling divides the desktop dynamically. Scrolling follows focus along a strip; its axis is configured per display and follows rotation by default. Full screen gives every app its own screen; swipe with three fingers to move between them.';
 
   @override
   String get settingsWindowLayoutDwindle => 'Tiling';
@@ -5596,4 +5596,26 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get monthShortDecember => 'Dec';
+
+  @override
+  String get settingsWindowLayoutScreens => 'Full screen';
+
+  @override
+  String screensOverviewStackCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count windows',
+      one: '$count window',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String screensOverviewStackExpand(String app) {
+    return 'Show each window of $app';
+  }
+
+  @override
+  String get appWindowsEmpty => 'No windows';
 }

@@ -50,7 +50,15 @@ enum MinimizedWindowPlacement { desktop, offscreen }
 
 /// Compositor geometry policy for ordinary, non-transient desktop windows.
 /// Each value maps to a Rust `WindowLayout` implementation.
-enum DesktopWindowLayout { stacking, dwindle, scrolling }
+enum DesktopWindowLayout {
+  stacking,
+  dwindle,
+  scrolling,
+
+  /// Full-screen apps: every app is a screen in a strip the user swipes
+  /// through with three fingers. It has no workspaces.
+  screens,
+}
 
 enum ScrollingLayoutWheelUpDirection { left, right }
 
@@ -324,6 +332,11 @@ class ShellLayoutSettings {
   });
 
   final DesktopWindowLayout windowLayout;
+
+  /// Whether workspaces are in effect. The full-screen apps layout has
+  /// none; [workspacesEnabled] keeps the user's choice for the others.
+  bool get effectiveWorkspacesEnabled =>
+      workspacesEnabled && windowLayout != DesktopWindowLayout.screens;
 
   /// Native-validated pixel or percentage amount, preserved across UI saves.
   final String keyboardResizeStep;

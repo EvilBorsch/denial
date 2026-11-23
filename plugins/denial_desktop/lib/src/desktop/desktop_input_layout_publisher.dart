@@ -113,7 +113,7 @@ class _DesktopInputLayoutPublisherState
       ref
           .read(desktopWorkspaceProvider.notifier)
           .syncWorkspaceConfiguration(
-            enabled: settings.workspacesEnabled,
+            enabled: settings.effectiveWorkspacesEnabled,
             count: settings.workspaceCount,
             authoritativeActiveWorkspaces: <int, int>{
               for (final output
