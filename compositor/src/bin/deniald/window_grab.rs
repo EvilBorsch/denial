@@ -104,6 +104,9 @@ macro_rules! forward_pointer_events {
             handle.relative_motion(data, focus, event);
         }
 
+        forward_pointer_events!(except relative motion);
+    };
+    (except relative motion) => {
         fn axis(
             &mut self,
             data: &mut RuntimeState,
@@ -1192,7 +1195,26 @@ impl PointerGrab<RuntimeState> for MiddleButtonGrab {
         }
     }
 
-    forward_pointer_events!();
+    /// The app sees relative motion while it still sees the pointer: not
+    /// during a drag.
+    fn relative_motion(
+        &mut self,
+        data: &mut RuntimeState,
+        handle: &mut PointerInnerHandle<'_, RuntimeState>,
+        focus: Option<(PointerFocus, Point<f64, Logical>)>,
+        event: &RelativeMotionEvent,
+    ) {
+        let focus = if self.passthrough {
+            self.start_data.focus.clone()
+        } else if self.drag.as_ref().is_some_and(|drag| !drag.decided()) {
+            focus
+        } else {
+            None
+        };
+        handle.relative_motion(data, focus, event);
+    }
+
+    forward_pointer_events!(except relative motion);
 
     fn start_data(&self) -> &GrabStartData<RuntimeState> {
         &self.start_data
