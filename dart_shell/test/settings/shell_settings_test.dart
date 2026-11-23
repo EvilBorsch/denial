@@ -131,6 +131,16 @@ void main() {
     }
   });
 
+  test('the power button turns the screen off by default', () {
+    // A tablet: a short press of the power button in the desktop
+    // presentation must not power the tablet off (erhai).
+    expect(const ShellSettings().power.powerButtonAction, PowerButtonAction.dpms);
+    expect(
+      ShellSettings.fromJson(<String, dynamic>{}).power.powerButtonAction,
+      PowerButtonAction.dpms,
+    );
+  });
+
   test('power button action persists and produces a typed patch', () {
     const previous = ShellSettings(
       power: ShellPowerSettings(powerButtonAction: PowerButtonAction.dpms),
