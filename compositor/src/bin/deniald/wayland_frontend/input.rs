@@ -1468,8 +1468,11 @@ pub(in super::super) fn init_libinput(
     // Libinput's context survives a libseat pause, but its device descriptors
     // do not. Keep one reference beside the event source so the session
     // lifecycle can suspend the old descriptors and reopen them on activation.
+    // The seat's devices are queued now, and again on every resume, with
+    // nothing to read on libinput's descriptor: the source delivers them in
+    // the loop's next turn instead of waiting for unrelated input.
     let lifecycle_context = context.clone();
-    let backend = LibinputBatchSource::new(LibinputInputBackend::new(context));
+    let backend = LibinputBatchSource::new(context);
     event_loop
         .handle()
         .insert_source(backend, |event, batch, state| {
@@ -1478,7 +1481,7 @@ pub(in super::super) fn init_libinput(
                     batch.flush_clients |= process_input_event(state, event);
                 }
                 // libinput is independent from the Wayland client socket
-                // source. Flush after Smithay has drained the complete batch:
+                // source. Flush after the source has drained the complete batch:
                 // clients still observe input immediately, while a burst of
                 // samples costs one non-blocking socket flush instead of one
                 // syscall per event.
