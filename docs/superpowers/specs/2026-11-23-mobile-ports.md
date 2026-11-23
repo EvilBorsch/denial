@@ -13,12 +13,13 @@ behaviour to the tablet presentation.
 
 ## The panel
 
-OnePlus Pad 3: 3392x2400 at 12.1" (about 340 ppi), landscape with its cover.
-The shell runs at output scale 1.5 (2261x1600 logical px), apps at 3.0
-(`apps.scale` 2.0). One logical shell pixel is 1.5 physical pixels, about
-0.11 mm. A finger target of 7 mm (Apple's 44 pt on an iPad) is therefore
-about 64 logical px here, and text the eye reads comfortably at arm's length
-on a tablet (iPadOS' 17 pt body) about 22 logical px.
+OnePlus Pad 3: 3392x2400 at 13.2" (315 ppi), landscape with its cover. In
+eb18 the shell runs at output scale 2.5 (`eb/tablet-density`, 1357x960
+logical px; eb17 ran it at 1.5), apps at 3.0. One logical shell pixel is
+then about 0.20 mm, as an iPad Pro point (0.19 mm): iPadOS' sizes apply
+as they are, a 44 px finger target and 17 px body text. Sizes below are at
+2.5. The eb17 screenshots `m*.png` were taken at 1.5, where everything was
+40% smaller; `s04-home-2.5.png` shows home at 2.5 (6 columns).
 
 ## Audit: the tablet presentation as eb17 left it
 
@@ -26,13 +27,13 @@ Baseline screenshots: `D:\androidlinux\device-logs\eb18-baseline\m*.png`.
 
 | Area | Today (eb17) | Finger feature in eb17/eb18 or iPadOS it lacks |
 |---|---|---|
-| Home grid (`launcher/home_surface.dart`, `home_pager.dart`) | 9 columns, three rows used, icons 85 px (~9.5 mm), labels 13 px (~1.5 mm high, barely legible, m04). Long press on the background opens the page editor. | Labels too small for the panel. Most of the screen is empty. |
+| Home grid (`launcher/home_surface.dart`, `home_pager.dart`) | At 2.5: 6 columns, icons 85 px (17 mm), labels 13 px (s04). Long press on the background opens the page editor. | Nothing at 2.5 (at 1.5 the labels were too small; the scale change fixed that). |
 | App drawer (`launcher/widgets/home_app_drawer.dart`) | Exists but is off by default (page editor switch, stored as `drawer` in the home layout file). A swipe up on home does nothing (m05). Alphabetical grid, no search. | iPadOS App Library has a search field; eb18 desktop gets search in the overview. |
 | Search | None in the tablet presentation. | iPadOS: a pull down on home opens Spotlight. eb18 desktop: the overview's search field and the global overlay, both on the shared `searchShell` (apps and open windows). |
 | Recents (`state/app_deck.dart`, `widgets/overview/app_deck_layer.dart`) | A landscape stack carousel, one card per window, label above it: app icon and app name, 17 px. Tap opens, fling up closes the window, tap beside goes home. | Windows of one app are scattered by recency and look alike: only the app name, no window title (eb18 desktop: app windows view with titles). No way to close an app with several windows at once. |
 | Bottom pill (`widgets/bottom_gesture_handle.dart`) | Up: home; hold: Recents; sideways: next/previous app. | Equivalent to the screens layout's three-finger swipes; nothing to port. |
 | Edges | Left/right edge: Back. Top: the shade (notifications left, quick settings right). | Nothing to port. |
-| Shade | Tiles fine, labels about 15 native px (m07, m09). | Track A owns scaling of the shared shell UI; not changed here. |
+| Shade | Tiles and labels fine at 2.5 (s05). | Nothing. |
 | Split screen | None: every app fills the screen, one at a time. | eb17 desktop: screens with splits, dividers. iPadOS: Split View (two apps side by side, a divider with thirds and halves, drag an app off by its top handle). |
 | App windows view (eb18 desktop, three fingers down) | None. | Recents grouping covers it for fingers. |
 
@@ -59,8 +60,8 @@ Baseline screenshots: `D:\androidlinux\device-logs\eb18-baseline\m*.png`.
   has focus the shell captures the keyboard (`ShellInputRegion` with
   `ShellKeyboardPolicy.capture`) and opens the edge panel keyboard; closing
   the drawer or panel, Back, or a launch closes the keyboard.
-- Result rows are at least 72 px high (about 8 mm), tiles keep the home
-  tile size; text 20 to 22 px.
+- Result rows are 64 px high (13 mm) with a 44 px icon, app name 17 px,
+  window title 15 px; app tiles are the home tiles.
 
 ### 2. Drawer on by default
 
@@ -89,10 +90,10 @@ Baseline screenshots: `D:\androidlinux\device-logs\eb18-baseline\m*.png`.
   pill swipe should reach first.
 - A card whose app has more than one window shows two lines above it: the
   app name, and that window's title under it, so cards of one app tell
-  apart. A card of a single-window app keeps one line. The label grows from
-  17 px to 22 px (app name) and 18 px (title); the icon from 48 to 56 px.
+  apart. A card of a single-window app keeps one line, as now (48 px icon,
+  17 px name; the title line is 14 px).
 - Cards of a multi-window app carry a "close all" button (× and the count,
-  64 px tall) at the end of their label: it closes every window of the
+  44 px tall) at the end of their label: it closes every window of the
   app, each card leaving as a flung one does. Flinging one card closes that
   window, as now.
 
@@ -151,14 +152,14 @@ handles and Recents.
   own card there is no one to split with and the long press does nothing
   but the lift.
 - **The divider** is a dark bar between the windows with a grab handle;
-  its touch zone is 64 px wide. Dragging it, both windows are covered by
+  its touch zone is 44 px wide. Dragging it, both windows are covered by
   their app icon on glass (as on iPadOS, the apps do not resize under the
   finger) and the bar follows the finger. Released, it snaps to the nearest
   of 1/3, 1/2 and 2/3; dragged within 12% of an edge, the window on that
   side leaves the split and the other fills the screen. The covers fade out
   once both windows have their new size.
 - **The handle** at the top of each half (a short bar in the status strip,
-  64 px tall touch zone): dragging it moves that window with the finger,
+  44 px touch zone): dragging it moves that window with the finger,
   scaled down. Released over the other half, the two swap sides. Pulled
   down more than a quarter of the screen and released, the window leaves the
   split and fills the screen in front; the other goes to Recents. Otherwise
@@ -184,12 +185,11 @@ handles and Recents.
   bottom pill already moves between apps, opens Recents and goes home, and
   multi-finger swipes would steal touches from apps (maps, drawing,
   Android games).
-- More than two windows in a split, and top/bottom splits: at 2261 px
-  logical width two halves keep finger-sized controls in the apps; quarters
-  would not. iPadOS' Split View is two apps too.
+- More than two windows in a split, and top/bottom splits: on a 13" panel
+  two halves keep finger-sized controls in the apps; quarters would not. iPadOS' Split View is two apps too.
 - Slide Over (a floating narrow app over another): no floating windows in
   the tablet presentation today; a separate feature.
 - Dragging an app from the drawer or a search result into a split: the
   Recents entry is the one way in for now.
-- The shade's and the status bar's text size: shared shell UI scaling is
-  track A's.
+- Enlarging anything for the old 1.5 scale: eb18's 2.5 makes the shell
+  iPad-sized.
