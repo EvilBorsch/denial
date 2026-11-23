@@ -89,7 +89,7 @@ void main() {
         idleDpmsEnabled: false,
         idleDpmsTimeoutSeconds: 47,
         idleSuspendEnabled: true,
-        idleSuspendTimeoutSeconds: 72 * 60,
+        idleSuspendAfterScreenOffSeconds: 72 * 60,
         suspendMode: SuspendMode.deep,
         stayAwake: true,
       ),
@@ -134,7 +134,10 @@ void main() {
   test('the power button turns the screen off by default', () {
     // A tablet: a short press of the power button in the desktop
     // presentation must not power the tablet off (erhai).
-    expect(const ShellSettings().power.powerButtonAction, PowerButtonAction.dpms);
+    expect(
+      const ShellSettings().power.powerButtonAction,
+      PowerButtonAction.dpms,
+    );
     expect(
       ShellSettings.fromJson(<String, dynamic>{}).power.powerButtonAction,
       PowerButtonAction.dpms,
@@ -218,7 +221,7 @@ void main() {
         'idleDpmsEnabled': 'sometimes',
         'idleDpmsTimeoutSeconds': 90000,
         'idleSuspendEnabled': 'sometimes',
-        'idleSuspendTimeoutSeconds': 2,
+        'idleSuspendAfterScreenOffSeconds': 2,
         'stayAwake': 'sometimes',
       },
     });
@@ -246,22 +249,42 @@ void main() {
     expect(settings.power.idleDpmsEnabled, isTrue);
     expect(settings.power.idleDpmsTimeoutSeconds, 7200);
     expect(settings.power.idleSuspendEnabled, isFalse);
-    expect(settings.power.idleSuspendTimeoutSeconds, 7200);
+    expect(settings.power.idleSuspendAfterScreenOffSeconds, 30);
     expect(settings.power.stayAwake, isFalse);
   });
 
-  test('idle timeout ordering is repaired without shortening display off', () {
+  test('the idle timeouts stand alone: sleep may come before the display '
+      'timeout', () {
+    // The tablet's owner: the screen off after 30 min, sleep 5 min after it.
     final settings = ShellSettings.fromJson(<String, dynamic>{
       'power': <String, dynamic>{
         'idleLockTimeoutSeconds': 5400,
-        'idleDpmsTimeoutSeconds': 4800,
-        'idleSuspendTimeoutSeconds': 1800,
+        'idleDpmsTimeoutSeconds': 1800,
+        'idleSuspendAfterScreenOffSeconds': 300,
       },
     });
 
-    expect(settings.power.idleDpmsTimeoutSeconds, 4800);
-    expect(settings.power.idleSuspendTimeoutSeconds, 4800);
-    expect(settings.power.idleLockTimeoutSeconds, 4800);
+    expect(settings.power.idleDpmsTimeoutSeconds, 1800);
+    expect(settings.power.idleSuspendAfterScreenOffSeconds, 300);
+    expect(settings.power.idleLockTimeoutSeconds, 5400);
+    final written = settings.toJson()['power']! as Map;
+    expect(written['idleSuspendAfterScreenOffSeconds'], 300);
+    expect(written.containsKey('idleSuspendTimeoutSeconds'), isFalse);
+  });
+
+  test('sleep after the screen turns off reads only its own key', () {
+    // deniald carries an old idleSuspendTimeoutSeconds over once; the shell
+    // never reads it.
+    expect(
+      ShellSettings.fromJson(<String, dynamic>{
+        'power': <String, dynamic>{'idleSuspendTimeoutSeconds': 300},
+      }).power.idleSuspendAfterScreenOffSeconds,
+      15 * 60,
+    );
+    expect(
+      const ShellPowerSettings().idleSuspendAfterScreenOffSeconds,
+      15 * 60,
+    );
   });
 
   test('idle timeouts go down to half a minute', () {

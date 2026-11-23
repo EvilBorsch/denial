@@ -208,9 +208,12 @@ class _ShellRuntimeBindingsState extends ConsumerState<ShellRuntimeBindings> {
             dpmsEnabled: power.idleDpmsEnabled,
             dpmsTimeout: Duration(seconds: power.idleDpmsTimeoutSeconds),
             // Stay awake holds this timeout off; deniald, which follows the
-            // setting itself, also keeps the screen on and unlocked.
+            // setting itself, also keeps the screen on and unlocked. The
+            // timeout counts from the screen going dark.
             suspendEnabled: power.idleSuspendActive,
-            suspendTimeout: Duration(seconds: power.idleSuspendTimeoutSeconds),
+            suspendTimeout: Duration(
+              seconds: power.idleSuspendAfterScreenOffSeconds,
+            ),
             suspendMode: power.suspendMode,
             lockAfterScreenOff:
                 power.idleLockEnabled && widget.mobilePresentation

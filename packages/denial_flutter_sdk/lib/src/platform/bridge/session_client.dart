@@ -70,11 +70,11 @@ final class BridgeSessionClient {
     final lockMilliseconds = lockTimeout.inMilliseconds;
     final dpmsMilliseconds = dpmsTimeout.inMilliseconds;
     final suspendMilliseconds = suspendTimeout.inMilliseconds;
+    // The suspend counts from the screen going dark: it may be shorter than
+    // the lock and display timeouts.
     if (lockMilliseconds <= 0 ||
         dpmsMilliseconds <= 0 ||
-        suspendMilliseconds <= 0 ||
-        lockMilliseconds > suspendMilliseconds ||
-        dpmsMilliseconds > suspendMilliseconds) {
+        suspendMilliseconds <= 0) {
       return;
     }
     final screenOffMilliseconds = lockAfterScreenOff?.inMilliseconds ?? 0;
