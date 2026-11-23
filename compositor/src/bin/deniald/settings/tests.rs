@@ -1235,6 +1235,107 @@ fn apps_follow_the_shell_by_default_and_validate_their_text_scales() {
     assert_eq!(manager.apps_scale(), 1.25);
 }
 
+fn with_presentation(presentation: Value) -> String {
+    shell_document(serde_json::json!({
+        "appearance": {"colorSchemePreference": "preferDark"},
+        "presentation": presentation
+    }))
+}
+
+#[test]
+fn the_shells_presentation_section_is_validated() {
+    let temporary = TemporaryDirectory::new("settings-presentation");
+    let mut manager = SettingsManager::load_path(temporary.settings_path()).unwrap();
+    for (presentation, key) in [
+        (
+            serde_json::json!("desktop"),
+            "presentation must be an object",
+        ),
+        (
+            serde_json::json!({"followKeyboard": "yes"}),
+            "presentation.followKeyboard",
+        ),
+        (serde_json::json!({"mode": "phone"}), "presentation.mode"),
+        (serde_json::json!({"mode": true}), "presentation.mode"),
+        (
+            serde_json::json!({"modeKeyboard": 1}),
+            "presentation.modeKeyboard",
+        ),
+    ] {
+        assert!(
+            matches!(
+                manager.prepare_shell_update(manager.revision(), &with_presentation(presentation.clone())),
+                Err(SettingsError::Document(message)) if message.starts_with(key)
+            ),
+            "{presentation}"
+        );
+    }
+    // What the shell and erhai-denial-setting write: following switched
+    // off, and the presentation chosen last with the keyboard state it was
+    // chosen with. Null stands for none chosen yet.
+    for presentation in [
+        serde_json::json!({"followKeyboard": false, "mode": "desktop", "modeKeyboard": true}),
+        serde_json::json!({"followKeyboard": true, "mode": "tablet", "modeKeyboard": false}),
+        serde_json::json!({"mode": null, "modeKeyboard": null}),
+        serde_json::json!({}),
+    ] {
+        let update = manager
+            .prepare_shell_update(manager.revision(), &with_presentation(presentation.clone()))
+            .unwrap();
+        manager.commit(update).unwrap();
+        let served: Value = serde_json::from_str(&manager.document_json().unwrap()).unwrap();
+        assert_eq!(served["presentation"], presentation);
+    }
+}
+
+/// The top-level sections `deniald` of `eb17` (`dc537e1`) and `eb16.tp1`
+/// (`ccadf12`) reads from the file, the same in both. Any other section it
+/// keeps as it is and writes back unchanged, and their shells keep it too
+/// (`SettingsDocumentProjection`).
+const SECTIONS_AN_OLDER_DENIALD_READS: &[&str] = &[
+    "version",
+    "revision",
+    "keyboard",
+    "mouse",
+    "touchpad",
+    "color",
+    "applicationEnvironment",
+    "appearance",
+    "apps",
+    "layout",
+    "power",
+    "lockScreen",
+    "rotationLock",
+    "rotationLockSupported",
+];
+
+#[test]
+fn the_presentation_is_stored_where_an_older_deniald_leaves_it_alone() {
+    let temporary = TemporaryDirectory::new("settings-presentation-rollback");
+    let path = temporary.settings_path();
+    let mut manager = SettingsManager::load_path(path.clone()).unwrap();
+    let presentation =
+        serde_json::json!({"followKeyboard": true, "mode": "desktop", "modeKeyboard": true});
+    let update = manager
+        .prepare_shell_update(manager.revision(), &with_presentation(presentation.clone()))
+        .unwrap();
+    manager.commit(update).unwrap();
+
+    // On disk: a section of its own, which no older release reads, and
+    // nothing new in the sections they do.
+    assert!(!SECTIONS_AN_OLDER_DENIALD_READS.contains(&"presentation"));
+    let file: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(file["presentation"], presentation);
+    assert!(file["layout"].get("presentation").is_none());
+    assert!(file["apps"].get("followKeyboard").is_none());
+    assert_eq!(file["version"], SETTINGS_SCHEMA_VERSION);
+
+    // This release reads it back as written.
+    let reloaded = SettingsManager::load_path(path).unwrap();
+    let served: Value = serde_json::from_str(&reloaded.document_json().unwrap()).unwrap();
+    assert_eq!(served["presentation"], presentation);
+}
+
 #[test]
 fn apps_follow_only_a_tablets_shell_and_only_while_switched_on() {
     let follow = AppsFollow {

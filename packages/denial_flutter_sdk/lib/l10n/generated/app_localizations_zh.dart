@@ -2701,6 +2701,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsWindowLayoutTitle => '窗口布局';
 
   @override
+  String get settingsFollowKeyboardTitle => '跟随键盘';
+
+  @override
+  String get settingsFollowKeyboardDescription =>
+      '连接键盘时切换到桌面视图，断开后切换到移动视图。“桌面视图”磁贴可手动切换，直到下次连接或断开键盘。';
+
+  @override
   String get settingsScrollingLayoutWheelTitle => 'Super + 鼠标滚轮';
 
   @override

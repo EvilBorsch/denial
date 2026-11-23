@@ -614,6 +614,34 @@ class ShellSettingsController extends Notifier<ShellSettings> {
     _update(state.copyWith(power: state.power.copyWith(stayAwake: value)));
   }
 
+  /// Whether the presentation follows a physical keyboard; see
+  /// [ShellPresentationSettings.followKeyboard].
+  void setFollowKeyboard(bool value) {
+    _update(
+      state.copyWith(
+        presentation: state.presentation.copyWith(followKeyboard: value),
+      ),
+    );
+  }
+
+  /// Keeps the presentation the shell shows for its next start, with
+  /// whether a physical keyboard was attached when it was chosen (null when
+  /// that is not known); see [ShellPresentationSettings].
+  void recordPresentation(
+    ShellPresentationMode mode, {
+    required bool? keyboard,
+  }) {
+    _update(
+      state.copyWith(
+        presentation: ShellPresentationSettings(
+          followKeyboard: state.presentation.followKeyboard,
+          mode: mode,
+          modeKeyboard: keyboard,
+        ),
+      ),
+    );
+  }
+
   void setSuspendMode(SuspendMode value) {
     _update(state.copyWith(power: state.power.copyWith(suspendMode: value)));
   }

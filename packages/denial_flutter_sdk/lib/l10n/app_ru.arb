@@ -3841,6 +3841,14 @@
   "@settingsWindowLayoutTitle": {
     "description": "Title for choosing how desktop windows are arranged."
   },
+  "settingsFollowKeyboardTitle": "Режим по клавиатуре",
+  "@settingsFollowKeyboardTitle": {
+    "description": "Switch that makes the presentation follow a physical keyboard: attached means Desktop view, detached means Mobile view."
+  },
+  "settingsFollowKeyboardDescription": "С подключённой клавиатурой — настольный режим, без неё — мобильный. Плитка «Настольный режим» переключает вручную до следующего подключения или отключения клавиатуры.",
+  "@settingsFollowKeyboardDescription": {
+    "description": "Explains the Follow the keyboard switch. Desktop view and Mobile view are the names of the two presentations (shellPresentationDesktop, shellPresentationMobile)."
+  },
   "settingsScrollingLayoutWheelTitle": "Super + колесо мыши",
   "@settingsScrollingLayoutWheelTitle": {
     "description": "Heading for mouse-wheel navigation in the scrolling window layout."

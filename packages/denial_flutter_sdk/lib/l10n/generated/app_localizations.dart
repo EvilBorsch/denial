@@ -5059,6 +5059,18 @@ abstract class AppLocalizations {
   /// **'Window layout'**
   String get settingsWindowLayoutTitle;
 
+  /// Switch that makes the presentation follow a physical keyboard: attached means Desktop view, detached means Mobile view.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow the keyboard'**
+  String get settingsFollowKeyboardTitle;
+
+  /// Explains the Follow the keyboard switch. Desktop view and Mobile view are the names of the two presentations (shellPresentationDesktop, shellPresentationMobile).
+  ///
+  /// In en, this message translates to:
+  /// **'Attaching a keyboard switches to Desktop view, detaching it to Mobile view. The Desktop view tile switches by hand until the next attach or detach.'**
+  String get settingsFollowKeyboardDescription;
+
   /// Heading for mouse-wheel navigation in the scrolling window layout.
   ///
   /// In en, this message translates to:

@@ -6,6 +6,44 @@ Denial's shell is either a tablet's (the mobile profile,
 carries the desktop shell, where apps go, so it counts as desktop. Apps can
 follow this: touch layouts on the tablet, desktop layouts at the desk.
 
+## How the shell picks its presentation
+
+On a single screen the presentation follows a physical keyboard: attaching
+one (a keyboard cover, USB or Bluetooth) brings up the desktop, detaching the
+last one the tablet, three seconds after it went (a cover whose driver
+switches it off and on again must not flip it there and back). Virtual
+(uinput) keyboards, such as the test tool's `erhai test keyboard`, do not
+count. The Desktop mode tile, and the dashboard's button, switch by hand;
+that choice holds until the next attach or detach. With a monitor beside the
+tablet nothing switches on its own; a keyboard attached or detached
+meanwhile decides once the monitor is gone. A switch keeps every window, and
+under the lock screen the other presentation's lock screen shows at once.
+
+The shell keeps the presentation in the settings document, section
+`presentation` (validated by `deniald`, read by no release before eb18,
+which keep it as it is):
+
+| Key | Default | Meaning |
+|---|---|---|
+| `followKeyboard` | `true` | the presentation follows a physical keyboard (Settings: Desktop layout, Follow the keyboard) |
+| `mode` | absent | `"tablet"` or `"desktop"`: the presentation shown last, which the shell starts in again |
+| `modeKeyboard` | absent | whether a physical keyboard was attached when `mode` was chosen |
+
+At a start the shell shows `mode` as soon as the settings arrive. Once the
+device list is there too, and while following the keyboard, a keyboard
+attached or detached since `mode` was chosen (`modeKeyboard` differs, or is
+absent) decides; otherwise `mode` holds, a choice by hand included. Switched
+off, `mode` alone decides. Turning following on applies the keyboard at once.
+
+`mode` and `followKeyboard` can be set through Denial's settings channel
+(`settings.document.apply` on the control socket, as Settings does): a
+`mode` set from outside the shell counts as a choice by hand. On the tablet:
+
+```sh
+sudo -u dmitry XDG_RUNTIME_DIR=/run/user/1000 erhai-denial-setting presentation.mode desktop
+sudo -u dmitry XDG_RUNTIME_DIR=/run/user/1000 erhai-denial-setting presentation.followKeyboard false
+```
+
 ## What Denial publishes
 
 The shell tells `deniald` its presentation over the wire
@@ -19,7 +57,7 @@ the Settings portal, `org.freedesktop.portal.Settings` (`ReadOne`, `ReadAll`,
 | Namespace / key | Type | Value |
 |---|---|---|
 | `org.denialwm.shell` `presentation` | `s` | `tablet` or `desktop` |
-| `org.denialwm.shell` `keyboard-attached` | `b` | a keyboard to type on is attached, such as a keyboard cover |
+| `org.denialwm.shell` `keyboard-attached` | `b` | a physical keyboard to type on is attached, such as a keyboard cover: the keyboards the shell's presentation follows, not virtual (uinput) ones such as a test tool's |
 | `org.denialwm.shell` `tablet-mode` | `b` | apps should show their touch layouts: the presentation is `tablet` and `apps.followMode` is on |
 
 `tablet-mode` is what an app or adapter follows; `presentation` and

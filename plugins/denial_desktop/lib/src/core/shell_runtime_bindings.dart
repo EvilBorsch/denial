@@ -5,6 +5,8 @@ import 'package:denial_desktop/src/state/reference_shell_presentation.dart';
 import 'package:denial_desktop/src/state/reference_shell_profile.dart';
 import 'package:denial_desktop/src/widgets/session/mobile_power_menu.dart';
 import 'package:denial_desktop/src/widgets/session/power_session_surface.dart';
+import 'package:denial_desktop/src/desktop/desktop_workspace.dart'
+    show desktopWorkspaceProvider;
 
 import 'dart:async';
 
@@ -129,6 +131,18 @@ class _ShellRuntimeBindingsState extends ConsumerState<ShellRuntimeBindings> {
         widget.onLocked?.call(ref);
       },
     );
+    // However the presentation switches, by the tile, the dashboard's
+    // button or the keyboard, the panels left open in the one it leaves
+    // close, as the tile closes its own: they would still be open on the
+    // way back.
+    ref.listen<ReferenceShellProfile>(referenceShellPresentationProvider, (
+      previous,
+      next,
+    ) {
+      if (previous == null || previous == next) return;
+      ref.read(referenceShellProvider.notifier).closeQuickSettings();
+      ref.read(desktopWorkspaceProvider.notifier).closePanels();
+    });
     ref.listen<int?>(
       bluetoothProvider.select((state) => state.pairingRequest?.id),
       (_, requestId) => _presentPairingRequest(requestId),

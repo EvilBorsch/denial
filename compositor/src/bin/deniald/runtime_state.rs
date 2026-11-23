@@ -84,6 +84,16 @@ impl InputDevices {
         }
     }
 
+    /// Whether apps are told that a keyboard is attached
+    /// (`keyboard-attached` in the Settings portal): a physical one, the
+    /// same that the shell's presentation follows. A virtual (uinput)
+    /// keyboard, such as a test tool's, keeps the software keyboard down
+    /// but attaches no keyboard for apps.
+    #[cfg(feature = "flutter")]
+    pub(super) fn keyboard_attached_for_apps(&self) -> bool {
+        self.kinds().physical_keyboard
+    }
+
     pub(super) fn remove(&mut self, sysname: &str) {
         self.keyboards.remove(sysname);
         #[cfg(feature = "flutter")]
@@ -534,6 +544,27 @@ impl RuntimeState {
 #[cfg(all(test, feature = "flutter"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn apps_see_a_keyboard_attached_only_for_a_physical_one() {
+        let mut devices = InputDevices::default();
+        assert!(!devices.keyboard_attached_for_apps());
+
+        // A test tool's uinput keyboard: something to type on, which keeps
+        // the software keyboard down, but no keyboard attached for apps.
+        devices.typing_keyboards.insert("event20".to_owned());
+        assert!(devices.kinds().keyboard);
+        assert!(!devices.keyboard_attached_for_apps());
+
+        // The keyboard cover.
+        devices.typing_keyboards.insert("event9".to_owned());
+        devices.physical_keyboards.insert("event9".to_owned());
+        assert!(devices.keyboard_attached_for_apps());
+
+        devices.remove("event9");
+        assert!(devices.kinds().keyboard);
+        assert!(!devices.keyboard_attached_for_apps());
+    }
 
     #[test]
     fn replacement_rehydration_waits_for_the_first_input_layout() {
