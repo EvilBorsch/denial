@@ -4759,6 +4759,7 @@ impl<'a> Window<'a> {
   pub const VT_KEYBOARD_INSET: flatbuffers::VOffsetT = 108;
   pub const VT_LAYOUT_SCREEN: flatbuffers::VOffsetT = 110;
   pub const VT_LAYOUT_SCREEN_RECT: flatbuffers::VOffsetT = 112;
+  pub const VT_LAYOUT_SCREEN_FLOATING: flatbuffers::VOffsetT = 114;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -4811,6 +4812,7 @@ impl<'a> Window<'a> {
     builder.add_width(args.width);
     if let Some(x) = args.app_id { builder.add_app_id(x); }
     if let Some(x) = args.title { builder.add_title(x); }
+    builder.add_layout_screen_floating(args.layout_screen_floating);
     builder.add_keyboard_inset(args.keyboard_inset);
     builder.add_pet_dragged(args.pet_dragged);
     builder.add_pet(args.pet);
@@ -5214,6 +5216,13 @@ impl<'a> Window<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<WireRect>(Window::VT_LAYOUT_SCREEN_RECT, None)}
   }
+  #[inline]
+  pub fn layout_screen_floating(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(Window::VT_LAYOUT_SCREEN_FLOATING, Some(false)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for Window<'_> {
@@ -5278,6 +5287,7 @@ impl flatbuffers::Verifiable for Window<'_> {
      .visit_field::<bool>("keyboard_inset", Self::VT_KEYBOARD_INSET, false)?
      .visit_field::<u32>("layout_screen", Self::VT_LAYOUT_SCREEN, false)?
      .visit_field::<WireRect>("layout_screen_rect", Self::VT_LAYOUT_SCREEN_RECT, false)?
+     .visit_field::<bool>("layout_screen_floating", Self::VT_LAYOUT_SCREEN_FLOATING, false)?
      .finish();
     Ok(())
   }
@@ -5338,6 +5348,7 @@ pub struct WindowArgs<'a> {
     pub keyboard_inset: bool,
     pub layout_screen: u32,
     pub layout_screen_rect: Option<&'a WireRect>,
+    pub layout_screen_floating: bool,
 }
 impl<'a> Default for WindowArgs<'a> {
   #[inline]
@@ -5398,6 +5409,7 @@ impl<'a> Default for WindowArgs<'a> {
       keyboard_inset: false,
       layout_screen: 0,
       layout_screen_rect: None,
+      layout_screen_floating: false,
     }
   }
 }
@@ -5628,6 +5640,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> WindowBuilder<'a, 'b, A> {
     self.fbb_.push_slot_always::<&WireRect>(Window::VT_LAYOUT_SCREEN_RECT, layout_screen_rect);
   }
   #[inline]
+  pub fn add_layout_screen_floating(&mut self, layout_screen_floating: bool) {
+    self.fbb_.push_slot::<bool>(Window::VT_LAYOUT_SCREEN_FLOATING, layout_screen_floating, false);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> WindowBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     WindowBuilder {
@@ -5700,6 +5716,7 @@ impl core::fmt::Debug for Window<'_> {
       ds.field("keyboard_inset", &self.keyboard_inset());
       ds.field("layout_screen", &self.layout_screen());
       ds.field("layout_screen_rect", &self.layout_screen_rect());
+      ds.field("layout_screen_floating", &self.layout_screen_floating());
       ds.finish()
   }
 }

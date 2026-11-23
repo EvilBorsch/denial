@@ -793,6 +793,7 @@ fn create_window_snapshot<'a>(
                     .layout_screen_rect
                     .map(|rect| fb::WireRect::new(rect.x, rect.y, rect.width, rect.height))
                     .as_ref(),
+                layout_screen_floating: description.layout_screen_floating,
                 ..Default::default()
             },
         ));

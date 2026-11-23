@@ -17,6 +17,7 @@ WindowObjectBuilder _window(
   int id, {
   int screen = 0,
   WireRectObjectBuilder? rect,
+  bool floating = false,
 }) => WindowObjectBuilder(
   objectId: id,
   surfaceId: id,
@@ -28,6 +29,7 @@ WindowObjectBuilder _window(
   contentHeight: 80,
   layoutScreen: screen,
   layoutScreenRect: rect,
+  layoutScreenFloating: floating,
 );
 
 void main() {
@@ -46,7 +48,7 @@ void main() {
               height: 600,
             ),
           ),
-          _window(2),
+          _window(2, screen: 3, floating: true),
           // A rectangle without a screen is meaningless and dropped.
           _window(
             3,
@@ -61,8 +63,9 @@ void main() {
       windows[0].layoutScreenRect,
       const Rect.fromLTWH(2016, 40, 1000, 600),
     );
-    expect(windows[1].layoutScreen, 0);
-    expect(windows[1].layoutScreenRect, isNull);
+    expect(windows[0].layoutScreenFloating, isFalse);
+    expect(windows[1].layoutScreen, 3);
+    expect(windows[1].layoutScreenFloating, isTrue);
     expect(windows[2].layoutScreenRect, isNull);
     // Moving to another screen is a change of the window's description.
     expect(windows[0] == windows[1], isFalse);

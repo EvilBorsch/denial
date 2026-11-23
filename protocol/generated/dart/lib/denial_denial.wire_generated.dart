@@ -2237,10 +2237,11 @@ class Window {
   bool get keyboardInset => const fb.BoolReader().vTableGet(_bc, _bcOffset, 108, false);
   int get layoutScreen => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 110, 0);
   WireRect? get layoutScreenRect => WireRect.reader.vTableGetNullable(_bc, _bcOffset, 112);
+  bool get layoutScreenFloating => const fb.BoolReader().vTableGet(_bc, _bcOffset, 114, false);
 
   @override
   String toString() {
-    return 'Window{objectId: ${objectId}, objectKind: ${objectKind}, surfaceId: ${surfaceId}, windowId: ${windowId}, textureId: ${textureId}, title: ${title}, appId: ${appId}, width: ${width}, height: ${height}, surfaceX: ${surfaceX}, surfaceY: ${surfaceY}, surfaceWidth: ${surfaceWidth}, surfaceHeight: ${surfaceHeight}, textureSourceX: ${textureSourceX}, textureSourceY: ${textureSourceY}, textureSourceWidth: ${textureSourceWidth}, textureSourceHeight: ${textureSourceHeight}, geometryX: ${geometryX}, geometryY: ${geometryY}, geometryWidth: ${geometryWidth}, geometryHeight: ${geometryHeight}, monitorId: ${monitorId}, transform: ${transform}, scale120: ${scale120}, statusColorArgb: ${statusColorArgb}, hasStatusColor: ${hasStatusColor}, contentX: ${contentX}, contentY: ${contentY}, contentWidth: ${contentWidth}, contentHeight: ${contentHeight}, surfaces: ${surfaces}, pinned: ${pinned}, suppressAnimations: ${suppressAnimations}, serverSideDecorated: ${serverSideDecorated}, opacity: ${opacity}, contentKind: ${contentKind}, opacityClass: ${opacityClass}, workspaceId: ${workspaceId}, minimized: ${minimized}, fullscreen: ${fullscreen}, maximized: ${maximized}, transientParentId: ${transientParentId}, heldByWindowId: ${heldByWindowId}, heldHold: ${heldHold}, heldShare: ${heldShare}, petAnchorX: ${petAnchorX}, petAnchorY: ${petAnchorY}, petBelow: ${petBelow}, pet: ${pet}, petHolds: ${petHolds}, petDragged: ${petDragged}, clientTexture: ${clientTexture}, keyboardInset: ${keyboardInset}, layoutScreen: ${layoutScreen}, layoutScreenRect: ${layoutScreenRect}}';
+    return 'Window{objectId: ${objectId}, objectKind: ${objectKind}, surfaceId: ${surfaceId}, windowId: ${windowId}, textureId: ${textureId}, title: ${title}, appId: ${appId}, width: ${width}, height: ${height}, surfaceX: ${surfaceX}, surfaceY: ${surfaceY}, surfaceWidth: ${surfaceWidth}, surfaceHeight: ${surfaceHeight}, textureSourceX: ${textureSourceX}, textureSourceY: ${textureSourceY}, textureSourceWidth: ${textureSourceWidth}, textureSourceHeight: ${textureSourceHeight}, geometryX: ${geometryX}, geometryY: ${geometryY}, geometryWidth: ${geometryWidth}, geometryHeight: ${geometryHeight}, monitorId: ${monitorId}, transform: ${transform}, scale120: ${scale120}, statusColorArgb: ${statusColorArgb}, hasStatusColor: ${hasStatusColor}, contentX: ${contentX}, contentY: ${contentY}, contentWidth: ${contentWidth}, contentHeight: ${contentHeight}, surfaces: ${surfaces}, pinned: ${pinned}, suppressAnimations: ${suppressAnimations}, serverSideDecorated: ${serverSideDecorated}, opacity: ${opacity}, contentKind: ${contentKind}, opacityClass: ${opacityClass}, workspaceId: ${workspaceId}, minimized: ${minimized}, fullscreen: ${fullscreen}, maximized: ${maximized}, transientParentId: ${transientParentId}, heldByWindowId: ${heldByWindowId}, heldHold: ${heldHold}, heldShare: ${heldShare}, petAnchorX: ${petAnchorX}, petAnchorY: ${petAnchorY}, petBelow: ${petBelow}, pet: ${pet}, petHolds: ${petHolds}, petDragged: ${petDragged}, clientTexture: ${clientTexture}, keyboardInset: ${keyboardInset}, layoutScreen: ${layoutScreen}, layoutScreenRect: ${layoutScreenRect}, layoutScreenFloating: ${layoutScreenFloating}}';
   }
 }
 
@@ -2258,7 +2259,7 @@ class WindowBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(55);
+    fbBuilder.startTable(56);
   }
 
   int addObjectId(int? objectId) {
@@ -2481,6 +2482,10 @@ class WindowBuilder {
     fbBuilder.addStruct(54, offset);
     return fbBuilder.offset;
   }
+  int addLayoutScreenFloating(bool? layoutScreenFloating) {
+    fbBuilder.addBool(55, layoutScreenFloating);
+    return fbBuilder.offset;
+  }
 
   int finish() {
     return fbBuilder.endTable();
@@ -2543,6 +2548,7 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
   final bool? _keyboardInset;
   final int? _layoutScreen;
   final WireRectObjectBuilder? _layoutScreenRect;
+  final bool? _layoutScreenFloating;
 
   WindowObjectBuilder({
     int? objectId,
@@ -2600,6 +2606,7 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
     bool? keyboardInset,
     int? layoutScreen,
     WireRectObjectBuilder? layoutScreenRect,
+    bool? layoutScreenFloating,
   })
       : _objectId = objectId,
         _objectKind = objectKind,
@@ -2655,7 +2662,8 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
         _clientTexture = clientTexture,
         _keyboardInset = keyboardInset,
         _layoutScreen = layoutScreen,
-        _layoutScreenRect = layoutScreenRect;
+        _layoutScreenRect = layoutScreenRect,
+        _layoutScreenFloating = layoutScreenFloating;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -2667,7 +2675,7 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
     final int? surfacesOffset = _surfaces == null ? null
         : fbBuilder.writeList(_surfaces!.map((b) => b.getOrCreateOffset(fbBuilder)).toList());
     final int? clientTextureOffset = _clientTexture?.getOrCreateOffset(fbBuilder);
-    fbBuilder.startTable(55);
+    fbBuilder.startTable(56);
     fbBuilder.addUint64(0, _objectId);
     fbBuilder.addUint8(1, _objectKind?.value);
     fbBuilder.addUint64(2, _surfaceId);
@@ -2725,6 +2733,7 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
     if (_layoutScreenRect != null) {
       fbBuilder.addStruct(54, _layoutScreenRect!.finish(fbBuilder));
     }
+    fbBuilder.addBool(55, _layoutScreenFloating);
     return fbBuilder.endTable();
   }
 

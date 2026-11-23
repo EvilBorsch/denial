@@ -511,6 +511,9 @@ table Window {
   // and absent in every other layout and for minimized windows.
   layout_screen:uint;
   layout_screen_rect:WireRect;
+  // The window floats over that screen (fixed-size and parentless) instead
+  // of being one of its tiles.
+  layout_screen_floating:bool;
 }
 
 table WindowSnapshot {

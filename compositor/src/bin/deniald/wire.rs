@@ -837,6 +837,8 @@ pub struct WindowDescription {
     /// in its strip and that screen's scene rectangle. 0 and `None` else.
     pub layout_screen: u32,
     pub layout_screen_rect: Option<WindowGeometry>,
+    /// The window floats over that screen instead of being one of its tiles.
+    pub layout_screen_floating: bool,
 }
 
 /// A desktop pet (denial-pet-v1) as the shell knows it. A held pet is drawn

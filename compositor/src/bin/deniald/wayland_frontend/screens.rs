@@ -26,6 +26,8 @@ pub(crate) struct WindowScreen {
     pub(crate) index: u32,
     /// The screen in output coordinates; beside the output unless current.
     pub(crate) rect: Rectangle<i32, Logical>,
+    /// The window floats over the screen instead of being one of its tiles.
+    pub(crate) floating: bool,
 }
 
 /// A floating window kept over one screen: a tile of that screen names it,
@@ -145,6 +147,7 @@ impl WaylandFrontend {
                 let placed = WindowScreen {
                     index: u32::try_from(index + 1).unwrap_or(u32::MAX),
                     rect: screen.rect,
+                    floating: false,
                 };
                 for window in screen.windows {
                     leaves.insert(window.clone(), placed);
@@ -154,7 +157,13 @@ impl WaylandFrontend {
         }
         for (window, float) in &self.screen_floats {
             if let Some(placed) = leaves.get(&float.anchor) {
-                screens.insert(window.clone(), *placed);
+                screens.insert(
+                    window.clone(),
+                    WindowScreen {
+                        floating: true,
+                        ..*placed
+                    },
+                );
             }
         }
         screens
@@ -272,6 +281,11 @@ impl WaylandFrontend {
             self.window_root_surface(target).map(|root| root.id()),
         ) else {
             return false;
+        };
+        // A floating window stands for the screen it floats over.
+        let target = match self.screen_floats.get(&target) {
+            Some(float) => float.anchor.clone(),
+            None => target,
         };
         if !self.window_layout.contains(&window)
             || !self.window_layout.contains(&target)

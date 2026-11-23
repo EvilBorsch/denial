@@ -1592,6 +1592,7 @@ impl WaylandFrontend {
                     width: f64::from(screen.rect.size.w),
                     height: f64::from(screen.rect.size.h),
                 }),
+                layout_screen_floating: window_screen.is_some_and(|screen| screen.floating),
             };
             if let Some(previous) = windows.get_mut(window_count) {
                 *previous = description;
@@ -1703,6 +1704,7 @@ impl WaylandFrontend {
                 keyboard_inset: false,
                 layout_screen: 0,
                 layout_screen_rect: None,
+                layout_screen_floating: false,
             };
             if let Some(previous) = windows.get_mut(window_count) {
                 *previous = description;
@@ -1887,6 +1889,7 @@ impl WaylandFrontend {
                     keyboard_inset: false,
                     layout_screen: 0,
                     layout_screen_rect: None,
+                    layout_screen_floating: false,
                 };
                 if let Some(previous) = windows.get_mut(window_count) {
                     *previous = description;
@@ -2041,6 +2044,7 @@ impl WaylandFrontend {
                     keyboard_inset: false,
                     layout_screen: 0,
                     layout_screen_rect: None,
+                    layout_screen_floating: false,
                 };
                 if let Some(previous) = windows.get_mut(window_count) {
                     *previous = description;

@@ -1354,6 +1354,7 @@ fn scene_window(id: u64) -> WindowDescription {
         keyboard_inset: false,
         layout_screen: 0,
         layout_screen_rect: None,
+        layout_screen_floating: false,
     }
 }
 
@@ -2282,6 +2283,7 @@ fn windows_carry_their_screen_only_in_the_screens_layout() {
         width: 1_000.0,
         height: 600.0,
     });
+    on_screen.layout_screen_floating = true;
     let (bytes, _) = bridge
         .update_windows(1, vec![on_screen, scene_window(2)], &BTreeSet::new())
         .unwrap();
@@ -2291,6 +2293,8 @@ fn windows_carry_their_screen_only_in_the_screens_layout() {
         .unwrap();
     let windows = snapshot.windows().unwrap();
     assert_eq!(windows.get(0).layout_screen(), 3);
+    assert!(windows.get(0).layout_screen_floating());
+    assert!(!windows.get(1).layout_screen_floating());
     let rect = windows.get(0).layout_screen_rect().unwrap();
     assert_eq!(
         (rect.x(), rect.y(), rect.width(), rect.height()),

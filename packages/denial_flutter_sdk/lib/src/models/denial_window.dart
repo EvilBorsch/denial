@@ -244,6 +244,7 @@ class DenialWindow {
     this.keyboardInset = false,
     this.layoutScreen = 0,
     this.layoutScreenRect,
+    this.layoutScreenFloating = false,
   });
 
   final int objectId;
@@ -307,6 +308,10 @@ class DenialWindow {
   /// lie beside the output, so this is where the window's [geometryX] and
   /// [geometryY] place it now, not necessarily on screen.
   final Rect? layoutScreenRect;
+
+  /// The window floats over [layoutScreen] (fixed-size and parentless)
+  /// instead of being one of its tiles.
+  final bool layoutScreenFloating;
 
   /// The window holding this layer surface, if it is a pet one holds. A held
   /// pet is drawn and hit with that window instead of in its layer's plane.
@@ -571,6 +576,7 @@ class DenialWindow {
         other.keyboardInset == keyboardInset &&
         other.layoutScreen == layoutScreen &&
         other.layoutScreenRect == layoutScreenRect &&
+        other.layoutScreenFloating == layoutScreenFloating &&
         listEquals(other.surfaceLayers, surfaceLayers);
   }
 
@@ -629,6 +635,7 @@ class DenialWindow {
     keyboardInset,
     layoutScreen,
     layoutScreenRect,
+    layoutScreenFloating,
     ...surfaceLayers,
   ]);
 }
