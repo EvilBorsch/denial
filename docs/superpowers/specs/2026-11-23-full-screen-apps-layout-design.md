@@ -1,6 +1,6 @@
 # Full-screen apps window layout ("screens")
 
-Date: 2026-11-23. Fork branches: `EvilBorsch/denial` `eb/screens-layout`, `EvilBorsch/denial-apps` `eb/screens-layout`, both from their `eb/integration` (denial `93c9c8e` = package `eb14`, denial-apps `f1735eb`).
+Date: 2026-11-23. Fork branches: `EvilBorsch/denial` `eb/screens-layout`, `EvilBorsch/denial-apps` `eb/screens-layout`, both rebased on 2026-11-23 evening onto their `eb/main` (denial `ccadf12` = `deniald` and shell of the installed package `eb16.tp1` plus this document; denial-apps `c1d0137`).
 
 The owner agreed the behaviour below in conversation ("Behaviour" sections). The owner left the approach to the agent, so the approach and every point marked **(agent's call)** is open to correction by the owner.
 
@@ -27,7 +27,7 @@ The owner of the tablet (OnePlus Pad 3, Denial desktop presentation on the built
 
 - A window that cannot be reached. Every window is on some screen, or floats over one.
 - Gestures that fire by accident during ordinary two-finger scrolling or palm contact.
-- Regressions in the other layouts, in the mobile/desktop toggle, or in settings files read by an older `deniald` (owner may roll back to `eb14`).
+- Regressions in the other layouts, in the mobile/desktop toggle, or in settings files read by an older `deniald` (owner may roll back to `eb16.tp1`).
 - Workarounds instead of proper fixes (project rule).
 
 ## Approaches considered
@@ -101,7 +101,7 @@ The touchpad and touchscreen three- and four-finger gestures share one recognize
 ## Settings
 
 - `DesktopWindowLayout` in `packages/denial_flutter_sdk/lib/src/settings/shell_settings.dart` gains `screens`, and `deniald`'s settings parser accepts `"screens"`.
-- **Compatibility.** Check what an older `deniald` (`eb14`) does with an unknown `windowLayout` value. If it would reject the whole settings file, choose a scheme where a rollback still loads the user's settings, for example by falling back to the default layout. The `eb14` work kept the schema version for the same reason (see `D:\androidlinux\CHANGES.md`, 14:30 entry).
+- **Compatibility.** Check what an older `deniald` (`eb16.tp1`) does with an unknown `windowLayout` value. If it would reject the whole settings file, choose a scheme where a rollback still loads the user's settings, for example by falling back to the default layout. The `eb14` work kept the schema version for the same reason (see `D:\androidlinux\CHANGES.md`, 14:30 entry).
 - Settings app (denial-apps fork, `apps/settings/src/catalog.rs`, `words_ru.rs`):
   - Add the option on «Компоновка рабочего стола» → Window layout, and on the «Монитор» page.
   - English label "Full screen", Russian «На весь экран».
@@ -116,12 +116,9 @@ The touchpad and touchscreen three- and four-finger gestures share one recognize
 ## Constraints
 
 - Work in worktrees `~/androidlinux/components/denial-screens` and `~/androidlinux/components/denial-apps-screens` (Windows: `D:\androidlinux\components\…`). Run git, builds and tests inside WSL (see `D:\androidlinux\AGENTS.md`).
-- Build per `docs/EB-BUILD.md` into package `denial 0.6.8-1+eb15` in `D:\androidlinux\images\debs\`. Write an install script `D:\androidlinux\tools\tab\install-denial-eb15.sh` modelled on `install-denial-eb14.sh`, with a SHA-256 check and `NO_RESTART=1`.
+- Build per `docs/EB-BUILD.md` into package `denial 0.6.8-1+eb17` in `D:\androidlinux\images\debs\`. Write an install script `D:\androidlinux\tools\tab\install-denial-eb17.sh` modelled on `install-denial-eb16.sh`, with a SHA-256 check and `NO_RESTART=1`.
 - Tests:
-  - `deniald` under qemu. The `eb14` baseline is 745/750; the 4 failures are WSL-related.
-  - Shell on `flutter_tester`. Baseline 261, plus 12 failures that need the Denial engine.
-  - SDK: baseline 111.
-  - Settings: baseline 63, with the known `cursor_theme` failure.
+  - The suites of `docs/EB-BUILD.md` (`deniald` under qemu, shell on `flutter_tester`, SDK, Settings). Run them on the untouched base first and report the new counts against that baseline; known failures are listed in EB-BUILD.
   - New tests for layout operations (insert, close, join on each side, separate, reorder, snap), gesture routing per layout, overview grouping, drop-zone hit testing, divider hit testing and drag, and the settings fallback.
 - Installing on the tablet restarts the Denial session and closes the owner's windows. It happens only with the owner's explicit consent at that moment, asked by the main thread.
 - One commit per finished change, with English kernel-style messages and a `Co-Authored-By:` line. Push `eb/` branches to `origin`, never to `upstream`. Merge into `eb/integration` only after the tablet check.
