@@ -14,6 +14,7 @@ import 'package:denial_flutter_sdk/system_services.dart'
 
 import '../state/reference_shell_controller.dart';
 import '../state/reference_shell_metrics.dart';
+import '../widgets/back_gesture_layer.dart';
 import 'home_drag_controller.dart';
 import 'home_grid_geometry.dart';
 import 'home_icon_locator.dart';
@@ -538,6 +539,19 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
 
   void _animateSearch(double target) => _animateSheet(_search, target);
 
+  /// The system Back over the drawer or search: the keyboard goes first,
+  /// then the sheet.
+  void _sheetBack() {
+    final shell = ref.read(referenceShellProvider.notifier);
+    if (shell.state.edgePanelVisible) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      shell.closeEdgePanel();
+      return;
+    }
+    _animateDrawer(0);
+    _animateSearch(0);
+  }
+
   void _animateSheet(AnimationController sheet, double target) {
     if (sheet.value == target) return;
     unawaited(
@@ -787,6 +801,14 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
                     onDragEnd: _settleSearch,
                     keyboardInset: keyboardInset,
                   ),
+                // Back closes an open sheet: home has no app to go back in.
+                ListenableBuilder(
+                  listenable: Listenable.merge([_drawer, _search]),
+                  builder: (context, _) =>
+                      _drawer.value > 0 || _search.value > 0
+                      ? MobileBackGestureLayer(onBack: _sheetBack)
+                      : const SizedBox.shrink(),
+                ),
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 220),
                   child: _editing

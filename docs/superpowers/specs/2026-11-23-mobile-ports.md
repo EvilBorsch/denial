@@ -189,6 +189,16 @@ handles and Recents.
 - **Touches:** both windows take touches in their halves, dialogs over
   them above them; the divider and the handles are the shell's.
 
+## Other finger improvements (item 4)
+
+- **Back closes the drawer and search.** On home the system Back edge
+  swipe did nothing; with the drawer or the pull-down search open it now
+  closes the on-screen keyboard first, then the sheet, as Android's Back
+  does.
+- Finger targets of the new controls follow iPadOS at the eb18 scale: 64
+  px search rows, 44 px close-all and divider zones, a 96x36 px handle
+  zone.
+
 ## Left out, and why
 
 - Keyboard, touchpad and pointer features (Alt+Tab, the Mac preset, search
