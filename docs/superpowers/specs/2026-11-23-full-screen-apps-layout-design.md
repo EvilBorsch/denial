@@ -174,18 +174,33 @@ The owner installed eb17, and the agent tested it on the tablet (`D:\androidlinu
   - The owner's choice on the search key stands: Alt+F searches, so find-in-app is Ctrl+F. All of these bindings remain editable in Shortcuts.
 - **"Beautiful animations":** the overview, app windows, the switcher and search open and close smoothly. Gesture-driven ones track the fingers and settle with a spring. Strip moves already follow the fingers.
 
-## Mobile presentation ("move the useful parts there too")
+## Mobile presentation ("move the useful parts there too", a full track)
 
-The mobile presentation keeps one full-screen app and Recents (no split screen this round; candidate for later). It gains:
+The owner wants the mobile presentation to get as much of this work as helps to run the tablet, for the best UI/UX on this tablet. It is a full track of this iteration, worked in parallel with the desktop track, not an afterthought.
 
-- The search overlay: from a keyboard shortcut when a keyboard is attached, and a search field in the app drawer. The app drawer is turned on by default if that does not disturb existing home layouts.
-- The app switcher (Alt+Tab) when a keyboard is attached.
-- The Mac preset key translation (it is compositor-wide).
-- Touchpad swipes:
-  - three fingers sideways switch to the neighbouring app, like the bottom pill;
-  - three up open Recents;
-  - four up open the drawer or search.
-- Anything else from this work that clearly helps the mobile presentation and is cheap, at the builder's judgement. List it in the report.
+1. **Audit first.** Compare the mobile shell (home grid, drawer, Recents, bottom pill, edges, shade) with the desktop features of eb17/eb18. Cover both cases: the tablet alone, and with the keyboard cover (keyboard and touchpad). Write the gaps and the chosen ports to `docs/superpowers/specs/2026-11-23-mobile-ports.md`.
+2. **Ports, at least:**
+   - **Search:**
+     - the search overlay from a keyboard shortcut when a keyboard is attached;
+     - a search field in the app drawer;
+     - a gesture: pulling down on the home screen opens search, as on iPadOS;
+     - the drawer on by default, if that does not disturb existing home layouts.
+   - **App switcher:** Alt+Tab when a keyboard is attached.
+   - **Mac preset key translation:** it is compositor-wide.
+   - **Touchpad swipes:**
+     - three fingers sideways switch to the neighbouring app, like the bottom pill;
+     - three up open Recents;
+     - three down open the windows of the current app;
+     - four up open the drawer or search.
+   - **Recents:** windows of one app grouped, with the app name and window titles.
+3. **Split View in the mobile presentation** (two apps side by side on the tablet, as on iPadOS):
+   - choose "split with the current app" from Recents (long press or drag);
+   - drag the divider with a finger;
+   - drag an app off to make it full screen again.
+   - Reuse the compositor's screen/join logic where it fits.
+
+   This comes after the ports in 2. Ship it if it is solid, otherwise report how far it got.
+4. Anything else from this work that clearly helps on the tablet, at the builder's judgement. List it in the report.
 
 ## Delivery
 
