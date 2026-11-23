@@ -532,12 +532,27 @@ fn desktop_single_and_two_finger_input_still_reaches_flutter() {
 }
 
 #[test]
-fn desktop_swipe_rejects_short_diagonal_and_unsupported_motion() {
-    for delta in [(0.0, -90.0), (0.0, 150.0), (150.0, -120.0)] {
+fn desktop_swipe_rejects_short_and_diagonal_motion() {
+    for delta in [(0.0, -90.0), (0.0, 90.0), (150.0, -120.0)] {
         let mut gestures = TouchGestureState::default();
         begin_desktop_swipe(&mut gestures);
         assert!(move_three_contacts(&mut gestures, delta).is_empty());
     }
+}
+
+/// Three fingers down used to be no gesture; the full-screen apps layout
+/// opens the app windows with it.
+#[test]
+fn three_fingers_down_on_the_touchscreen_is_a_swipe_too() {
+    let mut gestures = TouchGestureState::default();
+    begin_desktop_swipe(&mut gestures);
+    assert!(matches!(
+        move_three_contacts(&mut gestures, (0.0, 150.0)).as_slice(),
+        [TouchWindowAction::Swipe {
+            event: TouchpadGestureEvent::Trigger(ShortcutGesture::ThreeFingerSwipeDown),
+            ..
+        }]
+    ));
 }
 
 #[test]

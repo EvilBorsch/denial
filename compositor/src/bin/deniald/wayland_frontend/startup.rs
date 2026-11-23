@@ -396,6 +396,16 @@ impl WaylandFrontend {
             window_layout: create_window_layout(window_layout_kind),
             screen_floats: HashMap::new(),
             #[cfg(feature = "flutter")]
+            last_divider_press: None,
+            #[cfg(feature = "flutter")]
+            touch_divider: None,
+            #[cfg(feature = "flutter")]
+            divider_cursor: None,
+            #[cfg(feature = "flutter")]
+            divider_cursor_changed: false,
+            #[cfg(feature = "flutter")]
+            cursor_beneath_divider: None,
+            #[cfg(feature = "flutter")]
             workspace_drop_preview: None,
             #[cfg(feature = "flutter")]
             input_layout: None,

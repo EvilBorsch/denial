@@ -189,6 +189,9 @@ mod managed_window;
 pub(super) use focus::{restore_shell_keyboard_focus, suspend_keyboard_focus_for_shell};
 #[cfg(feature = "flutter")]
 pub(super) use input::{dispatch_shell_keyboard, reconcile_flutter_pointer_route};
+#[cfg(feature = "flutter")]
+#[path = "wayland_frontend/dividers.rs"]
+mod dividers;
 #[path = "wayland_frontend/input_source.rs"]
 mod input_source;
 #[path = "wayland_frontend/layer_shell.rs"]
@@ -212,6 +215,8 @@ mod scene_input;
 mod screencopy;
 #[path = "wayland_frontend/screens.rs"]
 mod screens;
+#[cfg(feature = "flutter")]
+pub(crate) use dividers::{DividerHit, TouchDivider};
 #[path = "wayland_frontend/startup.rs"]
 mod startup;
 pub(crate) use startup::FrontendConfig;
@@ -527,6 +532,23 @@ pub(super) struct WaylandFrontend {
     /// Floating windows of the full-screen apps layout and the screen each
     /// one stays over.
     screen_floats: HashMap<ObjectId, screens::ScreenFloat>,
+    /// The last press on a split divider, for double clicks and taps.
+    #[cfg(feature = "flutter")]
+    last_divider_press: Option<(
+        super::window_layout::LayoutDivider<ObjectId>,
+        std::time::Instant,
+    )>,
+    /// A finger dragging a split divider.
+    #[cfg(feature = "flutter")]
+    pub(crate) touch_divider: Option<TouchDivider>,
+    /// The resize cursor of the divider under the pointer, shown over what
+    /// the shell or a client asks for, and what they asked for meanwhile.
+    #[cfg(feature = "flutter")]
+    divider_cursor: Option<&'static str>,
+    #[cfg(feature = "flutter")]
+    divider_cursor_changed: bool,
+    #[cfg(feature = "flutter")]
+    cursor_beneath_divider: Option<CursorPublication>,
     #[cfg(feature = "flutter")]
     workspace_drop_preview: Option<window_management::WorkspaceDropPreview>,
     #[cfg(feature = "flutter")]

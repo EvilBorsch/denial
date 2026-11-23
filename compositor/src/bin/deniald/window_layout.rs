@@ -208,6 +208,22 @@ pub(super) struct LayoutScreen<WindowId> {
 /// The most tiles one screen holds: halves, then quarters.
 pub(super) const MAX_SCREEN_TILES: usize = 4;
 
+/// The boundary between the two sides of one split, which a plain pointer
+/// drag or a finger moves.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct LayoutDivider<WindowId> {
+    /// A tile of the tree that holds the split; it finds the tree again.
+    pub(super) owner: WindowId,
+    /// The way from that tree's root to the split: `false` for its first
+    /// side, `true` for its second.
+    pub(super) path: Vec<bool>,
+    /// `Horizontal`: the sides are left and right, the boundary is upright
+    /// and moves along x.
+    pub(super) axis: LayoutAxis,
+    /// The gap between the two sides, in output coordinates.
+    pub(super) rect: Rectangle<i32, Logical>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub(super) struct LayoutResizeRequest<WindowId> {
     pub(super) window: WindowId,
@@ -384,6 +400,34 @@ where
     /// Resize the focused leaf in size coordinates, independent of which side
     /// of its shared boundary it occupies. Layouts select the nearest split.
     fn resize_from_keyboard(&mut self, _request: LayoutKeyboardResizeRequest<WindowId>) -> bool {
+        false
+    }
+
+    /// Every split boundary of one layout space, for dragging. Stacking has
+    /// none; scrolling columns are not splits and have none between them.
+    fn dividers(
+        &self,
+        _space: LayoutSpace,
+        _work_area: Rectangle<i32, Logical>,
+        _gap: i32,
+    ) -> Vec<LayoutDivider<WindowId>> {
+        Vec::new()
+    }
+
+    /// Moves `divider` by `delta` logical pixels along its axis, within the
+    /// split limits (10–90 %) and the tiles' minimum sizes.
+    fn drag_divider(
+        &mut self,
+        _divider: &LayoutDivider<WindowId>,
+        _work_area: Rectangle<i32, Logical>,
+        _gap: i32,
+        _delta: f64,
+    ) -> bool {
+        false
+    }
+
+    /// Returns the split of `divider` to equal sides.
+    fn reset_divider(&mut self, _divider: &LayoutDivider<WindowId>) -> bool {
         false
     }
 
@@ -1074,6 +1118,151 @@ where
         Some(changed)
     }
 
+    /// Collects every split boundary under this node, laid out in `geometry`
+    /// exactly as [`Self::arrange`] lays it out.
+    fn dividers(
+        &self,
+        geometry: Rectangle<i32, Logical>,
+        gap: i32,
+        minimum_sizes: &[(WindowId, Size<i32, Logical>)],
+        owner: &WindowId,
+        path: &mut Vec<bool>,
+        dividers: &mut Vec<LayoutDivider<WindowId>>,
+    ) {
+        let Self::Split {
+            axis,
+            ratio,
+            first,
+            second,
+        } = self
+        else {
+            return;
+        };
+        let axis = resolved_split_axis(*axis, geometry);
+        let (unconstrained_first, unconstrained_second) =
+            split_geometry_on_axis(geometry, gap, *ratio, axis);
+        let (first_geometry, second_geometry) = split_geometry_on_axis_with_minimums(
+            geometry,
+            gap,
+            *ratio,
+            first.minimum_size(unconstrained_first, gap, minimum_sizes),
+            second.minimum_size(unconstrained_second, gap, minimum_sizes),
+            axis,
+        );
+        let rect = match axis {
+            LayoutAxis::Horizontal => {
+                let left = first_geometry.loc.x.saturating_add(first_geometry.size.w);
+                Rectangle::new(
+                    Point::from((left, geometry.loc.y)),
+                    Size::from((second_geometry.loc.x.saturating_sub(left), geometry.size.h)),
+                )
+            }
+            LayoutAxis::Vertical => {
+                let top = first_geometry.loc.y.saturating_add(first_geometry.size.h);
+                Rectangle::new(
+                    Point::from((geometry.loc.x, top)),
+                    Size::from((geometry.size.w, second_geometry.loc.y.saturating_sub(top))),
+                )
+            }
+        };
+        dividers.push(LayoutDivider {
+            owner: owner.clone(),
+            path: path.clone(),
+            axis,
+            rect,
+        });
+        path.push(false);
+        first.dividers(first_geometry, gap, minimum_sizes, owner, path, dividers);
+        path.pop();
+        path.push(true);
+        second.dividers(second_geometry, gap, minimum_sizes, owner, path, dividers);
+        path.pop();
+    }
+
+    /// Moves the split at `path` by `delta` along its axis. Its orientation
+    /// is pinned first, so the drag cannot flip an adaptive split.
+    fn drag_divider(
+        &mut self,
+        path: &[bool],
+        geometry: Rectangle<i32, Logical>,
+        gap: i32,
+        minimum_sizes: &[(WindowId, Size<i32, Logical>)],
+        delta: f64,
+    ) -> bool {
+        let Self::Split {
+            axis,
+            ratio,
+            first,
+            second,
+        } = self
+        else {
+            return false;
+        };
+        let resolved = resolved_split_axis(*axis, geometry);
+        let (unconstrained_first, unconstrained_second) =
+            split_geometry_on_axis(geometry, gap, *ratio, resolved);
+        let first_minimum = first.minimum_size(unconstrained_first, gap, minimum_sizes);
+        let second_minimum = second.minimum_size(unconstrained_second, gap, minimum_sizes);
+        let (first_geometry, second_geometry) = split_geometry_on_axis_with_minimums(
+            geometry,
+            gap,
+            *ratio,
+            first_minimum,
+            second_minimum,
+            resolved,
+        );
+        if let Some((&side, rest)) = path.split_first() {
+            let (child, child_geometry) = if side {
+                (second, second_geometry)
+            } else {
+                (first, first_geometry)
+            };
+            return child.drag_divider(rest, child_geometry, gap, minimum_sizes, delta);
+        }
+        if !delta.is_finite() || delta == 0.0 {
+            return false;
+        }
+        let extent = resolved.main_extent(geometry).max(2);
+        let available = f64::from(extent - gap.clamp(0, extent - 2));
+        let next =
+            ((f64::from(resolved.main_extent(first_geometry)) + delta) / available).clamp(0.1, 0.9);
+        let moved = split_geometry_on_axis_with_minimums(
+            geometry,
+            gap,
+            next,
+            first_minimum,
+            second_minimum,
+            resolved,
+        );
+        if moved == (first_geometry, second_geometry) {
+            return false;
+        }
+        *axis = Some(resolved);
+        *ratio = next;
+        true
+    }
+
+    fn reset_divider(&mut self, path: &[bool]) -> bool {
+        let Self::Split {
+            ratio,
+            first,
+            second,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        match path.split_first() {
+            Some((false, rest)) => first.reset_divider(rest),
+            Some((true, rest)) => second.reset_divider(rest),
+            None => {
+                let changed = (*ratio - 0.5).abs() > f64::EPSILON;
+                *ratio = 0.5;
+                changed
+            }
+        }
+    }
+
     fn swap_windows(&mut self, first: &WindowId, second: &WindowId) {
         match self {
             Self::Window(window) if window == first => *window = second.clone(),
@@ -1255,6 +1444,57 @@ where
             request.delta_y,
         )
         .changed
+    }
+
+    fn dividers(
+        &self,
+        space: LayoutSpace,
+        work_area: Rectangle<i32, Logical>,
+        gap: i32,
+    ) -> Vec<LayoutDivider<WindowId>> {
+        let Some(root) = self.roots.get(&space) else {
+            return Vec::new();
+        };
+        let mut dividers = Vec::new();
+        root.dividers(
+            work_area,
+            gap.max(0),
+            &self.minimum_sizes,
+            root.last_window(),
+            &mut Vec::new(),
+            &mut dividers,
+        );
+        dividers
+    }
+
+    fn drag_divider(
+        &mut self,
+        divider: &LayoutDivider<WindowId>,
+        work_area: Rectangle<i32, Logical>,
+        gap: i32,
+        delta: f64,
+    ) -> bool {
+        let Some(root) = self
+            .roots
+            .values_mut()
+            .find(|root| root.contains(&divider.owner))
+        else {
+            return false;
+        };
+        root.drag_divider(
+            &divider.path,
+            work_area,
+            gap.max(0),
+            &self.minimum_sizes,
+            delta,
+        )
+    }
+
+    fn reset_divider(&mut self, divider: &LayoutDivider<WindowId>) -> bool {
+        self.roots
+            .values_mut()
+            .find(|root| root.contains(&divider.owner))
+            .is_some_and(|root| root.reset_divider(&divider.path))
     }
 
     fn arrange(
@@ -2225,6 +2465,88 @@ where
             .collect()
     }
 
+    /// Each column's tree geometry, as [`Self::arrange`] lays it out.
+    fn column_geometries(
+        &self,
+        work_area: Rectangle<i32, Logical>,
+        gap: i32,
+        minimum_sizes: &[(WindowId, Size<i32, Logical>)],
+        maximum_sizes: &[(WindowId, Size<i32, Logical>)],
+    ) -> Vec<Rectangle<i32, Logical>> {
+        let axis = self.axis;
+        self.columns
+            .iter()
+            .zip(self.column_spans(work_area, gap, minimum_sizes))
+            .map(|(column, (location, width))| {
+                let column_area = if column.maximized {
+                    self.maximize_area_or(work_area)
+                } else {
+                    work_area
+                };
+                let geometry = column.geometry(
+                    axis.tile_geometry(column_area, location, width),
+                    axis,
+                    minimum_sizes,
+                    maximum_sizes,
+                );
+                let minimum = column.root.minimum_size(geometry, gap, minimum_sizes);
+                Rectangle::new(
+                    geometry.loc,
+                    Size::from((
+                        geometry.size.w.max(minimum.w),
+                        geometry.size.h.max(minimum.h),
+                    )),
+                )
+            })
+            .collect()
+    }
+
+    fn dividers(
+        &self,
+        work_area: Rectangle<i32, Logical>,
+        requested_gap: i32,
+        minimum_sizes: &[(WindowId, Size<i32, Logical>)],
+        maximum_sizes: &[(WindowId, Size<i32, Logical>)],
+    ) -> Vec<LayoutDivider<WindowId>> {
+        let gap = requested_gap.max(0);
+        let mut dividers = Vec::new();
+        for (column, geometry) in self.columns.iter().zip(self.column_geometries(
+            work_area,
+            gap,
+            minimum_sizes,
+            maximum_sizes,
+        )) {
+            column.root.dividers(
+                geometry,
+                gap,
+                minimum_sizes,
+                &column.active,
+                &mut Vec::new(),
+                &mut dividers,
+            );
+        }
+        dividers
+    }
+
+    fn drag_divider(
+        &mut self,
+        divider: &LayoutDivider<WindowId>,
+        work_area: Rectangle<i32, Logical>,
+        requested_gap: i32,
+        delta: f64,
+        minimum_sizes: &[(WindowId, Size<i32, Logical>)],
+        maximum_sizes: &[(WindowId, Size<i32, Logical>)],
+    ) -> bool {
+        let gap = requested_gap.max(0);
+        let Some(index) = self.position(&divider.owner) else {
+            return false;
+        };
+        let geometry = self.column_geometries(work_area, gap, minimum_sizes, maximum_sizes)[index];
+        self.columns[index]
+            .root
+            .drag_divider(&divider.path, geometry, gap, minimum_sizes, delta)
+    }
+
     fn screens(
         &self,
         work_area: Rectangle<i32, Logical>,
@@ -2889,6 +3211,43 @@ where
             minimum_sizes,
             self.mode.screens(),
         )
+    }
+
+    fn dividers(
+        &self,
+        space: LayoutSpace,
+        work_area: Rectangle<i32, Logical>,
+        gap: i32,
+    ) -> Vec<LayoutDivider<WindowId>> {
+        self.rows.get(&space).map_or_else(Vec::new, |row| {
+            row.dividers(work_area, gap, &self.minimum_sizes, &self.maximum_sizes)
+        })
+    }
+
+    fn drag_divider(
+        &mut self,
+        divider: &LayoutDivider<WindowId>,
+        work_area: Rectangle<i32, Logical>,
+        gap: i32,
+        delta: f64,
+    ) -> bool {
+        let (rows, minimum_sizes, maximum_sizes) =
+            (&mut self.rows, &self.minimum_sizes, &self.maximum_sizes);
+        rows.values_mut()
+            .find(|row| row.position(&divider.owner).is_some())
+            .is_some_and(|row| {
+                row.drag_divider(divider, work_area, gap, delta, minimum_sizes, maximum_sizes)
+            })
+    }
+
+    fn reset_divider(&mut self, divider: &LayoutDivider<WindowId>) -> bool {
+        self.rows
+            .values_mut()
+            .find_map(|row| {
+                let index = row.position(&divider.owner)?;
+                Some(row.columns[index].root.reset_divider(&divider.path))
+            })
+            .unwrap_or(false)
     }
 
     fn screens(

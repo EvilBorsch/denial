@@ -3221,3 +3221,131 @@ fn other_layouts_have_no_screens() {
         600
     );
 }
+
+// Split dividers.
+
+#[test]
+fn a_split_screen_has_one_divider_in_its_gap() {
+    let mut layout = screens_layout(&[1, 2]);
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Right));
+    let placements = settle(layout.as_mut());
+    let left = geometry_of(&placements, 1);
+    let right = geometry_of(&placements, 2);
+    let dividers = layout.dividers(OUTPUT, screen_area(), SCREEN_GAP);
+    assert_eq!(dividers.len(), 1);
+    assert_eq!(dividers[0].axis, LayoutAxis::Horizontal);
+    assert_eq!(
+        dividers[0].rect,
+        rect(
+            left.loc.x + left.size.w,
+            screen_area().loc.y,
+            right.loc.x - (left.loc.x + left.size.w),
+            screen_area().size.h
+        )
+    );
+    assert_eq!(dividers[0].rect.size.w, SCREEN_GAP);
+    // A screen of its own has nothing to drag.
+    assert!(
+        screens_layout(&[1])
+            .dividers(OUTPUT, screen_area(), SCREEN_GAP)
+            .is_empty()
+    );
+}
+
+#[test]
+fn dragging_a_divider_moves_the_boundary_within_the_split_limits() {
+    let mut layout = screens_layout(&[1, 2]);
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Right));
+    settle(layout.as_mut());
+    let divider = layout.dividers(OUTPUT, screen_area(), SCREEN_GAP).remove(0);
+    let before = geometry_of(&settle(layout.as_mut()), 1).size.w;
+    assert!(layout.drag_divider(&divider, screen_area(), SCREEN_GAP, 100.0));
+    let placements = settle(layout.as_mut());
+    assert_eq!(geometry_of(&placements, 1).size.w, before + 100);
+    // The screen stays whole.
+    let right = geometry_of(&placements, 2);
+    assert_eq!(right.loc.x + right.size.w, screen_area().size.w);
+
+    // Far past the edge stops at 90 %.
+    assert!(layout.drag_divider(&divider, screen_area(), SCREEN_GAP, 5_000.0));
+    let available = f64::from(screen_area().size.w - SCREEN_GAP);
+    assert_eq!(
+        geometry_of(&settle(layout.as_mut()), 1).size.w,
+        (available * 0.9).round() as i32
+    );
+    assert!(!layout.drag_divider(&divider, screen_area(), SCREEN_GAP, 50.0));
+
+    // A double click returns it to equal halves.
+    assert!(layout.reset_divider(&divider));
+    let placements = settle(layout.as_mut());
+    assert_eq!(
+        geometry_of(&placements, 1).size.w,
+        geometry_of(&placements, 2).size.w
+    );
+    assert!(!layout.reset_divider(&divider));
+}
+
+#[test]
+fn quarters_have_a_divider_per_split_and_each_drags_alone() {
+    let mut layout = screens_layout(&[1, 2, 3, 4]);
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Right));
+    assert!(layout.move_beside(&3, &2, LayoutDirection::Down));
+    assert!(layout.move_beside(&4, &1, LayoutDirection::Down));
+    let placements = settle(layout.as_mut());
+    let dividers = layout.dividers(OUTPUT, screen_area(), SCREEN_GAP);
+    assert_eq!(dividers.len(), 3);
+    let nested = dividers
+        .iter()
+        .find(|divider| {
+            divider.axis == LayoutAxis::Vertical
+                && divider.rect.loc.x == geometry_of(&placements, 2).loc.x
+        })
+        .expect("the right column has its own horizontal boundary")
+        .clone();
+    assert!(layout.drag_divider(&nested, screen_area(), SCREEN_GAP, 60.0));
+    let moved = settle(layout.as_mut());
+    assert_eq!(
+        geometry_of(&moved, 2).size.h,
+        geometry_of(&placements, 2).size.h + 60
+    );
+    // The left column's boundary stays put.
+    assert_eq!(geometry_of(&moved, 1), geometry_of(&placements, 1));
+    assert_eq!(geometry_of(&moved, 4), geometry_of(&placements, 4));
+}
+
+#[test]
+fn dwindle_and_scrolling_splits_have_dividers_but_scrolling_columns_do_not() {
+    let work_area = rect(0, 0, 1000, 600);
+    let mut dwindle = DwindleLayout::<u64>::default();
+    for (window, anchor) in [(1, None), (2, Some(1))] {
+        dwindle.insert(LayoutInsertion {
+            window,
+            space: OUTPUT,
+            anchor,
+        });
+    }
+    let dividers = dwindle.dividers(OUTPUT, work_area, 10);
+    assert_eq!(dividers.len(), 1);
+    assert!(dwindle.drag_divider(&dividers[0], work_area, 10, -95.0));
+    assert_eq!(
+        dwindle.arrange(OUTPUT, work_area, 10)[0].geometry.size.w,
+        400
+    );
+
+    let mut scrolling = ScrollingLayout::<u64>::default();
+    for window in 1..=3 {
+        scrolling.insert(LayoutInsertion {
+            window,
+            space: OUTPUT,
+            anchor: None,
+        });
+        prepare_scrolling(&mut scrolling, work_area, 10, LayoutAxis::Horizontal);
+    }
+    assert!(scrolling.dividers(OUTPUT, work_area, 10).is_empty());
+    assert!(scrolling.move_beside(&1, &2, LayoutDirection::Down));
+    prepare_scrolling(&mut scrolling, work_area, 10, LayoutAxis::Horizontal);
+    let dividers = scrolling.dividers(OUTPUT, work_area, 10);
+    assert_eq!(dividers.len(), 1);
+    assert_eq!(dividers[0].axis, LayoutAxis::Vertical);
+    assert!(scrolling.drag_divider(&dividers[0], work_area, 10, 40.0));
+}

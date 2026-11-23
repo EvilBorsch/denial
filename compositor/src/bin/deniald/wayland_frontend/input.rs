@@ -1195,7 +1195,10 @@ fn route_shell_key_transition(
 }
 
 #[cfg(feature = "flutter")]
-fn region_accepts_input(region: &InputWindowRegion, position: Point<f64, Logical>) -> bool {
+pub(super) fn region_accepts_input(
+    region: &InputWindowRegion,
+    position: Point<f64, Logical>,
+) -> bool {
     region.rect.contains(position.x, position.y)
         && region.visible()
         && region.hit_test_enabled()

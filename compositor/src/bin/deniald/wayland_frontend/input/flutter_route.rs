@@ -273,6 +273,13 @@ pub(super) fn process_flutter_input_event(
                     deck_touch,
                 )
             };
+            if !deck_touch
+                && !software_keyboard_touch
+                && !secure_locked
+                && begin_touch_divider(state, slot, position)
+            {
+                return true;
+            }
             if deck_touch && !secure_locked {
                 let directions = swipe_scroll_directions(state, None);
                 let update = state.input_deck.screen_gestures.down(
@@ -394,6 +401,15 @@ pub(super) fn process_flutter_input_event(
                 };
                 (position, position - frontend.atlas_origin)
             };
+            if state
+                .frontend()
+                .touch_divider
+                .as_ref()
+                .is_some_and(|drag| drag.slot == slot)
+            {
+                drag_touch_divider(state, position);
+                return true;
+            }
             let deck_contact = state.input_deck.screen_gestures.contains(slot);
             if deck_contact {
                 let update = state.input_deck.screen_gestures.motion(
@@ -467,6 +483,14 @@ pub(super) fn process_flutter_input_event(
         } => {
             let slot = i32::from(touch_event.slot());
             state.frontend_mut().edge_swipe_candidates.remove(&slot);
+            if let Some(drag) = state
+                .frontend_mut()
+                .touch_divider
+                .take_if(|drag| drag.slot == slot)
+            {
+                end_touch_divider(state, drag);
+                return true;
+            }
             let deck_contact = state.input_deck.screen_gestures.contains(slot);
             if deck_contact {
                 let update =
@@ -538,6 +562,14 @@ pub(super) fn process_flutter_input_event(
         } => {
             let slot = i32::from(touch_event.slot());
             state.frontend_mut().edge_swipe_candidates.remove(&slot);
+            if let Some(drag) = state
+                .frontend_mut()
+                .touch_divider
+                .take_if(|drag| drag.slot == slot)
+            {
+                end_touch_divider(state, drag);
+                return true;
+            }
             let deck_contact = state.input_deck.screen_gestures.contains(slot);
             if deck_contact {
                 let update =
@@ -636,6 +668,13 @@ pub(in super::super) fn route_pointer_motion(
         .seat
         .get_pointer()
         .expect("seat has no pointer");
+    if !pointer.is_grabbed() {
+        let frontend = state.frontend_mut();
+        let shape = frontend.layout_divider_at(position).map(|hit| hit.cursor());
+        if frontend.set_divider_cursor(shape) {
+            state.scene_sync.mark_dirty();
+        }
+    }
     if under.is_none() && pointer.current_focus().is_none() && !pointer.is_grabbed() {
         // Flutter owns this part of the scene and no Wayland client can
         // observe relative or absolute pointer traffic here. Once the leave
@@ -1139,6 +1178,135 @@ pub(super) fn begin_local_super_pointer_grab(
     true
 }
 
+/// A first finger on a split divider drags it; a double tap evens the split
+/// out. Touches that start elsewhere, or join others already down, keep
+/// their own routes.
+#[cfg(feature = "flutter")]
+fn begin_touch_divider(state: &mut RuntimeState, slot: i32, position: Point<f64, Logical>) -> bool {
+    let frontend = state.frontend_mut();
+    if frontend.touch_divider.is_some()
+        || !frontend.client_touch_routes.is_empty()
+        || !frontend.flutter_touch_slots.is_empty()
+    {
+        return false;
+    }
+    let Some(hit) = frontend.layout_divider_at(position) else {
+        return false;
+    };
+    if frontend.note_divider_press(&hit, std::time::Instant::now()) {
+        let changed = state.frontend_mut().reset_layout_divider(&hit);
+        for (window, geometry) in changed {
+            super::super::queue_transient_window_placement(
+                state,
+                &window,
+                geometry,
+                WindowPlacementPhase::End,
+                WindowPlacementChange::Resize,
+            );
+        }
+        state.scene_sync.mark_dirty();
+    }
+    let frontend = state.frontend_mut();
+    let hit = frontend.layout_divider_at(position).unwrap_or(hit);
+    frontend.touch_divider = Some(super::super::TouchDivider {
+        slot,
+        start_boundary: hit.boundary(),
+        start_along: hit.along(position),
+        hit,
+        moved: Vec::new(),
+    });
+    true
+}
+
+#[cfg(feature = "flutter")]
+fn drag_touch_divider(state: &mut RuntimeState, position: Point<f64, Logical>) {
+    let Some(drag) = state.frontend().touch_divider.clone() else {
+        return;
+    };
+    let boundary = drag.start_boundary + drag.hit.along(position) - drag.start_along;
+    let changed = state
+        .frontend_mut()
+        .drag_layout_divider_to(&drag.hit, boundary);
+    if changed.is_empty() {
+        return;
+    }
+    for (window, geometry) in changed {
+        if let Some(drag) = state.frontend_mut().touch_divider.as_mut()
+            && !drag.moved.contains(&window)
+        {
+            drag.moved.push(window.clone());
+        }
+        super::super::queue_transient_window_placement(
+            state,
+            &window,
+            geometry,
+            WindowPlacementPhase::Update,
+            WindowPlacementChange::Resize,
+        );
+    }
+    state.scene_sync.mark_dirty();
+}
+
+#[cfg(feature = "flutter")]
+fn end_touch_divider(state: &mut RuntimeState, drag: super::super::TouchDivider) {
+    for window in drag.moved {
+        let geometry = state.frontend().window_geometry_target(&window);
+        super::super::queue_transient_window_placement(
+            state,
+            &window,
+            geometry,
+            WindowPlacementPhase::End,
+            WindowPlacementChange::Resize,
+        );
+    }
+    state.scene_sync.mark_dirty();
+}
+
+/// Starts dragging the split divider under the pointer, if there is one.
+/// A second press on it within a double-click time evens the split out
+/// first.
+#[cfg(feature = "flutter")]
+fn begin_divider_grab(state: &mut RuntimeState, button: u32, serial: Serial) -> bool {
+    let position = state.frontend().pointer_location;
+    let Some(hit) = state.frontend().layout_divider_at(position) else {
+        return false;
+    };
+    let double = state
+        .frontend_mut()
+        .note_divider_press(&hit, std::time::Instant::now());
+    if double {
+        let changed = state.frontend_mut().reset_layout_divider(&hit);
+        for (window, geometry) in changed {
+            super::super::queue_transient_window_placement(
+                state,
+                &window,
+                geometry,
+                WindowPlacementPhase::End,
+                WindowPlacementChange::Resize,
+            );
+        }
+    }
+    // The boundary may have moved: drag it from where it is now.
+    let hit = state.frontend().layout_divider_at(position).unwrap_or(hit);
+    let start_data = GrabStartData {
+        focus: None,
+        button,
+        location: position,
+    };
+    let frontend = state.frontend_mut();
+    frontend.set_compositor_pointer_grab_active(true);
+    frontend.set_divider_cursor(Some(hit.cursor()));
+    let pointer = frontend.seat.get_pointer().expect("seat has no pointer");
+    pointer.set_grab(
+        state,
+        super::super::super::window_grab::DividerGrab::new(start_data, hit),
+        serial,
+        Focus::Clear,
+    );
+    state.scene_sync.mark_dirty();
+    true
+}
+
 #[cfg(feature = "flutter")]
 pub(super) fn begin_super_pointer_grab(
     state: &mut RuntimeState,
@@ -1407,7 +1575,16 @@ pub(in super::super) fn route_pointer_button(
     } else {
         false
     };
-    if began_super_grab {
+    let began_divider_grab = !began_super_grab
+        && !pointer_grabbed
+        && !logo
+        && !secure_locked
+        && !flutter_captured
+        && button_state == ButtonState::Pressed
+        && button_code == BTN_LEFT
+        && state.frontend().client_pointer_capture.is_none()
+        && begin_divider_grab(state, button_code, serial);
+    if began_super_grab || began_divider_grab {
         update_pressed_buttons(
             &mut state.frontend_mut().wayland_pointer_buttons,
             button_code,

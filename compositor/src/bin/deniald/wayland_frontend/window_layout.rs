@@ -736,7 +736,7 @@ impl WaylandFrontend {
         })
     }
 
-    fn resize_layout_window_with(
+    pub(super) fn resize_layout_window_with(
         &mut self,
         window: &Window,
         resize: impl FnOnce(
@@ -1409,7 +1409,7 @@ impl WaylandFrontend {
         }
     }
 
-    fn window_for_layout_id(&self, window_id: &ObjectId) -> Option<Window> {
+    pub(super) fn window_for_layout_id(&self, window_id: &ObjectId) -> Option<Window> {
         self.space.elements().find_map(|window| {
             (self.window_root_surface(window).map(|root| root.id()) == Some(window_id.clone()))
                 .then(|| window.clone())
@@ -1583,7 +1583,7 @@ impl WaylandFrontend {
         changed || removed_shell_overlay
     }
 
-    fn window_has_constrained_state(&self, window: &Window) -> bool {
+    pub(super) fn window_has_constrained_state(&self, window: &Window) -> bool {
         #[cfg(feature = "flutter")]
         {
             let root = self.window_root_surface(window);

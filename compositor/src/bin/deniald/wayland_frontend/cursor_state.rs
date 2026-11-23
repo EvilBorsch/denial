@@ -227,13 +227,36 @@ impl WaylandFrontend {
 
     #[cfg(feature = "flutter")]
     pub(crate) fn take_cursor_state_update(&mut self) -> Option<CursorPublication> {
-        let state = if std::mem::take(&mut self.pending_drag_icon) {
-            self.pending_cursor_state
-                .take()
-                .unwrap_or_else(|| self.resolved_client_cursor_publication())
+        let wanted = if std::mem::take(&mut self.pending_drag_icon) {
+            Some(
+                self.pending_cursor_state
+                    .take()
+                    .unwrap_or_else(|| self.resolved_client_cursor_publication()),
+            )
         } else {
-            self.pending_cursor_state.take()?
+            self.pending_cursor_state.take()
         };
+        let divider_changed = std::mem::take(&mut self.divider_cursor_changed);
+        if wanted.is_none() && !divider_changed {
+            return None;
+        }
+        if let Some(wanted) = wanted {
+            self.cursor_beneath_divider = Some(wanted);
+        }
+        // A split divider's resize cursor stands over what the shell or a
+        // client asks for, which returns when the pointer leaves it.
+        let state = match self.divider_cursor {
+            Some(shape) if !self.clipboard_drag_active && !self.client_drag_active => {
+                CursorPublication::Named(shape)
+            }
+            _ => self
+                .cursor_beneath_divider
+                .clone()
+                .unwrap_or(CursorPublication::Named("default")),
+        };
+        if divider_changed && self.published_cursor_state.as_ref() == Some(&state) {
+            return None;
+        }
         self.published_cursor_state = Some(state.clone());
         Some(state)
     }

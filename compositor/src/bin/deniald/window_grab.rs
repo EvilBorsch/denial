@@ -866,6 +866,112 @@ impl PointerGrab<RuntimeState> for TileResizeGrab {
     }
 }
 
+/// A plain left-button drag of a split divider. The boundary follows the
+/// pointer from where it was pressed, stopping at the split's limits; it
+/// does not drift when the pointer comes back from past a limit.
+#[cfg(feature = "flutter")]
+pub(super) struct DividerGrab {
+    start_data: GrabStartData<RuntimeState>,
+    hit: super::wayland_frontend::DividerHit,
+    start_boundary: f64,
+    start_along: f64,
+    affected_windows: Vec<Window>,
+}
+
+#[cfg(feature = "flutter")]
+impl DividerGrab {
+    pub(super) fn new(
+        start_data: GrabStartData<RuntimeState>,
+        hit: super::wayland_frontend::DividerHit,
+    ) -> Self {
+        let start_along = hit.along(start_data.location);
+        Self {
+            start_boundary: hit.boundary(),
+            start_along,
+            start_data,
+            hit,
+            affected_windows: Vec::new(),
+        }
+    }
+}
+
+#[cfg(feature = "flutter")]
+impl PointerGrab<RuntimeState> for DividerGrab {
+    fn motion(
+        &mut self,
+        data: &mut RuntimeState,
+        handle: &mut PointerInnerHandle<'_, RuntimeState>,
+        _focus: Option<(PointerFocus, Point<f64, Logical>)>,
+        event: &MotionEvent,
+    ) {
+        handle.motion(data, None, event);
+        if !event.location.x.is_finite() || !event.location.y.is_finite() {
+            return;
+        }
+        let boundary = self.start_boundary + self.hit.along(event.location) - self.start_along;
+        let changed = data
+            .frontend_mut()
+            .drag_layout_divider_to(&self.hit, boundary);
+        if changed.is_empty() {
+            return;
+        }
+        for (window, geometry) in changed {
+            if !self.affected_windows.contains(&window) {
+                self.affected_windows.push(window.clone());
+            }
+            super::wayland_frontend::queue_transient_window_placement(
+                data,
+                &window,
+                geometry,
+                WindowPlacementPhase::Update,
+                WindowPlacementChange::Resize,
+            );
+        }
+        data.scene_sync.mark_dirty();
+    }
+
+    fn button(
+        &mut self,
+        data: &mut RuntimeState,
+        handle: &mut PointerInnerHandle<'_, RuntimeState>,
+        event: &ButtonEvent,
+    ) {
+        if event.state == ButtonState::Released
+            && !handle.current_pressed().contains(&self.start_data.button)
+        {
+            handle.unset_grab(self, data, event.serial, event.time, true);
+        }
+    }
+
+    forward_pointer_events!();
+
+    fn start_data(&self) -> &GrabStartData<RuntimeState> {
+        &self.start_data
+    }
+
+    fn unset(&mut self, data: &mut RuntimeState) {
+        let frontend = data.frontend_mut();
+        frontend.set_compositor_pointer_grab_active(false);
+        // The next motion shows the divider cursor again if it is still over
+        // a divider.
+        frontend.set_divider_cursor(None);
+        for window in self.affected_windows.clone() {
+            if !window_is_mapped(data, &window) {
+                continue;
+            }
+            let geometry = data.frontend().window_geometry_target(&window);
+            super::wayland_frontend::queue_transient_window_placement(
+                data,
+                &window,
+                geometry,
+                WindowPlacementPhase::End,
+                WindowPlacementChange::Resize,
+            );
+        }
+        data.scene_sync.mark_dirty();
+    }
+}
+
 #[derive(Clone, Copy)]
 pub(super) struct ResizeEdges {
     top: bool,
