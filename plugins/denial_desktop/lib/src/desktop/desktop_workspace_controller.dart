@@ -1246,6 +1246,7 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
     _overviewDragOrigins[objectId] = (frame: previewFrame, z: placement.z);
     _overviewDropSlot = null;
     _overviewDropWorkspace = null;
+    _screensDrop = null;
     final next = Map<int, DesktopWindowPlacement>.of(state.placements);
     next[objectId] = placement.copyWith(z: state.nextZ, dragging: true);
     state = state.copyWith(placements: next, nextZ: state.nextZ + 1);
@@ -1373,6 +1374,10 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
       if (_overviewDropSlot?.objectId == objectId) {
         _overviewDropSlot = null;
       }
+      // The screens overview's drop belongs to this drag. Kept, its
+      // highlight would stay on screen in the old arrangement's place, an
+      // empty card frame, after the compositor rearranges the strip.
+      _screensDrop = null;
       state = state.copyWith(
         placements: next,
         overview: _rearrangedWorkspaceOverview(next, overview) ?? overview,
