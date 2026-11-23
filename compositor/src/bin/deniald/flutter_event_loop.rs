@@ -983,7 +983,7 @@ pub(super) fn run_flutter_event_loop(
             }
         },
     )?;
-    events.lid = lid_switch::LidSwitch::new(lid_readings);
+    events.lid = lid_switch::LidSwitch::new(lid_readings, output_configuration.lid_closed);
     events.synchronize_flutter_pointer_position();
     let (scheduler, frame_scheduler) = create_frame_schedulers(
         drm,
