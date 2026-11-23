@@ -1594,3 +1594,73 @@ fn screens_layout_turns_workspaces_off_but_keeps_the_users_choice() {
     );
     assert!(manager.workspace_settings().enabled);
 }
+
+#[test]
+fn the_shortcut_preset_is_its_own_section_older_releases_skip() {
+    use crate::native_shortcut::ShortcutPreset;
+
+    let temporary = TemporaryDirectory::new("settings-shortcut-preset");
+    let path = temporary.settings_path();
+    let mut manager = SettingsManager::load_path(path.clone()).unwrap();
+    assert_eq!(manager.shortcut_preset(), ShortcutPreset::Standard);
+    let before: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+
+    // Settings writes it through the shell document, as any other key.
+    let update = manager
+        .prepare_shell_update(
+            manager.revision(),
+            &shell_document(serde_json::json!({
+                "appearance": {"colorSchemePreference": "preferDark"},
+                "shortcuts": {"preset": "mac"}
+            })),
+        )
+        .unwrap();
+    manager.commit(update).unwrap();
+    assert_eq!(manager.shortcut_preset(), ShortcutPreset::Mac);
+
+    // On disk it is one new top-level section. Releases up to eb17 read only
+    // the sections they know (and keep the rest), and none of the sections
+    // they parse strictly (keyboard, mouse, touchpad, color) changed.
+    let file: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(file["shortcuts"], serde_json::json!({"preset": "mac"}));
+    for section in ["keyboard", "mouse", "touchpad", "color"] {
+        assert_eq!(file[section], before[section], "{section}");
+    }
+    serde_json::from_value::<KeyboardSettings>(file["keyboard"].clone()).unwrap();
+    serde_json::from_value::<MouseSettings>(file["mouse"].clone()).unwrap();
+    serde_json::from_value::<TouchpadSettings>(file["touchpad"].clone()).unwrap();
+    serde_json::from_value::<ColorSettings>(file["color"].clone()).unwrap();
+
+    // This release reads it back.
+    let reloaded = SettingsManager::load_path(path.clone()).unwrap();
+    assert_eq!(reloaded.shortcut_preset(), ShortcutPreset::Mac);
+}
+
+#[test]
+fn an_unknown_shortcut_preset_reads_as_the_standard_keys() {
+    use crate::native_shortcut::ShortcutPreset;
+
+    let temporary = TemporaryDirectory::new("settings-shortcut-preset-unknown");
+    let path = temporary.settings_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    for preset in [
+        serde_json::json!("windows"),
+        serde_json::json!(true),
+        serde_json::json!(null),
+    ] {
+        fs::write(
+            &path,
+            serde_json::to_vec(&serde_json::json!({
+                "version": SETTINGS_SCHEMA_VERSION,
+                "revision": 3,
+                "shortcuts": {"preset": preset}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        // The file loads: a value from a newer release rejects nothing.
+        let manager = SettingsManager::load_path(path.clone()).unwrap();
+        assert_eq!(manager.revision(), 3);
+        assert_eq!(manager.shortcut_preset(), ShortcutPreset::Standard);
+    }
+}

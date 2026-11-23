@@ -94,11 +94,225 @@ const SHORTCUT_V10_ADDITIONS: &[(&str, ShortcutAction)] = &[
 const SHORTCUT_V12_PLUGIN_ADDITIONS: &[(&str, &str)] =
     &[("Super+Alt+P", crate::plugin_actions::COLOR_TUNING_ACTION)];
 
+/// Actions deniald performs itself that releases up to eb17 do not know.
+///
+/// A shortcut names one as a plugin action in the `deniald` namespace, so
+/// the shortcut file keeps schema version 12: an older `deniald` reads it,
+/// finds no such action in its catalog and leaves the key to the app, where
+/// an unknown `denialAction` would make it discard the user's whole file.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum BuiltinAction {
+    /// The app switcher: hold the modifier, Tab steps through the apps.
+    AppSwitcher,
+    /// The app switcher on the windows of the selected app (Alt+`).
+    AppWindowSwitcher,
+    /// Search over open windows and apps.
+    Search,
+    /// Minimizes every window of the focused app, as ⌘H hides an app.
+    HideApplication,
+    /// A screenshot of the whole screen.
+    CaptureScreen,
+    /// Every window of the focused app (the full-screen apps layout's view).
+    AppWindows,
+    /// Not a shortcut: the keys reach the app. It switches off one of the
+    /// preset's shortcuts.
+    SendToApp,
+}
+
+impl BuiltinAction {
+    pub(super) const ALL: [Self; 7] = [
+        Self::AppSwitcher,
+        Self::AppWindowSwitcher,
+        Self::Search,
+        Self::HideApplication,
+        Self::CaptureScreen,
+        Self::AppWindows,
+        Self::SendToApp,
+    ];
+
+    pub(super) const fn id(self) -> &'static str {
+        match self {
+            Self::AppSwitcher => "deniald.appSwitcher",
+            Self::AppWindowSwitcher => "deniald.appWindowSwitcher",
+            Self::Search => "deniald.search",
+            Self::HideApplication => "deniald.hideApplication",
+            Self::CaptureScreen => "deniald.captureScreen",
+            Self::AppWindows => "deniald.appWindows",
+            Self::SendToApp => "deniald.sendToApp",
+        }
+    }
+
+    pub(super) fn from_id(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|action| action.id() == id)
+    }
+
+    /// The English label; Settings translates it.
+    pub(super) const fn label(self) -> &'static str {
+        match self {
+            Self::AppSwitcher => "Switch apps",
+            Self::AppWindowSwitcher => "Switch windows of the app",
+            Self::Search => "Search",
+            Self::HideApplication => "Hide the app",
+            Self::CaptureScreen => "Screenshot of the screen",
+            Self::AppWindows => "Windows of the app",
+            Self::SendToApp => "Send to the app",
+        }
+    }
+
+    pub(super) fn target(self) -> ShortcutTarget {
+        ShortcutTarget::PluginAction {
+            id: self.id().to_owned(),
+        }
+    }
+
+    /// The catalog entries Settings shows beside the shell's actions.
+    pub(super) fn descriptors() -> Vec<crate::plugin_actions::ActionDescriptor> {
+        Self::ALL
+            .into_iter()
+            .map(|action| crate::plugin_actions::ActionDescriptor {
+                id: action.id().to_owned(),
+                label: action.label().to_owned(),
+                description: String::new(),
+                provider: "Denial".to_owned(),
+            })
+            .collect()
+    }
+}
+
+/// Which keys the shell uses: `shortcuts.preset` in the settings file.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(super) enum ShortcutPreset {
+    /// Super is the shell's key; Alt+Tab switches apps as on a PC.
+    #[default]
+    Standard,
+    /// "Like a Mac": Alt is ⌘ and Super is ⌥ (`mac_keys`), and the shell's
+    /// shortcuts below are on Alt.
+    Mac,
+}
+
+impl ShortcutPreset {
+    pub(super) const fn settings_name(self) -> &'static str {
+        match self {
+            Self::Standard => "standard",
+            Self::Mac => "mac",
+        }
+    }
+
+    pub(super) fn from_settings_name(name: &str) -> Option<Self> {
+        match name {
+            "standard" => Some(Self::Standard),
+            "mac" => Some(Self::Mac),
+            _ => None,
+        }
+    }
+
+    /// The shortcuts the preset brings. They are not written to the
+    /// shortcut file: a binding of the same keys there replaces one of
+    /// them, and one to [`BuiltinAction::SendToApp`] switches it off.
+    fn bindings(self) -> &'static [(&'static str, PresetTarget)] {
+        match self {
+            Self::Standard => STANDARD_PRESET,
+            Self::Mac => MAC_PRESET,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum PresetTarget {
+    Denial(ShortcutAction),
+    Builtin(BuiltinAction),
+}
+
+impl PresetTarget {
+    fn target(self) -> ShortcutTarget {
+        match self {
+            Self::Denial(action) => ShortcutTarget::DenialAction { action },
+            Self::Builtin(action) => action.target(),
+        }
+    }
+}
+
+/// Every preset's shortcuts. Shift+Tab and Shift+` step back on their own.
+const STANDARD_PRESET: &[(&str, PresetTarget)] = &[
+    ("Alt+Tab", PresetTarget::Builtin(BuiltinAction::AppSwitcher)),
+    (
+        "Alt+Grave",
+        PresetTarget::Builtin(BuiltinAction::AppWindowSwitcher),
+    ),
+    // Super+F is full screen and Super+Space the keyboard layout; Super+S
+    // searches, as Win+S does on Windows.
+    ("Super+S", PresetTarget::Builtin(BuiltinAction::Search)),
+];
+
+/// "Like a Mac": ⌘ is the physical Alt. The owner's choices: Alt+F
+/// searches (find in an app is Ctrl+F), Alt+Space switches the keyboard
+/// layout. Ctrl+←/→/↑/↓ move between screens and open the overview and the
+/// app's windows, as they do between Spaces on a Mac; ⌥ (Super) with the
+/// arrows edits text instead.
+const MAC_PRESET: &[(&str, PresetTarget)] = &[
+    ("Alt+Tab", PresetTarget::Builtin(BuiltinAction::AppSwitcher)),
+    (
+        "Alt+Grave",
+        PresetTarget::Builtin(BuiltinAction::AppWindowSwitcher),
+    ),
+    ("Super+S", PresetTarget::Builtin(BuiltinAction::Search)),
+    ("Alt+F", PresetTarget::Builtin(BuiltinAction::Search)),
+    (
+        "Alt+Space",
+        PresetTarget::Denial(ShortcutAction::NextKeyboardLayout),
+    ),
+    (
+        "Alt+Shift+Space",
+        PresetTarget::Denial(ShortcutAction::PreviousKeyboardLayout),
+    ),
+    (
+        "Alt+Shift+3",
+        PresetTarget::Builtin(BuiltinAction::CaptureScreen),
+    ),
+    (
+        "Alt+Shift+4",
+        PresetTarget::Denial(ShortcutAction::CaptureRegion),
+    ),
+    (
+        "Ctrl+Alt+Q",
+        PresetTarget::Denial(ShortcutAction::LockScreen),
+    ),
+    (
+        "Ctrl+Alt+F",
+        PresetTarget::Denial(ShortcutAction::ToggleFullscreen),
+    ),
+    (
+        "Alt+M",
+        PresetTarget::Denial(ShortcutAction::MinimizeWindow),
+    ),
+    (
+        "Alt+H",
+        PresetTarget::Builtin(BuiltinAction::HideApplication),
+    ),
+    ("Ctrl+Left", PresetTarget::Denial(ShortcutAction::FocusLeft)),
+    (
+        "Ctrl+Right",
+        PresetTarget::Denial(ShortcutAction::FocusRight),
+    ),
+    (
+        "Ctrl+Up",
+        PresetTarget::Denial(ShortcutAction::OpenOverview),
+    ),
+    (
+        "Ctrl+Down",
+        PresetTarget::Builtin(BuiltinAction::AppWindows),
+    ),
+];
+
 const KEY_ESCAPE: u32 = 1;
 const KEY_BACKSPACE: u32 = 14;
 const KEY_TAB: u32 = 15;
+const KEY_GRAVE: u32 = 41;
 const KEY_SPACE: u32 = 57;
 const KEY_UP: u32 = 103;
+const KEY_LEFT: u32 = 105;
+const KEY_RIGHT: u32 = 106;
+const KEY_DOWN: u32 = 108;
 const KEY_MUTE: u32 = 113;
 const KEY_VOLUME_DOWN: u32 = 114;
 const KEY_VOLUME_UP: u32 = 115;
@@ -526,6 +740,8 @@ pub(super) struct ShortcutManager {
     path: PathBuf,
     file: ShortcutFile,
     persisted_bytes: Vec<u8>,
+    /// `shortcuts.preset` of the settings: its shortcuts join the file's.
+    preset: ShortcutPreset,
 }
 
 impl ShortcutManager {
@@ -573,6 +789,7 @@ impl ShortcutManager {
             path,
             file,
             persisted_bytes: bytes,
+            preset: ShortcutPreset::Standard,
         })
     }
 
@@ -584,9 +801,40 @@ impl ShortcutManager {
         &self.file
     }
 
+    pub(super) fn preset(&self) -> ShortcutPreset {
+        self.preset
+    }
+
+    /// Follows `shortcuts.preset`. The running engine follows it through
+    /// [`ShortcutEngine::set_preset`].
+    pub(super) fn set_preset(&mut self, preset: ShortcutPreset) {
+        self.preset = preset;
+    }
+
     pub(super) fn engine(&self) -> ShortcutEngine {
-        ShortcutEngine::from_file(&self.file)
+        ShortcutEngine::from_file_with_preset(&self.file, self.preset)
             .expect("loaded shortcut file was validated before engine construction")
+    }
+
+    /// The preset's shortcuts in effect: those on keys the file leaves free.
+    pub(super) fn preset_shortcuts(&self) -> Vec<ShortcutBinding> {
+        let Ok(compiled) = compile_shortcuts(&self.file) else {
+            return Vec::new();
+        };
+        compile_preset(&compiled, self.preset)
+            .into_iter()
+            .map(|binding| ShortcutBinding {
+                shortcut: binding.trigger.canonical,
+                target: binding.target,
+            })
+            .collect()
+    }
+
+    /// The preset's shortcut in effect on `trigger`.
+    fn preset_shortcut(&self, trigger: &ShortcutTrigger) -> Option<ShortcutBinding> {
+        self.preset_shortcuts().into_iter().find(|binding| {
+            parse_shortcut(&binding.shortcut).is_ok_and(|preset| &preset == trigger)
+        })
     }
 
     pub(super) fn validate_shortcut(
@@ -610,16 +858,22 @@ impl ShortcutManager {
         let existing = existing_shortcut
             .and_then(|shortcut| parse_shortcut(shortcut).ok())
             .map(|trigger| trigger.canonical);
-        let conflict = self.file.shortcuts.iter().find(|binding| {
-            let Ok(configured) = parse_shortcut(&binding.shortcut) else {
-                return false;
-            };
-            configured == trigger && existing.as_deref() != Some(configured.canonical.as_str())
-        });
+        let conflict = self
+            .file
+            .shortcuts
+            .iter()
+            .cloned()
+            .chain(self.preset_shortcuts())
+            .find(|binding| {
+                let Ok(configured) = parse_shortcut(&binding.shortcut) else {
+                    return false;
+                };
+                configured == trigger && existing.as_deref() != Some(configured.canonical.as_str())
+            });
         match conflict {
             Some(binding) => ShortcutValidation::Conflict {
                 canonical: trigger.canonical,
-                binding: binding.clone(),
+                binding,
             },
             None => ShortcutValidation::Valid {
                 canonical: trigger.canonical,
@@ -646,17 +900,33 @@ impl ShortcutManager {
         binding: ShortcutBinding,
     ) -> Result<PreparedShortcutUpdate, ShortcutError> {
         self.check_revision(expected_revision)?;
-        let existing = parse_shortcut(existing_shortcut)?.canonical;
+        let existing_trigger = parse_shortcut(existing_shortcut)?;
+        let existing = existing_trigger.canonical.clone();
         let binding = canonical_binding(binding)?;
         let mut file = self.file.clone();
-        let index = file
+        if let Some(index) = file
             .shortcuts
             .iter()
             .position(|configured| configured.shortcut == existing)
-            .ok_or_else(|| {
-                ShortcutError::Missing(format!("shortcut {existing:?} does not exist"))
-            })?;
-        file.shortcuts[index] = binding;
+        {
+            file.shortcuts[index] = binding;
+            return self.prepare(file);
+        }
+        // A preset's shortcut: the file's binding replaces it, and where it
+        // moved to other keys, its own keys go to the app again.
+        if self.preset_shortcut(&existing_trigger).is_none() {
+            return Err(ShortcutError::Missing(format!(
+                "shortcut {existing:?} does not exist"
+            )));
+        }
+        let moved = binding.shortcut != existing;
+        file.shortcuts.push(binding);
+        if moved {
+            file.shortcuts.push(ShortcutBinding {
+                shortcut: existing,
+                target: BuiltinAction::SendToApp.target(),
+            });
+        }
         self.prepare(file)
     }
 
@@ -666,16 +936,27 @@ impl ShortcutManager {
         shortcut: &str,
     ) -> Result<PreparedShortcutUpdate, ShortcutError> {
         self.check_revision(expected_revision)?;
-        let canonical = parse_shortcut(shortcut)?.canonical;
+        let trigger = parse_shortcut(shortcut)?;
+        let canonical = trigger.canonical.clone();
         let mut file = self.file.clone();
-        let index = file
+        if let Some(index) = file
             .shortcuts
             .iter()
             .position(|binding| binding.shortcut == canonical)
-            .ok_or_else(|| {
-                ShortcutError::Missing(format!("shortcut {canonical:?} does not exist"))
-            })?;
-        file.shortcuts.remove(index);
+        {
+            file.shortcuts.remove(index);
+            return self.prepare(file);
+        }
+        // A preset's shortcut is switched off: its keys go to the app.
+        if self.preset_shortcut(&trigger).is_none() {
+            return Err(ShortcutError::Missing(format!(
+                "shortcut {canonical:?} does not exist"
+            )));
+        }
+        file.shortcuts.push(ShortcutBinding {
+            shortcut: canonical,
+            target: BuiltinAction::SendToApp.target(),
+        });
         self.prepare(file)
     }
 
@@ -729,7 +1010,7 @@ impl ShortcutManager {
         normalize_and_compile_shortcuts(&mut file)?;
         let bytes = render_shortcut_file(&file)?;
         let temporary = write_temporary(&self.path, &bytes)?;
-        let engine = ShortcutEngine::from_file(&file)?;
+        let engine = ShortcutEngine::from_file_with_preset(&file, self.preset)?;
         Ok(PreparedShortcutUpdate {
             target: self.path.clone(),
             temporary,
@@ -1821,6 +2102,18 @@ pub(super) enum ShortcutDisposition {
     RequestWindowSwitcherEnd {
         forward: bool,
     },
+    RequestAppSwitcher(AppSwitcherStep),
+    /// The app switcher's modifier went up: switch to the selection.
+    /// `forward` as for the window switcher.
+    RequestAppSwitcherEnd {
+        forward: bool,
+    },
+    /// Escape while the app switcher is held: close it, switch to nothing.
+    RequestAppSwitcherCancel,
+    RequestSearch,
+    RequestHideApplication,
+    RequestCaptureScreen,
+    RequestAppWindows,
     RequestClipboard,
     RequestScreenshotRegion,
     RequestClose,
@@ -1892,6 +2185,17 @@ impl ShortcutDisposition {
     }
 }
 
+/// One step of the app switcher.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AppSwitcherStep {
+    Next,
+    Previous,
+    /// The next window of the selected app.
+    WindowNext,
+    WindowPrevious,
+}
+
+/// What ends a switcher: releasing its modifier, its key, or its gesture.
 #[derive(Clone, Copy, Debug)]
 enum WindowSwitcherRelease {
     Modifier(Modifier),
@@ -1902,16 +2206,37 @@ enum WindowSwitcherRelease {
     },
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SwitcherKind {
+    /// Super+Tab and the swipes: windows.
+    Window,
+    /// Alt+Tab: apps.
+    App,
+}
+
+/// A switcher held open: it ends when `release` goes up.
+#[derive(Clone, Copy, Debug)]
+struct SwitcherSession {
+    kind: SwitcherKind,
+    release: WindowSwitcherRelease,
+    /// The key whose press just opened it. A context that declines that
+    /// press (an app holding the shortcuts) takes the switcher back.
+    opened_by: Option<u32>,
+}
+
 #[derive(Clone, Debug)]
 pub(super) struct ShortcutEngine {
     bindings: Vec<CompiledShortcut>,
+    preset: ShortcutPreset,
+    /// The preset's shortcuts whose keys the file leaves free.
+    preset_bindings: Vec<CompiledShortcut>,
     available_plugin_actions: HashSet<String>,
     ctrl_keys: u8,
     alt_keys: u8,
     shift_keys: u8,
     logo_keys: u8,
     logo_chorded: bool,
-    window_switcher_release: Option<WindowSwitcherRelease>,
+    switcher: Option<SwitcherSession>,
     captured_keys: HashMap<u32, ShortcutTarget>,
     captured_vt_keys: HashSet<u32>,
 }
@@ -1924,18 +2249,41 @@ impl Default for ShortcutEngine {
 
 impl ShortcutEngine {
     fn from_file(file: &ShortcutFile) -> Result<Self, ShortcutError> {
+        Self::from_file_with_preset(file, ShortcutPreset::Standard)
+    }
+
+    fn from_file_with_preset(
+        file: &ShortcutFile,
+        preset: ShortcutPreset,
+    ) -> Result<Self, ShortcutError> {
+        let bindings = compile_shortcuts(file)?;
+        let preset_bindings = compile_preset(&bindings, preset);
         Ok(Self {
-            bindings: compile_shortcuts(file)?,
+            bindings,
+            preset,
+            preset_bindings,
             available_plugin_actions: HashSet::new(),
             ctrl_keys: 0,
             alt_keys: 0,
             shift_keys: 0,
             logo_keys: 0,
             logo_chorded: false,
-            window_switcher_release: None,
+            switcher: None,
             captured_keys: HashMap::new(),
             captured_vt_keys: HashSet::new(),
         })
+    }
+
+    pub(super) fn preset(&self) -> ShortcutPreset {
+        self.preset
+    }
+
+    /// Changes the preset in place: keys held now keep their state.
+    pub(super) fn set_preset(&mut self, preset: ShortcutPreset) {
+        if self.preset != preset {
+            self.preset = preset;
+            self.preset_bindings = compile_preset(&self.bindings, preset);
+        }
     }
 
     pub(super) fn set_plugin_actions(&mut self, catalog: &crate::plugin_actions::ActionCatalog) {
@@ -1944,6 +2292,7 @@ impl ShortcutEngine {
 
     fn target_available(&self, target: &ShortcutTarget) -> bool {
         match target {
+            ShortcutTarget::PluginAction { id } if BuiltinAction::from_id(id).is_some() => true,
             ShortcutTarget::PluginAction { id } => self.available_plugin_actions.contains(id),
             ShortcutTarget::DenialAction {
                 action: ShortcutAction::OpenApplications,
@@ -1997,19 +2346,20 @@ impl ShortcutEngine {
                     && self.target_available(&binding.target)
             })
             .map(|binding| binding.target.clone());
-        if matches!(
-            target,
-            Some(ShortcutTarget::DenialAction {
-                action: ShortcutAction::WindowSwitcher,
-            })
-        ) {
-            if self.window_switcher_release.is_none() {
-                self.window_switcher_release = Some(WindowSwitcherRelease::Gesture {
-                    owner: gesture,
-                    repeat_after: now + WINDOW_SWITCHER_GESTURE_HOLD_DELAY,
+        if let Some(target) = &target
+            && let Some(kind) = switcher_kind(target)
+        {
+            if self.switcher.is_none() {
+                self.switcher = Some(SwitcherSession {
+                    kind,
+                    release: WindowSwitcherRelease::Gesture {
+                        owner: gesture,
+                        repeat_after: now + WINDOW_SWITCHER_GESTURE_HOLD_DELAY,
+                    },
+                    opened_by: None,
                 });
             }
-            return window_switcher_gesture_step(gesture);
+            return switcher_step(target, window_switcher_gesture_reverses(gesture));
         }
         target
             .map(ShortcutDisposition::from)
@@ -2025,46 +2375,165 @@ impl ShortcutEngine {
         gesture: ShortcutGesture,
         now: Instant,
     ) -> ShortcutDisposition {
-        if matches!(
-            self.window_switcher_release,
-            Some(WindowSwitcherRelease::Gesture { repeat_after, .. })
-                if now >= repeat_after
-        ) {
-            window_switcher_gesture_step(gesture)
-        } else {
-            ShortcutDisposition::Consume
+        match self.switcher {
+            Some(SwitcherSession {
+                kind,
+                release: WindowSwitcherRelease::Gesture { repeat_after, .. },
+                ..
+            }) if now >= repeat_after => {
+                let reversed = window_switcher_gesture_reverses(gesture);
+                match kind {
+                    SwitcherKind::Window if reversed => {
+                        ShortcutDisposition::RequestWindowSwitcherPrevious
+                    }
+                    SwitcherKind::Window => ShortcutDisposition::RequestWindowSwitcherNext,
+                    SwitcherKind::App if reversed => {
+                        ShortcutDisposition::RequestAppSwitcher(AppSwitcherStep::Previous)
+                    }
+                    SwitcherKind::App => {
+                        ShortcutDisposition::RequestAppSwitcher(AppSwitcherStep::Next)
+                    }
+                }
+            }
+            _ => ShortcutDisposition::Consume,
         }
     }
 
     pub(super) fn end_gesture(&mut self, gesture: ShortcutGesture) -> ShortcutDisposition {
-        if matches!(
-            self.window_switcher_release,
-            Some(WindowSwitcherRelease::Gesture { owner, .. }) if owner == gesture
-        ) {
-            self.window_switcher_release = None;
-            ShortcutDisposition::RequestWindowSwitcherEnd { forward: false }
-        } else {
-            ShortcutDisposition::Forward
+        match self.switcher {
+            Some(SwitcherSession {
+                kind,
+                release: WindowSwitcherRelease::Gesture { owner, .. },
+                ..
+            }) if owner == gesture => {
+                self.switcher = None;
+                switcher_end(kind, false)
+            }
+            _ => ShortcutDisposition::Forward,
         }
     }
 
     pub(super) fn cancel_gestures(&mut self) {
         if matches!(
-            self.window_switcher_release,
-            Some(WindowSwitcherRelease::Gesture { .. })
+            self.switcher,
+            Some(SwitcherSession {
+                release: WindowSwitcherRelease::Gesture { .. },
+                ..
+            })
         ) {
-            self.window_switcher_release = None;
+            self.switcher = None;
         }
     }
 
-    fn target_for_key(&self, evdev_keycode: u32) -> Option<(ShortcutTarget, u8)> {
+    /// The shortcut for the held modifiers and `evdev_keycode`: the file's,
+    /// else the preset's. With Shift held and no shortcut of its own, a
+    /// switcher bound without Shift steps back (Alt+Shift+Tab). Gives the
+    /// target, the binding's modifiers and whether Shift reversed it.
+    fn target_for_key(&self, evdev_keycode: u32) -> Option<(ShortcutTarget, u8, bool)> {
         let modifiers = self.active_modifiers();
-        self.bindings.iter().find_map(|binding| {
-            (binding.trigger.modifiers == modifiers
-                && binding.trigger.key == TriggerKey::Evdev(evdev_keycode)
-                && self.target_available(&binding.target))
+        if self.option_edits_text(modifiers, evdev_keycode) {
+            return None;
+        }
+        if let Some((target, bound)) = self.binding_for(modifiers, evdev_keycode) {
+            return Some((target, bound, false));
+        }
+        let shift = Modifier::Shift.flag();
+        if modifiers & shift != 0
+            && modifiers != shift
+            && let Some((target, bound)) = self.binding_for(modifiers & !shift, evdev_keycode)
+            && switcher_kind(&target).is_some()
+        {
+            return Some((target, bound, true));
+        }
+        None
+    }
+
+    /// The file's binding of exactly these keys, which stands even while
+    /// its action is unavailable, else the preset's.
+    fn binding_for(&self, modifiers: u8, evdev_keycode: u32) -> Option<(ShortcutTarget, u8)> {
+        let key = TriggerKey::Evdev(evdev_keycode);
+        let binding = self
+            .bindings
+            .iter()
+            .chain(&self.preset_bindings)
+            .find(|binding| binding.trigger.modifiers == modifiers && binding.trigger.key == key)?;
+        self.target_available(&binding.target)
             .then(|| (binding.target.clone(), binding.trigger.modifiers))
-        })
+    }
+
+    /// In the Mac preset Super is ⌥: with the arrows, Backspace and Delete
+    /// (and Shift) it edits text in the app, whatever Shortcuts binds there.
+    fn option_edits_text(&self, modifiers: u8, evdev_keycode: u32) -> bool {
+        self.preset == ShortcutPreset::Mac
+            && modifiers & Modifier::Super.flag() != 0
+            && modifiers & !(Modifier::Super.flag() | Modifier::Shift.flag()) == 0
+            && crate::mac_keys::option_edits_text(evdev_keycode)
+    }
+
+    /// Ends the switcher `modifier` holds once none of its keys is down.
+    fn end_switcher_on_modifier(
+        &mut self,
+        modifier: Modifier,
+        forward: bool,
+    ) -> Option<ShortcutDisposition> {
+        let session = self.switcher?;
+        if !matches!(session.release, WindowSwitcherRelease::Modifier(owner) if owner == modifier) {
+            return None;
+        }
+        let held = match modifier {
+            Modifier::Super => self.logo_keys,
+            Modifier::Ctrl => self.ctrl_keys,
+            Modifier::Alt => self.alt_keys,
+            Modifier::Shift => self.shift_keys,
+        };
+        if held != 0 {
+            return None;
+        }
+        self.switcher = None;
+        Some(switcher_end(session.kind, forward))
+    }
+
+    /// A key pressed while the app switcher is held and no switcher
+    /// shortcut has it: Tab, ` and the arrows step, Escape closes it.
+    /// Other keys do nothing then, as on a Mac, but the hardware controls.
+    fn app_switcher_key(&mut self, evdev_keycode: u32) -> Option<ShortcutDisposition> {
+        let session = self.switcher?;
+        if session.kind != SwitcherKind::App
+            || !matches!(session.release, WindowSwitcherRelease::Modifier(_))
+        {
+            return None;
+        }
+        let back = self.shift_keys != 0;
+        let disposition = match evdev_keycode {
+            KEY_TAB if back => ShortcutDisposition::RequestAppSwitcher(AppSwitcherStep::Previous),
+            KEY_TAB | KEY_RIGHT => ShortcutDisposition::RequestAppSwitcher(AppSwitcherStep::Next),
+            KEY_LEFT => ShortcutDisposition::RequestAppSwitcher(AppSwitcherStep::Previous),
+            KEY_GRAVE if back => {
+                ShortcutDisposition::RequestAppSwitcher(AppSwitcherStep::WindowPrevious)
+            }
+            KEY_GRAVE | KEY_DOWN => {
+                ShortcutDisposition::RequestAppSwitcher(AppSwitcherStep::WindowNext)
+            }
+            KEY_UP => ShortcutDisposition::RequestAppSwitcher(AppSwitcherStep::WindowPrevious),
+            KEY_ESCAPE => {
+                self.switcher = None;
+                ShortcutDisposition::RequestAppSwitcherCancel
+            }
+            _ => {
+                if self
+                    .target_for_key(evdev_keycode)
+                    .is_some_and(|(target, _, _)| {
+                        ShortcutDisposition::from(target).survives_shortcuts_inhibit()
+                    })
+                {
+                    return None;
+                }
+                ShortcutDisposition::Consume
+            }
+        };
+        self.captured_keys
+            .insert(evdev_keycode, BuiltinAction::AppSwitcher.target());
+        Some(disposition)
     }
 
     fn modifier_tap_target(&self, modifier: Modifier) -> Option<ShortcutTarget> {
@@ -2077,6 +2546,9 @@ impl ShortcutEngine {
 
     /// Observe a Linux evdev keycode before it enters Smithay's seat state.
     pub(super) fn observe(&mut self, evdev_keycode: u32, pressed: bool) -> ShortcutDisposition {
+        if pressed && let Some(session) = self.switcher.as_mut() {
+            session.opened_by = None;
+        }
         let logo_modifier = match evdev_keycode {
             KEY_LEFT_META => Some(LEFT_MODIFIER),
             KEY_RIGHT_META => Some(RIGHT_MODIFIER),
@@ -2092,15 +2564,11 @@ impl ShortcutEngine {
             }
 
             self.logo_keys &= !bit;
-            if matches!(
-                self.window_switcher_release,
-                Some(WindowSwitcherRelease::Modifier(Modifier::Super))
-            ) {
-                self.window_switcher_release = None;
+            if let Some(end) = self.end_switcher_on_modifier(Modifier::Super, false) {
                 if self.logo_keys == 0 {
                     self.logo_chorded = false;
                 }
-                return ShortcutDisposition::RequestWindowSwitcherEnd { forward: false };
+                return end;
             }
             if self.logo_keys == 0 {
                 let chorded = std::mem::take(&mut self.logo_chorded);
@@ -2136,14 +2604,8 @@ impl ShortcutEngine {
             } else {
                 *keys &= !bit;
             }
-            if !pressed
-                && matches!(
-                    self.window_switcher_release,
-                    Some(WindowSwitcherRelease::Modifier(owner)) if owner == modifier
-                )
-            {
-                self.window_switcher_release = None;
-                return ShortcutDisposition::RequestWindowSwitcherEnd { forward: true };
+            if !pressed && let Some(end) = self.end_switcher_on_modifier(modifier, true) {
+                return end;
             }
             return ShortcutDisposition::Forward;
         }
@@ -2152,12 +2614,11 @@ impl ShortcutEngine {
                 return ShortcutDisposition::Consume;
             }
             let captured = self.captured_keys.remove(&evdev_keycode).is_some();
-            if matches!(
-                self.window_switcher_release,
-                Some(WindowSwitcherRelease::Key(owner)) if owner == evdev_keycode
-            ) {
-                self.window_switcher_release = None;
-                return ShortcutDisposition::RequestWindowSwitcherEnd { forward: false };
+            if let Some(session) = self.switcher
+                && matches!(session.release, WindowSwitcherRelease::Key(owner) if owner == evdev_keycode)
+            {
+                self.switcher = None;
+                return switcher_end(session.kind, false);
             }
             return if captured {
                 ShortcutDisposition::Consume
@@ -2183,19 +2644,24 @@ impl ShortcutEngine {
                 ShortcutDisposition::Consume
             };
         }
-        let Some((target, modifiers)) = self.target_for_key(evdev_keycode) else {
+        let found = self.target_for_key(evdev_keycode);
+        let stepping = found
+            .as_ref()
+            .is_some_and(|(target, _, _)| switcher_kind(target).is_some());
+        if !stepping && let Some(disposition) = self.app_switcher_key(evdev_keycode) {
+            return disposition;
+        }
+        let Some((target, modifiers, reversed)) = found else {
             return ShortcutDisposition::Forward;
         };
+        if target == BuiltinAction::SendToApp.target() {
+            return ShortcutDisposition::Forward;
+        }
 
         self.captured_keys.insert(evdev_keycode, target.clone());
-        if target
-            == (ShortcutTarget::DenialAction {
-                action: ShortcutAction::WindowSwitcher,
-            })
-            && self.window_switcher_release.is_none()
-        {
-            self.window_switcher_release = Some(
-                [
+        if let Some(kind) = switcher_kind(&target) {
+            if self.switcher.is_none() {
+                let release = [
                     Modifier::Super,
                     Modifier::Ctrl,
                     Modifier::Alt,
@@ -2206,8 +2672,14 @@ impl ShortcutEngine {
                 .map_or(
                     WindowSwitcherRelease::Key(evdev_keycode),
                     WindowSwitcherRelease::Modifier,
-                ),
-            );
+                );
+                self.switcher = Some(SwitcherSession {
+                    kind,
+                    release,
+                    opened_by: Some(evdev_keycode),
+                });
+            }
+            return switcher_step(&target, reversed);
         }
         target.into()
     }
@@ -2250,16 +2722,90 @@ impl ShortcutEngine {
         self.shift_keys = 0;
         self.logo_keys = 0;
         self.logo_chorded = false;
-        self.window_switcher_release = None;
+        self.switcher = None;
         self.captured_keys.clear();
         self.captured_vt_keys.clear();
     }
 
     /// Releases a just-matched key when a context-sensitive action declines
     /// it, allowing both its press and later release to reach the client.
+    /// A switcher that press opened is not open after all.
     pub(super) fn pass_through_key(&mut self, evdev_keycode: u32) {
         self.captured_keys.remove(&evdev_keycode);
+        if self
+            .switcher
+            .is_some_and(|session| session.opened_by == Some(evdev_keycode))
+        {
+            self.switcher = None;
+        }
     }
+
+    /// Whether the app switcher is held open.
+    pub(super) fn app_switcher_held(&self) -> bool {
+        self.switcher
+            .is_some_and(|session| session.kind == SwitcherKind::App)
+    }
+}
+
+/// Which switcher `target` steps, if any.
+fn switcher_kind(target: &ShortcutTarget) -> Option<SwitcherKind> {
+    match target {
+        ShortcutTarget::DenialAction {
+            action: ShortcutAction::WindowSwitcher,
+        } => Some(SwitcherKind::Window),
+        ShortcutTarget::PluginAction { id } => match BuiltinAction::from_id(id) {
+            Some(BuiltinAction::AppSwitcher | BuiltinAction::AppWindowSwitcher) => {
+                Some(SwitcherKind::App)
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// One step of the switcher `target` opens, backwards when `reversed`.
+fn switcher_step(target: &ShortcutTarget, reversed: bool) -> ShortcutDisposition {
+    let windows = matches!(
+        target,
+        ShortcutTarget::PluginAction { id } if id == BuiltinAction::AppWindowSwitcher.id()
+    );
+    match (switcher_kind(target), windows, reversed) {
+        (Some(SwitcherKind::Window), _, false) => ShortcutDisposition::RequestWindowSwitcherNext,
+        (Some(SwitcherKind::Window), _, true) => ShortcutDisposition::RequestWindowSwitcherPrevious,
+        (Some(SwitcherKind::App), false, false) => {
+            ShortcutDisposition::RequestAppSwitcher(AppSwitcherStep::Next)
+        }
+        (Some(SwitcherKind::App), false, true) => {
+            ShortcutDisposition::RequestAppSwitcher(AppSwitcherStep::Previous)
+        }
+        (Some(SwitcherKind::App), true, false) => {
+            ShortcutDisposition::RequestAppSwitcher(AppSwitcherStep::WindowNext)
+        }
+        (Some(SwitcherKind::App), true, true) => {
+            ShortcutDisposition::RequestAppSwitcher(AppSwitcherStep::WindowPrevious)
+        }
+        (None, _, _) => target.clone().into(),
+    }
+}
+
+const fn switcher_end(kind: SwitcherKind, forward: bool) -> ShortcutDisposition {
+    match kind {
+        SwitcherKind::Window => ShortcutDisposition::RequestWindowSwitcherEnd { forward },
+        SwitcherKind::App => ShortcutDisposition::RequestAppSwitcherEnd { forward },
+    }
+}
+
+/// The preset's shortcuts on keys the file leaves free.
+fn compile_preset(file: &[CompiledShortcut], preset: ShortcutPreset) -> Vec<CompiledShortcut> {
+    preset
+        .bindings()
+        .iter()
+        .map(|&(shortcut, target)| CompiledShortcut {
+            trigger: parse_shortcut(shortcut).expect("preset shortcuts are valid"),
+            target: target.target(),
+        })
+        .filter(|preset| file.iter().all(|binding| binding.trigger != preset.trigger))
+        .collect()
 }
 
 fn vt_for_evdev_keycode(evdev_keycode: u32) -> Option<i32> {
@@ -2271,18 +2817,17 @@ fn vt_for_evdev_keycode(evdev_keycode: u32) -> Option<i32> {
     }
 }
 
-fn window_switcher_gesture_step(gesture: ShortcutGesture) -> ShortcutDisposition {
+/// Whether a swipe steps a switcher back.
+fn window_switcher_gesture_reverses(gesture: ShortcutGesture) -> bool {
     match gesture {
         ShortcutGesture::ThreeFingerSwipeRight
         | ShortcutGesture::ThreeFingerSwipeDown
         | ShortcutGesture::FourFingerSwipeRight
-        | ShortcutGesture::FourFingerSwipeDown => {
-            ShortcutDisposition::RequestWindowSwitcherPrevious
-        }
+        | ShortcutGesture::FourFingerSwipeDown => true,
         ShortcutGesture::ThreeFingerSwipeUp
         | ShortcutGesture::ThreeFingerSwipeLeft
         | ShortcutGesture::FourFingerSwipeUp
-        | ShortcutGesture::FourFingerSwipeLeft => ShortcutDisposition::RequestWindowSwitcherNext,
+        | ShortcutGesture::FourFingerSwipeLeft => false,
     }
 }
 
@@ -2356,7 +2901,18 @@ impl From<ShortcutAction> for ShortcutDisposition {
 impl From<ShortcutTarget> for ShortcutDisposition {
     fn from(target: ShortcutTarget) -> Self {
         match target {
-            ShortcutTarget::PluginAction { id } => Self::PluginAction(id),
+            ShortcutTarget::PluginAction { id } => match BuiltinAction::from_id(&id) {
+                Some(BuiltinAction::AppSwitcher) => Self::RequestAppSwitcher(AppSwitcherStep::Next),
+                Some(BuiltinAction::AppWindowSwitcher) => {
+                    Self::RequestAppSwitcher(AppSwitcherStep::WindowNext)
+                }
+                Some(BuiltinAction::Search) => Self::RequestSearch,
+                Some(BuiltinAction::HideApplication) => Self::RequestHideApplication,
+                Some(BuiltinAction::CaptureScreen) => Self::RequestCaptureScreen,
+                Some(BuiltinAction::AppWindows) => Self::RequestAppWindows,
+                Some(BuiltinAction::SendToApp) => Self::Forward,
+                None => Self::PluginAction(id),
+            },
             ShortcutTarget::DenialAction { action } => action.into(),
             ShortcutTarget::Spawn {
                 command,

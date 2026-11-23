@@ -127,6 +127,9 @@ pub(super) struct RuntimeState {
     pub(super) error: Option<String>,
     pub(super) lifecycle: LifecycleState,
     pub(super) native_escape_shortcut: NativeEscapeShortcut,
+    /// The "Like a Mac" key translation, after the shortcuts (`mac_keys`).
+    #[cfg(feature = "flutter")]
+    pub(super) mac_keys: super::mac_keys::MacKeys,
     pub(super) topology_dirty: bool,
     pub(super) output_power_requests: BTreeMap<OutputId, bool>,
     #[cfg(feature = "flutter")]

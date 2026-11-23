@@ -1882,6 +1882,45 @@ pub(super) fn minimize_all_toplevels(state: &mut RuntimeState) -> bool {
     minimized
 }
 
+/// Hides the focused app, as ⌘H does on a Mac: minimizes each of its
+/// windows that is not minimized yet, wherever it is. A window without an
+/// app ID is its own app.
+#[cfg(feature = "flutter")]
+pub(super) fn minimize_focused_application(state: &mut RuntimeState) -> bool {
+    if focused_local_window(state).is_some() {
+        return minimize_focused_toplevel(state);
+    }
+    let Some(focused) = focused_window(state) else {
+        return false;
+    };
+    let app_id = ManagedWindow::new(&focused)
+        .map(|managed| managed.metadata().1)
+        .unwrap_or_default();
+    if app_id.is_empty() {
+        return minimize_window(state, &focused);
+    }
+    let windows = {
+        let frontend = state.frontend();
+        frontend
+            .space
+            .elements()
+            .filter(|window| {
+                ManagedWindow::new(window).is_some_and(|managed| {
+                    !managed.facts().override_redirect && managed.metadata().1 == app_id
+                }) && frontend.window_root_surface(window).is_some_and(|root| {
+                    root.is_alive() && !frontend.surface_is_minimized(&root.id())
+                })
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let mut minimized = false;
+    for window in windows {
+        minimized |= minimize_window(state, &window);
+    }
+    minimized
+}
+
 #[cfg(feature = "flutter")]
 pub(super) fn minimize_toplevel_by_id(state: &mut RuntimeState, window_id: u64) -> bool {
     let local = state

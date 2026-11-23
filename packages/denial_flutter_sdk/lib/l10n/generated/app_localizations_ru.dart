@@ -4074,6 +4074,9 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String get appSwitcherLabel => 'Переключение приложений';
+
+  @override
   String windowUntitled(int windowId) {
     return 'Окно $windowId';
   }

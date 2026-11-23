@@ -5452,6 +5452,7 @@
       }
     }
   },
+  "appSwitcherLabel": "Переключение приложений",
   "windowUntitled": "Окно {windowId}",
   "@windowUntitled": {
     "description": "English UI text for windowUntitled.",

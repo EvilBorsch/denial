@@ -941,6 +941,21 @@ impl SettingsManager {
             .unwrap_or(false)
     }
 
+    /// The keys the shell uses (`shortcuts.preset`): "standard", or "mac"
+    /// for "Like a Mac". The section is new in eb18 and no earlier
+    /// `deniald` reads it, so a rollback keeps the file and just runs the
+    /// standard keys. A value this release does not know reads as standard
+    /// rather than rejecting the file.
+    pub(super) fn shortcut_preset(&self) -> super::native_shortcut::ShortcutPreset {
+        self.document
+            .get("shortcuts")
+            .and_then(Value::as_object)
+            .and_then(|shortcuts| shortcuts.get("preset"))
+            .and_then(Value::as_str)
+            .and_then(super::native_shortcut::ShortcutPreset::from_settings_name)
+            .unwrap_or_default()
+    }
+
     /// The desktop entry of the calls app, the one app whose call window may
     /// show over the lock screen while its call notification stands.
     pub(super) fn calls_app(&self) -> &str {

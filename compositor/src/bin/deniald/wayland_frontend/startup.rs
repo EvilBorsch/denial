@@ -412,6 +412,8 @@ impl WaylandFrontend {
             #[cfg(feature = "flutter")]
             shell_keyboard_focus: None,
             #[cfg(feature = "flutter")]
+            switcher_keyboard_focus: None,
+            #[cfg(feature = "flutter")]
             input_root_ids: HashMap::new(),
             client_gestures: Default::default(),
             #[cfg(feature = "flutter")]
