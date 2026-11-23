@@ -250,8 +250,8 @@ pub struct InputDeviceSettings<'a> {
 }
 
 /// The touchpad preferences the shell's wire protocol carries. The pointer
-/// speed and acceleration are set through the control socket (Settings), so a
-/// shell request leaves them as they are.
+/// speed, acceleration and click method are set through the control socket
+/// (Settings), so a shell request leaves them as they are.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ShellTouchpadConfiguration {
     pub tap_to_click_enabled: bool,

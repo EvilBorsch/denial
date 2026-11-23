@@ -312,6 +312,7 @@ pub(super) fn synchronize_settings(
                                             next.scrolling_layout_swipe_speed_factor,
                                         speed = next.speed,
                                         acceleration = next.acceleration_enabled,
+                                        click_method = ?next.click_method,
                                         "applied persistent touchpad settings"
                                     );
                                     Ok(())
@@ -950,6 +951,7 @@ fn control_input_snapshot(
         "scrolling_layout_swipe_speed_factor": touchpad.scrolling_layout_swipe_speed_factor,
         "touchpad_speed": touchpad.speed,
         "touchpad_acceleration_enabled": touchpad.acceleration_enabled,
+        "touchpad_click_method": touchpad.click_method,
     }))
 }
 

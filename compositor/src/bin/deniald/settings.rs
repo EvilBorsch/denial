@@ -500,6 +500,21 @@ pub(super) struct TouchpadSettings {
     pub(super) speed: f64,
     /// libinput's adaptive profile when on, its flat profile when off.
     pub(super) acceleration_enabled: bool,
+    pub(super) click_method: TouchpadClickMethod,
+}
+
+/// Which button a press of a clickpad, a touchpad that is one big button,
+/// stands for.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) enum TouchpadClickMethod {
+    /// The fingers on the pad decide: one is the left button, two the right,
+    /// three the middle, wherever the pad is pressed.
+    #[default]
+    Clickfinger,
+    /// Where the pad is pressed decides: the right of its bottom strip is the
+    /// right button, the rest the left. libinput's default for a clickpad.
+    ButtonAreas,
 }
 
 impl Default for TouchpadSettings {
@@ -512,6 +527,7 @@ impl Default for TouchpadSettings {
                 DEFAULT_TOUCHPAD_SCROLLING_LAYOUT_SWIPE_SPEED_FACTOR,
             speed: DEFAULT_TOUCHPAD_SPEED,
             acceleration_enabled: true,
+            click_method: TouchpadClickMethod::default(),
         }
     }
 }

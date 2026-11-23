@@ -427,6 +427,7 @@ fn touchpad_update_is_persistent_and_revisioned() {
         scrolling_layout_swipe_speed_factor: 1.75,
         speed: -0.4,
         acceleration_enabled: false,
+        click_method: TouchpadClickMethod::ButtonAreas,
     };
     let old_revision = manager.revision();
     let update = manager
@@ -613,6 +614,24 @@ fn touchpad_section_from_before_pointer_settings_gets_their_defaults() {
     assert_eq!(saved, serde_json::to_value(&expected).unwrap());
     assert_eq!(saved["speed"], 0.0);
     assert_eq!(saved["accelerationEnabled"], true);
+    assert_eq!(saved["clickMethod"], "clickfinger");
+}
+
+#[test]
+fn touchpad_click_methods_have_document_names() {
+    for (name, method) in [
+        ("clickfinger", TouchpadClickMethod::Clickfinger),
+        ("buttonAreas", TouchpadClickMethod::ButtonAreas),
+    ] {
+        let touchpad: TouchpadSettings =
+            serde_json::from_value(serde_json::json!({ "clickMethod": name })).unwrap();
+        assert_eq!(touchpad.click_method, method);
+        assert_eq!(serde_json::to_value(method).unwrap(), name);
+    }
+    assert!(
+        serde_json::from_value::<TouchpadSettings>(serde_json::json!({"clickMethod": "corner"}))
+            .is_err()
+    );
 }
 
 #[test]
@@ -620,6 +639,7 @@ fn complete_touchpad_section_is_not_rewritten() {
     let configured = TouchpadSettings {
         speed: 0.35,
         acceleration_enabled: false,
+        click_method: TouchpadClickMethod::ButtonAreas,
         ..TouchpadSettings::default()
     };
     let (touchpad, _, rewritten) = migrated_touchpad(serde_json::to_value(&configured).unwrap());

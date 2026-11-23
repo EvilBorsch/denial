@@ -27,7 +27,10 @@ use smithay::input::touch::{DownEvent, MotionEvent as TouchMotionEvent, UpEvent}
 use smithay::reexports::calloop::EventLoop;
 #[cfg(feature = "flutter")]
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
-use smithay::reexports::input::{AccelProfile, Device as LibinputDevice, Libinput, TapButtonMap};
+use smithay::reexports::input::{
+    AccelProfile, ClickMethod, ClickfingerButtonMap, Device as LibinputDevice, Libinput,
+    TapButtonMap,
+};
 #[cfg(feature = "flutter")]
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel;
 #[cfg(feature = "flutter")]
@@ -49,7 +52,7 @@ use super::super::native_shortcut::{
 };
 #[cfg(feature = "flutter")]
 use super::super::settings::KeyboardSettings;
-use super::super::settings::{MouseSettings, TouchpadSettings};
+use super::super::settings::{MouseSettings, TouchpadClickMethod, TouchpadSettings};
 #[cfg(feature = "flutter")]
 use super::super::window_grab::{
     LocalFlutterWindowGrab, MoveSurfaceGrab, ResizeEdges, ResizeSurfaceGrab, TileMoveGrab,
@@ -1606,16 +1609,47 @@ fn configure_touchpad_device(
             })?;
     }
 
+    // Only a clickpad, whose surface is its one button, offers both methods;
+    // a touchpad with separate buttons offers none.
+    let click_method = match settings.click_method {
+        TouchpadClickMethod::Clickfinger => ClickMethod::Clickfinger,
+        TouchpadClickMethod::ButtonAreas => ClickMethod::ButtonAreas,
+    };
+    let click_method_supported = device.config_click_methods().contains(&click_method);
+    if click_method_supported {
+        device
+            .config_click_set_method(click_method)
+            .map_err(|error| {
+                format!(
+                    "could not set the click method of {} to {click_method:?}: {error:?}",
+                    device.name()
+                )
+            })?;
+        if click_method == ClickMethod::Clickfinger
+            && let Err(error) = device
+                .config_click_clickfinger_set_button_map(ClickfingerButtonMap::LeftRightMiddle)
+        {
+            // libinput's normal default is the same left/right/middle order.
+            warn!(
+                ?error,
+                device = %device.name(),
+                "could not configure the clickfinger button mapping"
+            );
+        }
+    }
+
     info!(
         device = %device.name(),
         finger_count,
         tap_to_click_enabled = settings.tap_to_click_enabled,
         natural_scroll_enabled = settings.natural_scroll_enabled,
         natural_scroll_supported,
-        two_finger_right_click = finger_count >= 2,
+        two_finger_tap_right_click = finger_count >= 2,
         speed = settings.speed,
         ?acceleration_profile,
         acceleration_supported,
+        ?click_method,
+        click_method_supported,
         "configured touchpad"
     );
     Ok(())
