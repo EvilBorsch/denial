@@ -631,7 +631,7 @@ class ShellLockScreenSettings {
 @immutable
 class ShellPowerSettings {
   const ShellPowerSettings({
-    this.powerButtonAction = PowerButtonAction.powerOff,
+    this.powerButtonAction = PowerButtonAction.dpms,
     this.powerButtonLongPressAction = PowerButtonLongPressAction.nothing,
     this.idleLockEnabled = true,
     this.idleLockTimeoutSeconds = 16 * 60,
