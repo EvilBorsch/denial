@@ -289,7 +289,9 @@ It takes the signed `denial_0.6.8-1_arm64.deb`, replaces the two shell paths
 and, with the fourth argument, `/usr/bin/deniald` (with `EB_PORTAL` also
 `/usr/bin/denial-portal`, which needs the `deniald` built with it), and sets
 the version and maintainer. If the new `deniald` needs a newer glibc than the package's
-`libc6 (>= 2.39)`, the tool raises that dependency. Every other file, the
+`libc6 (>= 2.39)`, the tool raises that dependency; likewise the release's
+bare `libinput10` becomes `libinput10 (>= X)` for the newest `LIBINPUT_X`
+symbol version a new binary imports (`deniald` since `eb/touchpad`: 1.26). Every other file, the
 conffiles (`/etc/denial/session.conf` stays as packaged) and the maintainer
 scripts are the release's, except that the postinst gives `deniald`
 `cap_sys_nice` (the package depends on `libcap2-bin` for `setcap`). It
