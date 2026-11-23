@@ -5523,6 +5523,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeDrawerSemantics => 'All apps';
 
   @override
+  String get homeSearchSemantics => 'Search';
+
+  @override
+  String get homeSearchHint => 'Search apps and windows';
+
+  @override
+  String get homeSearchClear => 'Clear search';
+
+  @override
+  String get homeSearchWindows => 'Open windows';
+
+  @override
+  String get homeSearchApps => 'Apps';
+
+  @override
+  String get homeSearchRecentApps => 'Recently opened';
+
+  @override
+  String get homeSearchNoResults => 'Nothing found';
+
+  @override
   String get powerActionRestartDenial => 'Restart Denial';
 
   @override

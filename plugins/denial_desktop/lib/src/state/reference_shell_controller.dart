@@ -112,6 +112,13 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
     ];
   }
 
+  /// The phone's apps, the one in front or last there first: the order the
+  /// tablet's search lists open windows in.
+  List<DenialWindow> get appsMostRecentFirst {
+    final open = state.deckAppsByObjectId;
+    return [for (final id in _recencyOrder().reversed) ?open[id]];
+  }
+
   /// Apps kept running behind a window opened over them, such as their
   /// dialog; see [leaveApps].
   Set<int> _heldBehind = const <int>{};

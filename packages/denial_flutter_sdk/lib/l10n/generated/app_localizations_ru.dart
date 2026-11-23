@@ -5579,6 +5579,27 @@ class AppLocalizationsRu extends AppLocalizations {
   String get homeDrawerSemantics => 'Все приложения';
 
   @override
+  String get homeSearchSemantics => 'Поиск';
+
+  @override
+  String get homeSearchHint => 'Поиск приложений и окон';
+
+  @override
+  String get homeSearchClear => 'Очистить поиск';
+
+  @override
+  String get homeSearchWindows => 'Открытые окна';
+
+  @override
+  String get homeSearchApps => 'Приложения';
+
+  @override
+  String get homeSearchRecentApps => 'Недавно открытые';
+
+  @override
+  String get homeSearchNoResults => 'Ничего не найдено';
+
+  @override
   String get powerActionRestartDenial => 'Перезапустить Denial';
 
   @override

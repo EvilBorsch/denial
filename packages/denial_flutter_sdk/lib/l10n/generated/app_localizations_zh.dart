@@ -5259,6 +5259,27 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeDrawerSemantics => '所有应用';
 
   @override
+  String get homeSearchSemantics => '搜索';
+
+  @override
+  String get homeSearchHint => '搜索应用和窗口';
+
+  @override
+  String get homeSearchClear => '清除搜索';
+
+  @override
+  String get homeSearchWindows => '已打开的窗口';
+
+  @override
+  String get homeSearchApps => '应用';
+
+  @override
+  String get homeSearchRecentApps => '最近打开';
+
+  @override
+  String get homeSearchNoResults => '未找到结果';
+
+  @override
   String get powerActionRestartDenial => '重启 Denial';
 
   @override

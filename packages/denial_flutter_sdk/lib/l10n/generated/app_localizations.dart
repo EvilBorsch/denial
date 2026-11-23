@@ -9864,6 +9864,48 @@ abstract class AppLocalizations {
   /// **'All apps'**
   String get homeDrawerSemantics;
 
+  /// Accessibility label of the search pulled down over the tablet's home screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get homeSearchSemantics;
+
+  /// Hint in the search field of the tablet's app drawer and of the search pulled down over home.
+  ///
+  /// In en, this message translates to:
+  /// **'Search apps and windows'**
+  String get homeSearchHint;
+
+  /// Accessibility label of the button that empties the tablet's search field.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear search'**
+  String get homeSearchClear;
+
+  /// Heading of the open windows in the tablet's search results.
+  ///
+  /// In en, this message translates to:
+  /// **'Open windows'**
+  String get homeSearchWindows;
+
+  /// Heading of the matching apps in the tablet's search results.
+  ///
+  /// In en, this message translates to:
+  /// **'Apps'**
+  String get homeSearchApps;
+
+  /// Heading of the apps started most recently, which the tablet's search shows before anything is typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Recently opened'**
+  String get homeSearchRecentApps;
+
+  /// Shown when the tablet's search matches no window and no app.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing found'**
+  String get homeSearchNoResults;
+
   /// Power action that starts Denial again in the same session, closing open apps.
   ///
   /// In en, this message translates to:
