@@ -108,6 +108,62 @@ fn claim_edge_swipe(
     true
 }
 
+/// Where scrolling at the pointer goes: to the shell, or through Smithay's
+/// pointer to the client it focuses or to the grab that holds it.
+#[cfg(feature = "flutter")]
+#[derive(Clone, Copy, Debug, Default)]
+pub(super) struct PointerEventRoute {
+    secure_locked: bool,
+    /// The shell holds the pointer, as during a press on it.
+    flutter_captured: bool,
+    /// A client holds the pointer, from a press on it until the release.
+    client_captured: bool,
+    /// The published input layout has a client surface at the pointer.
+    client_under_pointer: bool,
+    pointer_grabbed: bool,
+}
+
+#[cfg(feature = "flutter")]
+impl PointerEventRoute {
+    pub(super) fn at_pointer(state: &mut RuntimeState) -> Self {
+        let secure_locked = state.secure_session_locked();
+        let flutter_captured = state.flutter_input.pointer_captured();
+        let frontend = state.frontend_mut();
+        let pointer_grabbed = frontend
+            .seat
+            .get_pointer()
+            .expect("seat has no pointer")
+            .is_grabbed();
+        let client_captured = frontend.client_pointer_capture.is_some();
+        // The layout is asked only when nothing above decides.
+        let client_under_pointer = !secure_locked && !flutter_captured && !client_captured && {
+            let position = frontend.pointer_location;
+            frontend.input_route(position).is_some()
+        };
+        Self {
+            secure_locked,
+            flutter_captured,
+            client_captured,
+            client_under_pointer,
+            pointer_grabbed,
+        }
+    }
+
+    /// Whether the event goes to Smithay's pointer rather than to the shell.
+    /// The secure lock keeps everything; otherwise a pointer grab takes what
+    /// the shell would.
+    pub(super) fn reaches_client(self) -> bool {
+        let shell_target = if self.secure_locked || self.flutter_captured {
+            true
+        } else if self.client_captured {
+            false
+        } else {
+            !self.client_under_pointer
+        };
+        !shell_target || (self.pointer_grabbed && !self.secure_locked)
+    }
+}
+
 #[cfg(feature = "flutter")]
 pub(super) fn process_flutter_input_event(
     state: &mut RuntimeState,
@@ -168,25 +224,7 @@ pub(super) fn process_flutter_input_event(
         }
         InputEvent::PointerAxis { event: axis, .. } => {
             state.frontend_mut().set_pointer_cursor_visible(true);
-            let pointer_grabbed = state
-                .frontend()
-                .seat
-                .get_pointer()
-                .expect("seat has no pointer")
-                .is_grabbed();
-            let flutter_captured = state.flutter_input.pointer_captured();
-            let flutter_target = {
-                let frontend = state.frontend_mut();
-                if secure_locked || flutter_captured {
-                    true
-                } else if frontend.client_pointer_capture.is_some() {
-                    false
-                } else {
-                    let position = frontend.pointer_location;
-                    frontend.input_route(position).is_none()
-                }
-            };
-            if flutter_target && (secure_locked || !pointer_grabbed) {
+            if !PointerEventRoute::at_pointer(state).reaches_client() {
                 state.synchronize_flutter_pointer_position();
                 let scroll_speed_factor = state.frontend().settings.touchpad().scroll_speed_factor;
                 state
@@ -1489,6 +1527,72 @@ pub(in super::super) fn route_pointer_button(
                 state.scene_sync.mark_dirty();
             }
             true
+        }
+    }
+}
+
+#[cfg(all(test, feature = "flutter"))]
+mod pointer_event_route_tests {
+    use super::PointerEventRoute;
+
+    #[test]
+    fn scrolling_reaches_the_client_under_the_pointer() {
+        let route = PointerEventRoute {
+            client_under_pointer: true,
+            ..Default::default()
+        };
+        assert!(route.reaches_client());
+    }
+
+    #[test]
+    fn scrolling_over_the_shell_stays_with_the_shell() {
+        assert!(!PointerEventRoute::default().reaches_client());
+    }
+
+    #[test]
+    fn a_pointer_grab_takes_scrolling_over_the_shell() {
+        let route = PointerEventRoute {
+            pointer_grabbed: true,
+            ..Default::default()
+        };
+        assert!(route.reaches_client());
+    }
+
+    #[test]
+    fn the_shell_holding_the_pointer_keeps_scrolling_over_a_client() {
+        let route = PointerEventRoute {
+            flutter_captured: true,
+            client_under_pointer: true,
+            ..Default::default()
+        };
+        assert!(!route.reaches_client());
+    }
+
+    #[test]
+    fn a_client_holding_the_pointer_gets_scrolling_over_the_shell() {
+        let route = PointerEventRoute {
+            client_captured: true,
+            ..Default::default()
+        };
+        assert!(route.reaches_client());
+    }
+
+    #[test]
+    fn the_secure_lock_keeps_scrolling_from_every_client() {
+        for (client_captured, client_under_pointer, pointer_grabbed) in [
+            (false, true, false),
+            (true, false, false),
+            (false, false, true),
+            (true, true, true),
+        ] {
+            let route = PointerEventRoute {
+                secure_locked: true,
+                client_captured,
+                client_under_pointer,
+                pointer_grabbed,
+                ..Default::default()
+            };
+            assert!(!route.reaches_client());
         }
     }
 }
