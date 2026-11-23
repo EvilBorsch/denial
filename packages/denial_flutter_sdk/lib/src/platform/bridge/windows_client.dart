@@ -232,6 +232,47 @@ final class BridgeWindowsClient {
     );
   }
 
+  /// Split View in the mobile presentation: [window] and [target] share the
+  /// phone's screen, [window] on the left when [windowOnLeft], the left one
+  /// taking [ratio] of the width. Sent again for a pair, it changes the
+  /// share or swaps the sides; a window in another pair leaves it first.
+  void splitView(
+    DenialWindow window,
+    DenialWindow target, {
+    required bool windowOnLeft,
+    required double ratio,
+  }) {
+    if (window.windowId <= 0 ||
+        target.windowId <= 0 ||
+        window.windowId == target.windowId ||
+        !ratio.isFinite ||
+        ratio <= 0 ||
+        ratio >= 1) {
+      return;
+    }
+    _context.sendWire(
+      _context.codec.encodeWindowRequest(
+        wire.WindowRequestKind.SplitView,
+        windowId: window.windowId,
+        targetWindowId: target.windowId,
+        screenSide: windowOnLeft ? 0 : 1,
+        splitRatio: ratio,
+      ),
+    );
+  }
+
+  /// Split View: the pair of [window] comes apart, and both windows fill the
+  /// screen again.
+  void leaveSplitView(DenialWindow window) {
+    if (window.windowId <= 0) return;
+    _context.sendWire(
+      _context.codec.encodeWindowRequest(
+        wire.WindowRequestKind.LeaveSplitView,
+        windowId: window.windowId,
+      ),
+    );
+  }
+
   /// Full-screen apps layout: [window] becomes a screen of its own just
   /// [before] or after the screen of [target]. This separates a split and
   /// reorders screens.

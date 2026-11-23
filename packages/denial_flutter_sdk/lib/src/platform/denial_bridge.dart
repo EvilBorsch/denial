@@ -381,6 +381,23 @@ class DenialBridge {
     point: point,
   );
 
+  /// Split View in the mobile presentation; see
+  /// [BridgeWindowsClient.splitView].
+  void splitView(
+    DenialWindow window,
+    DenialWindow target, {
+    required bool windowOnLeft,
+    required double ratio,
+  }) => _windows.splitView(
+    window,
+    target,
+    windowOnLeft: windowOnLeft,
+    ratio: ratio,
+  );
+
+  /// Split View: the pair of [window] comes apart.
+  void leaveSplitView(DenialWindow window) => _windows.leaveSplitView(window);
+
   /// Full-screen apps layout: [window] joins the screen of [target] on
   /// [side] of that tile.
   void joinScreen(
