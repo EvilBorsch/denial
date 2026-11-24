@@ -224,9 +224,10 @@ mod screens;
 #[path = "wayland_frontend/split_view.rs"]
 mod split_view;
 #[cfg(feature = "flutter")]
-pub(crate) use dividers::{
-    DividerHandle, DividerHit, DividerPress, TouchDivider, TouchDividers, edge_dividers,
-};
+pub(crate) use dividers::{DividerHandle, DividerHit, DividerPress, TouchDivider, TouchDividers};
+// The layouts' own tests check the edge matching against real arrangements.
+#[cfg(all(test, feature = "flutter"))]
+pub(crate) use dividers::edge_dividers;
 #[path = "wayland_frontend/startup.rs"]
 mod startup;
 pub(crate) use startup::FrontendConfig;

@@ -673,6 +673,13 @@ impl WaylandFrontend {
         if self.divider_cursor == shape {
             return false;
         }
+        // Once per change, never per motion: where hovering finds a divider.
+        tracing::info!(
+            ?shape,
+            x = self.pointer_location.x.round(),
+            y = self.pointer_location.y.round(),
+            "split divider cursor"
+        );
         self.divider_cursor = shape;
         self.divider_cursor_changed = true;
         true

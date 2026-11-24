@@ -1272,7 +1272,21 @@ pub(in super::super) fn end_touch_divider(
                     .boundary()
             })
             .collect::<Vec<_>>();
-        info!(?boundaries, "finger released a split divider");
+        // The tiles as the drag left them (x, y, width, height).
+        let tiles = drag
+            .moved
+            .iter()
+            .map(|window| {
+                let geometry = state.frontend().window_geometry_target(window);
+                (
+                    geometry.loc.x,
+                    geometry.loc.y,
+                    geometry.size.w,
+                    geometry.size.h,
+                )
+            })
+            .collect::<Vec<_>>();
+        info!(?boundaries, ?tiles, "finger released a split divider");
     }
     for window in drag.moved {
         let geometry = state.frontend().window_geometry_target(&window);

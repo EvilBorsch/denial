@@ -982,11 +982,18 @@ impl PointerGrab<RuntimeState> for DividerGrab {
         // The next motion shows the divider cursor again if it is still over
         // a divider.
         frontend.set_divider_cursor(None);
+        let mut tiles = Vec::new();
         for window in self.affected_windows.clone() {
             if !window_is_mapped(data, &window) {
                 continue;
             }
             let geometry = data.frontend().window_geometry_target(&window);
+            tiles.push((
+                geometry.loc.x,
+                geometry.loc.y,
+                geometry.size.w,
+                geometry.size.h,
+            ));
             super::wayland_frontend::queue_transient_window_placement(
                 data,
                 &window,
@@ -994,6 +1001,16 @@ impl PointerGrab<RuntimeState> for DividerGrab {
                 WindowPlacementPhase::End,
                 WindowPlacementChange::Resize,
             );
+        }
+        if !tiles.is_empty() {
+            let frontend = data.frontend();
+            let boundaries = self
+                .handles
+                .iter()
+                .map(|handle| frontend.refreshed_divider_hit(&handle.hit).boundary())
+                .collect::<Vec<_>>();
+            // The tiles as the drag left them (x, y, width, height).
+            tracing::info!(?boundaries, ?tiles, "pointer released a split divider");
         }
         data.scene_sync.mark_dirty();
     }
