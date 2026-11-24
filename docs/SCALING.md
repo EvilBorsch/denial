@@ -82,3 +82,25 @@ choose blur for every X11 application.
 The initial version has been exercised at 1.5x. Follow-up validation should
 cover 1x and mixed-scale outputs, moving Wayland and X11 windows between
 outputs, and changing scale at runtime.
+
+## One scale per display
+
+Each display has one scale, and it sizes everything on it together: the
+shell, Wayland apps, X11 apps through Xwayland's DPI and XSETTINGS, Android
+apps through Droidloom's density per unit of scale, and the cursor, whose
+size (`appearance.cursorSize`) is in logical pixels and so keeps its look
+at every scale. Settings offers it as «Масштаб» on the Display page for the
+built-in panel, on the Monitor page for a monitor, and on Displays for any
+display: the quarter steps whose logical short side lies between 720 (a
+small tablet) and 1440 (a large desktop), each with what the screen looks
+like, the default marked. `outputs.get` names each output's
+`default_scale`: a built-in panel's density scale, 1 for others.
+
+`apps.scale` once drew apps larger than the shell. When deniald starts with
+it above 1, it folds it into the scale of every display it knows (connected,
+or remembered in the output config), writes explicit `scale=` lines and
+drops the key, so apps keep their size and the shell joins them
+(`compositor/src/bin/deniald/scale_fold.rs`). A running session takes no
+new apps scale. Older deniald builds read the explicit scale lines and a
+missing apps scale as 1, so a rollback looks the same. A display first
+connected after the fold, with no saved scale, starts at its default.

@@ -244,7 +244,7 @@ fn shell_update_preserves_native_keyboard_and_checks_revision() {
 }
 
 #[test]
-fn apps_scale_defaults_to_the_screen_and_rejects_out_of_range_values() {
+fn apps_scale_defaults_to_the_screen_and_takes_no_new_value() {
     let temporary = TemporaryDirectory::new("settings-apps-scale");
     let mut manager = SettingsManager::load_path(temporary.settings_path()).unwrap();
     assert_eq!(manager.apps_scale(), 1.0);
@@ -254,18 +254,77 @@ fn apps_scale_defaults_to_the_screen_and_rejects_out_of_range_values() {
             "apps": {"scale": scale}
         }))
     };
-    for scale in [0.5, 3.5] {
+    // One scale sizes the shell and apps: a client may not set them apart.
+    for scale in [0.5, 2.0, 3.5] {
         assert!(matches!(
             manager.prepare_shell_update(manager.revision(), &with_scale(scale)),
             Err(SettingsError::Document(message)) if message.starts_with("apps.scale")
         ));
     }
-    let document = with_scale(2.0);
     let update = manager
-        .prepare_shell_update(manager.revision(), &document)
+        .prepare_shell_update(manager.revision(), &with_scale(1.0))
         .unwrap();
     manager.commit(update).unwrap();
-    assert_eq!(manager.apps_scale(), 2.0);
+    assert_eq!(manager.apps_scale(), 1.0);
+}
+
+#[test]
+fn an_apps_scale_left_from_before_may_be_echoed_or_dropped() {
+    // A session whose output config could not take the fold keeps its apps
+    // scale: clients that echo the document, or drop the key, still save.
+    let temporary = TemporaryDirectory::new("settings-apps-scale-kept");
+    let path = temporary.settings_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, br#"{"version":30,"apps":{"scale":1.5}}"#).unwrap();
+    let mut manager = SettingsManager::load_path(path.clone()).unwrap();
+    assert_eq!(manager.apps_scale(), 1.5);
+    let echoed = shell_document(serde_json::json!({
+        "appearance": {"colorSchemePreference": "preferLight"},
+        "apps": {"scale": 1.5}
+    }));
+    let update = manager
+        .prepare_shell_update(manager.revision(), &echoed)
+        .unwrap();
+    manager.commit(update).unwrap();
+    assert_eq!(manager.apps_scale(), 1.5);
+    let dropped = shell_document(serde_json::json!({
+        "appearance": {"colorSchemePreference": "preferLight"}
+    }));
+    let update = manager
+        .prepare_shell_update(manager.revision(), &dropped)
+        .unwrap();
+    manager.commit(update).unwrap();
+    assert_eq!(manager.apps_scale(), 1.0);
+
+    // An editor's new apps scale is refused like any invalid edit.
+    fs::write(
+        &path,
+        br#"{"version":30,"revision":9,"apps":{"scale":2.0}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        manager.prepare_external_reload(),
+        Err(SettingsError::Document(message)) if message.starts_with("apps.scale")
+    ));
+}
+
+#[test]
+fn set_apps_scale_saves_the_document_with_or_without_it() {
+    let temporary = TemporaryDirectory::new("settings-apps-scale-set");
+    let path = temporary.settings_path();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, br#"{"version":30,"apps":{"scale":1.2,"followMode":false}}"#).unwrap();
+    let mut manager = SettingsManager::load_path(path.clone()).unwrap();
+
+    manager.set_apps_scale(None).unwrap();
+    let saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(saved["apps"], serde_json::json!({"followMode": false}));
+    assert_eq!(manager.apps_scale(), 1.0);
+
+    manager.set_apps_scale(Some(1.2)).unwrap();
+    let saved: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    assert_eq!(saved["apps"]["scale"], 1.2);
+    assert_eq!(SettingsManager::load_path(path).unwrap().apps_scale(), 1.2);
 }
 
 #[test]
@@ -1296,7 +1355,7 @@ fn mobile_default_document_seeds_the_mobile_appearance() {
     assert_eq!(appearance["colorSchemePreference"], "preferDark");
     assert_eq!(mobile["power"]["idleDpmsTimeoutSeconds"], 30);
     assert!(desktop.get("power").is_none());
-    assert_eq!(mobile["apps"]["scale"], 1.25);
+    assert!(mobile.get("apps").is_none());
     assert!(desktop.get("apps").is_none());
     parse_document(serde_json::to_string(&mobile).unwrap().as_bytes()).unwrap();
 }
@@ -1334,7 +1393,6 @@ fn apps_follow_the_shell_by_default_and_validate_their_text_scales() {
         ));
     }
     let document = with_apps(serde_json::json!({
-        "scale": 1.25,
         "followMode": false,
         "tabletTextScale": 1.15,
         "desktopTextScale": null
@@ -1351,7 +1409,7 @@ fn apps_follow_the_shell_by_default_and_validate_their_text_scales() {
             desktop_text_scaling_milli: None,
         }
     );
-    assert_eq!(manager.apps_scale(), 1.25);
+    assert_eq!(manager.apps_scale(), 1.0);
 }
 
 fn with_presentation(presentation: Value) -> String {
