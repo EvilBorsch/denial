@@ -43,9 +43,10 @@ class HomeGridGeometry {
   }) : bottomRowTop = bottomRowTop ?? (rows - 1) * (tileSize.height + gap);
 
   /// The grid for a pager of [size]. Wide panels get more columns and rows
-  /// rather than larger cells; rows fill the height but [rowGap] above the
-  /// bottom row, which sits at the bottom of [size] with any height left
-  /// over above it.
+  /// rather than larger cells; rows fill the height but [rowGap]. A shared
+  /// bottom row, the dock, sits at the bottom of [size], [rowGap] or any
+  /// height left over apart from the rows above it; otherwise the rows are
+  /// one even grid from the top, with [rowGap] left under it.
   factory HomeGridGeometry.forViewport(
     Size size, {
     required double inset,
@@ -92,12 +93,12 @@ class HomeGridGeometry {
       orientation: size.width > size.height
           ? HomeOrientation.landscape
           : HomeOrientation.portrait,
-      bottomRowTop: rows < 2
-          ? 0
-          : math.max(
+      bottomRowTop: sharedBottomRow && rows >= 2
+          ? math.max(
               (rows - 1) * (tileHeight + gap) + rowGap,
               size.height - tileHeight,
-            ),
+            )
+          : null,
       sharedBottomRow: sharedBottomRow && rows >= 2,
     );
   }
