@@ -31,9 +31,13 @@ class DesktopSearchOverlay extends ConsumerStatefulWidget {
     required this.onActivateWindow,
     required this.onLaunchApplication,
     required this.onLaunchLocalApplication,
+    this.keyboardTop = double.infinity,
   });
 
   final Size viewSize;
+
+  /// The top of the on-screen keyboard in the view, as it slides.
+  final double keyboardTop;
   final DisplayLayout? displayLayout;
   final ValueChanged<DenialWindow> onActivateWindow;
   final ValueChanged<DesktopApp> onLaunchApplication;
@@ -41,16 +45,25 @@ class DesktopSearchOverlay extends ConsumerStatefulWidget {
 
   /// Where the search's panel sits on an output's [workArea]: centred, wide
   /// enough for a grid of seven or eight apps, a little above the middle.
-  static Rect panelBounds(Rect workArea) {
+  /// Over the on-screen keyboard, whose top is at [keyboardTop], it ends a
+  /// margin above it, so the keyboard covers none of its results.
+  static Rect panelBounds(
+    Rect workArea, {
+    double keyboardTop = double.infinity,
+  }) {
     final width = math.min(880.0, math.max(0.0, workArea.width - 96.0));
     final height = math.max(0.0, workArea.height * 0.8);
-    return Rect.fromLTWH(
+    final top = workArea.top + math.max(0.0, workArea.height - height) * 0.45;
+    final bottom = math.min(top + height, keyboardTop - _keyboardMargin);
+    return Rect.fromLTRB(
       workArea.center.dx - width / 2.0,
-      workArea.top + math.max(0.0, workArea.height - height) * 0.45,
-      width,
-      height,
+      top,
+      workArea.center.dx + width / 2.0,
+      math.max(top, bottom),
     );
   }
+
+  static const double _keyboardMargin = 16;
 
   @override
   ConsumerState<DesktopSearchOverlay> createState() =>
@@ -187,7 +200,10 @@ class _DesktopSearchOverlayState extends ConsumerState<DesktopSearchOverlay>
     }
     final theme = context.shellTheme;
     final colors = context.shellColors;
-    final panel = DesktopSearchOverlay.panelBounds(_workArea(monitorId));
+    final panel = DesktopSearchOverlay.panelBounds(
+      _workArea(monitorId),
+      keyboardTop: widget.keyboardTop,
+    );
     final radius = BorderRadius.circular(theme.panelRadius);
     final scrim = colors.overviewScrim;
     final active = open != null;

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:denial_desktop/src/state/reference_shell_controller.dart';
+import 'package:denial_desktop/src/state/reference_shell_metrics.dart';
 import 'package:denial_flutter_sdk/applications.dart';
 import 'package:denial_flutter_sdk/environment.dart';
 import 'package:denial_flutter_sdk/input.dart';
@@ -1100,12 +1101,33 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                 onLaunchLocalApp: onLaunchLocalApp,
               ),
               Positioned.fill(
-                child: DesktopSearchOverlay(
-                  viewSize: viewSize,
-                  displayLayout: displayLayout,
-                  onActivateWindow: onActivateWindow,
-                  onLaunchApplication: onLaunchApp,
-                  onLaunchLocalApplication: onLaunchLocalApp,
+                // A finger opens the search with the screen keyboard: its
+                // panel ends above the keyboard as it slides in.
+                child: Consumer(
+                  builder: (context, ref, _) {
+                    final keyboard = ref.watch(
+                      referenceShellProvider.select(
+                        (state) => (
+                          progress: state.edgePanelDragProgress,
+                          shortcuts: state.oskShortcuts,
+                        ),
+                      ),
+                    );
+                    return DesktopSearchOverlay(
+                      viewSize: viewSize,
+                      displayLayout: displayLayout,
+                      keyboardTop:
+                          viewSize.height -
+                          ReferenceShellMetrics.edgePanelHeight(
+                                viewSize,
+                                shortcuts: keyboard.shortcuts,
+                              ) *
+                              keyboard.progress,
+                      onActivateWindow: onActivateWindow,
+                      onLaunchApplication: onLaunchApp,
+                      onLaunchLocalApplication: onLaunchLocalApp,
+                    );
+                  },
                 ),
               ),
               for (final popup in popupSurfaces)
