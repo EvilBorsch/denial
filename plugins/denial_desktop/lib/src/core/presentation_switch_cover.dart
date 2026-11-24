@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 
 import 'package:denial_flutter_sdk/models.dart' show DenialWindow;
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart' show Ticker;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -69,19 +70,26 @@ bool presentationSwitchWindowsSettled(
 /// The switch replaces the whole scene, and deniald resizes the windows to
 /// the new presentation only once it shows: for a few frames the windows
 /// would show their old buffers at new sizes, the wallpaper where a window
-/// has not drawn yet, and the new scene settling. Instead the last picture
-/// of the presentation left stays in front ([presentationSwitchHoldLimit] at
+/// has not drawn yet, and the new scene settling. Instead the last frame of
+/// the presentation left stays in front ([presentationSwitchHoldLimit] at
 /// most) until the windows the new one shows have drawn at their new sizes,
 /// then dissolves into it ([presentationSwitchDissolve]). The new scene runs
 /// and takes input underneath from the first frame.
 ///
-/// The picture is one image the GPU already holds: a frame of the dissolve
-/// draws the live scene and that image, nothing more.
+/// The cover is the frame that was on screen, which deniald froze in
+/// [coverTexture] (`presentationSwitchProvider`): nothing is drawn again for
+/// it. Without that texture (an older deniald, a locked session) the cover
+/// is a picture this widget takes of the scene's last layers. A frame of the
+/// dissolve draws the live scene and the cover, nothing more.
 class PresentationSwitchCover extends ConsumerStatefulWidget {
   const PresentationSwitchCover({
     super.key,
     required this.presentation,
     this.enabled = true,
+    this.coverTexture,
+    this.waiting = false,
+    this.onDrawn,
+    this.onReleased,
     required this.child,
   });
 
@@ -89,8 +97,21 @@ class PresentationSwitchCover extends ConsumerStatefulWidget {
   final ReferenceShellProfile presentation;
 
   /// False while the switch also changes the screens, such as a monitor
-  /// coming or going: the last picture would not fit.
+  /// coming or going: the last frame would not fit.
   final bool enabled;
+
+  /// The frame on screen before the switch to [presentation], frozen by
+  /// deniald; null when this widget takes its own picture.
+  final int? coverTexture;
+
+  /// A switch waits for deniald to freeze a frame: frames keep coming.
+  final bool waiting;
+
+  /// The scene drew its first frame.
+  final VoidCallback? onDrawn;
+
+  /// The cover [coverTexture] dissolved: deniald may drop that texture.
+  final ValueChanged<int>? onReleased;
 
   final Widget child;
 
@@ -101,7 +122,7 @@ class PresentationSwitchCover extends ConsumerStatefulWidget {
 
 class _PresentationSwitchCoverState
     extends ConsumerState<PresentationSwitchCover>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _boundary = GlobalKey(debugLabel: 'presentation switch');
   late final AnimationController _dissolve = AnimationController(
     vsync: this,
@@ -112,14 +133,34 @@ class _PresentationSwitchCoverState
     parent: ReverseAnimation(_dissolve),
     curve: Curves.easeInOut,
   );
+
+  /// Keeps frames coming while deniald waits for one to freeze.
+  late final Ticker _frames = createTicker((_) {});
+
+  /// The cover: a frozen frame of deniald's, or a picture of the scene.
+  int? _texture;
   ui.Image? _picture;
   Timer? _holdLimit;
   ProviderSubscription<bool>? _settled;
   final _since = Stopwatch();
 
+  bool get _covered => _texture != null || _picture != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _followWaiting();
+    if (widget.onDrawn case final drawn?) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) drawn();
+      });
+    }
+  }
+
   @override
   void didUpdateWidget(covariant PresentationSwitchCover oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _followWaiting();
     if (oldWidget.presentation != widget.presentation &&
         widget.enabled &&
         oldWidget.enabled) {
@@ -130,53 +171,53 @@ class _PresentationSwitchCoverState
   @override
   void dispose() {
     _endCover();
+    _frames.dispose();
     _dissolve.dispose();
     super.dispose();
   }
 
-  /// Takes the last picture shown, before this frame draws the new scene.
+  void _followWaiting() {
+    if (widget.waiting && !_frames.isActive) {
+      _frames.start();
+    } else if (!widget.waiting && _frames.isActive) {
+      _frames.stop();
+    }
+  }
+
+  /// Covers the switch with the frame on screen, before this frame draws the
+  /// new scene.
   void _cover() {
-    final boundary = _boundary.currentContext?.findRenderObject();
-    if (boundary is! RenderRepaintBoundary || !boundary.hasSize) {
-      debugPrint('presentation switch: no cover, the scene is not laid out');
-      return;
-    }
-    // The layer still holds the frame on screen: this build has not painted.
-    final layer = boundary.layer;
-    if (layer is! OffsetLayer || !layer.attached) {
-      debugPrint('presentation switch: no cover, the scene has no picture');
-      return;
-    }
-    final ui.Image picture;
-    try {
-      picture = layer.toImageSync(
-        Offset.zero & boundary.size,
-        pixelRatio: MediaQuery.devicePixelRatioOf(context),
-      );
-    } on Object catch (error) {
-      debugPrint('presentation switch: no cover, $error');
-      return;
+    final texture = widget.coverTexture;
+    final String cover;
+    _endCover();
+    if (texture != null) {
+      _texture = texture;
+      cover = 'the frozen frame on screen (texture $texture)';
+    } else {
+      final picture = _takePicture();
+      if (picture == null) return;
+      _picture = picture;
+      cover = 'a ${picture.width}x${picture.height} picture';
     }
     debugPrint(
-      'presentation switch to ${widget.presentation.name}: covered by a '
-      '${picture.width}x${picture.height} picture',
+      'presentation switch to ${widget.presentation.name}: covered by $cover',
     );
     _since
       ..reset()
       ..start();
-    _endCover();
-    _picture = picture;
     _dissolve.value = 0;
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _dissolve.duration = Duration.zero;
-    } else {
-      _dissolve.duration = presentationSwitchDissolve;
-    }
+    _dissolve.duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : presentationSwitchDissolve;
     _holdLimit = Timer(presentationSwitchHoldLimit, _reveal);
     // Settled windows end the hold; the first frame of the new scene comes
     // first, so its windows are the ones checked.
+    final shownTexture = _texture;
+    final shownPicture = _picture;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _picture != picture) return;
+      if (!mounted || _texture != shownTexture || _picture != shownPicture) {
+        return;
+      }
       final screen = Offset.zero & MediaQuery.sizeOf(context);
       final presentation = widget.presentation;
       _settled = ref.listenManual<bool>(
@@ -194,13 +235,38 @@ class _PresentationSwitchCoverState
     });
   }
 
+  /// A picture of the scene's last layers, the cover when deniald gave none.
+  /// It draws the old scene once more.
+  ui.Image? _takePicture() {
+    final boundary = _boundary.currentContext?.findRenderObject();
+    if (boundary is! RenderRepaintBoundary || !boundary.hasSize) {
+      debugPrint('presentation switch: no cover, the scene is not laid out');
+      return null;
+    }
+    // The layer still holds the frame on screen: this build has not painted.
+    final layer = boundary.layer;
+    if (layer is! OffsetLayer || !layer.attached) {
+      debugPrint('presentation switch: no cover, the scene has no picture');
+      return null;
+    }
+    try {
+      return layer.toImageSync(
+        Offset.zero & boundary.size,
+        pixelRatio: MediaQuery.devicePixelRatioOf(context),
+      );
+    } on Object catch (error) {
+      debugPrint('presentation switch: no cover, $error');
+      return null;
+    }
+  }
+
   /// The windows are ready, or the hold is over: dissolve.
   void _reveal({bool settled = false}) {
     _holdLimit?.cancel();
     _holdLimit = null;
     _settled?.close();
     _settled = null;
-    if (!mounted || _picture == null || _dissolve.isAnimating) return;
+    if (!mounted || !_covered || _dissolve.isAnimating) return;
     if (_dissolve.value == 0) {
       debugPrint(
         'presentation switch: dissolves after ${_since.elapsedMilliseconds} '
@@ -211,7 +277,7 @@ class _PresentationSwitchCoverState
   }
 
   void _dissolveStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed && _picture != null) {
+    if (status == AnimationStatus.completed && _covered) {
       setState(_endCover);
     }
   }
@@ -223,25 +289,38 @@ class _PresentationSwitchCoverState
     _settled = null;
     _picture?.dispose();
     _picture = null;
+    if (_texture case final texture?) {
+      _texture = null;
+      // Not while the tree builds: the release changes the shell's state.
+      final released = widget.onReleased;
+      if (released != null) scheduleMicrotask(() => released(texture));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final texture = _texture;
     final picture = _picture;
     return Stack(
       fit: StackFit.expand,
       children: [
         RepaintBoundary(key: _boundary, child: widget.child),
-        if (picture != null)
+        if (texture != null || picture != null)
           Positioned.fill(
             child: IgnorePointer(
               child: FadeTransition(
                 opacity: _opacity,
-                child: RawImage(
-                  image: picture,
-                  fit: BoxFit.fill,
-                  filterQuality: FilterQuality.none,
-                ),
+                child: texture != null
+                    ? Texture(
+                        textureId: texture,
+                        freeze: true,
+                        filterQuality: FilterQuality.none,
+                      )
+                    : RawImage(
+                        image: picture,
+                        fit: BoxFit.fill,
+                        filterQuality: FilterQuality.none,
+                      ),
               ),
             ),
           ),

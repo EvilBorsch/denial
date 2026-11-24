@@ -40,6 +40,11 @@ const LOGOUT: u8 = 3;
 const SCREENSHOT_PREPARED: u8 = 4;
 const CANCEL_SCREENSHOT: u8 = 5;
 const RESTART: u8 = 6;
+/// The shell switches presentations: freeze the frame on screen in a texture
+/// for it to show over the switch (answered with a PresentationCover action).
+const PRESENTATION_COVER: u8 = 7;
+/// The switch is over: drop that texture.
+const RELEASE_PRESENTATION_COVER: u8 = 8;
 
 // Never pass connection selectors inherited from a parent/nested compositor
 // to applications. WAYLAND_DISPLAY is installed explicitly below; all other
@@ -105,6 +110,8 @@ enum Request {
     Screenshot(ScreenshotRequest),
     ScreenshotPrepared(NonZeroU64),
     CancelScreenshot(NonZeroU64),
+    PresentationCover(NonZeroU64),
+    ReleasePresentationCover(NonZeroU64),
     Logout,
     Restart,
 }
@@ -282,6 +289,8 @@ pub struct SystemCommandHandler {
     screenshot_requested: Option<ScreenshotRequest>,
     screenshot_prepared: Option<NonZeroU64>,
     screenshot_cancelled: Option<NonZeroU64>,
+    presentation_cover_requested: Option<NonZeroU64>,
+    presentation_cover_released: Option<NonZeroU64>,
 }
 
 impl SystemCommandHandler {
@@ -300,6 +309,8 @@ impl SystemCommandHandler {
             screenshot_requested: None,
             screenshot_prepared: None,
             screenshot_cancelled: None,
+            presentation_cover_requested: None,
+            presentation_cover_released: None,
         }
     }
 
@@ -344,6 +355,20 @@ impl SystemCommandHandler {
                 debug!(
                     request_id = request_id.get(),
                     "Flutter cancelled screenshot selection"
+                );
+            }
+            Request::PresentationCover(request_id) => {
+                self.presentation_cover_requested = Some(request_id);
+                debug!(
+                    request_id = request_id.get(),
+                    "Flutter asked for a presentation cover"
+                );
+            }
+            Request::ReleasePresentationCover(request_id) => {
+                self.presentation_cover_released = Some(request_id);
+                debug!(
+                    request_id = request_id.get(),
+                    "Flutter released its presentation cover"
                 );
             }
         }
@@ -474,6 +499,14 @@ impl SystemCommandHandler {
 
     pub fn take_screenshot_cancelled(&mut self) -> Option<NonZeroU64> {
         self.screenshot_cancelled.take()
+    }
+
+    pub fn take_presentation_cover_requested(&mut self) -> Option<NonZeroU64> {
+        self.presentation_cover_requested.take()
+    }
+
+    pub fn take_presentation_cover_released(&mut self) -> Option<NonZeroU64> {
+        self.presentation_cover_released.take()
     }
 }
 
@@ -629,6 +662,18 @@ fn decode(packet: &[u8]) -> Result<Request, DecodeError> {
                 return Err(DecodeError::UnexpectedLaunchMetadata);
             }
             Ok(Request::Restart)
+        }
+        PRESENTATION_COVER | RELEASE_PRESENTATION_COVER => {
+            if !arguments.is_empty() {
+                return Err(DecodeError::ScreenshotArgumentCount(arguments.len()));
+            }
+            let request_id =
+                NonZeroU64::new(request_id).ok_or(DecodeError::InvalidScreenshotRequestId)?;
+            Ok(if command == PRESENTATION_COVER {
+                Request::PresentationCover(request_id)
+            } else {
+                Request::ReleasePresentationCover(request_id)
+            })
         }
         SCREENSHOT_PREPARED | CANCEL_SCREENSHOT => {
             if !arguments.is_empty() {
@@ -1270,4 +1315,56 @@ fn wait_for_exit_or_arrival(arrivals: &OwnedFd, children: &[TrackedChild]) {
             size_of::<u64>(),
         )
     };
+}
+
+#[cfg(test)]
+mod presentation_cover_tests {
+    use super::*;
+
+    fn packet(command: u8, request_id: u64, arguments: &[&str]) -> Vec<u8> {
+        let mut packet = vec![command];
+        packet.extend_from_slice(&request_id.to_le_bytes());
+        packet.extend_from_slice(&u32::try_from(arguments.len()).unwrap().to_le_bytes());
+        for argument in arguments {
+            packet.extend_from_slice(&u32::try_from(argument.len()).unwrap().to_le_bytes());
+            packet.extend_from_slice(argument.as_bytes());
+        }
+        packet
+    }
+
+    fn handler() -> SystemCommandHandler {
+        SystemCommandHandler::new(None, None, None)
+    }
+
+    #[test]
+    fn the_shell_asks_for_a_presentation_cover_and_releases_it() {
+        let mut commands = handler();
+        commands.handle(&packet(PRESENTATION_COVER, 5, &[])).unwrap();
+        assert_eq!(commands.take_presentation_cover_requested(), NonZeroU64::new(5));
+        assert_eq!(commands.take_presentation_cover_requested(), None);
+        assert_eq!(commands.take_presentation_cover_released(), None);
+        commands
+            .handle(&packet(RELEASE_PRESENTATION_COVER, 5, &[]))
+            .unwrap();
+        assert_eq!(commands.take_presentation_cover_released(), NonZeroU64::new(5));
+        // Neither touches the screenshot selection.
+        assert_eq!(commands.take_screenshot_prepared(), None);
+        assert_eq!(commands.take_screenshot_cancelled(), None);
+    }
+
+    #[test]
+    fn a_presentation_cover_needs_an_identity_and_no_arguments() {
+        assert_eq!(
+            decode(&packet(PRESENTATION_COVER, 0, &[])),
+            Err(DecodeError::InvalidScreenshotRequestId)
+        );
+        assert_eq!(
+            decode(&packet(RELEASE_PRESENTATION_COVER, 0, &[])),
+            Err(DecodeError::InvalidScreenshotRequestId)
+        );
+        assert_eq!(
+            decode(&packet(PRESENTATION_COVER, 3, &["x"])),
+            Err(DecodeError::ScreenshotArgumentCount(1))
+        );
+    }
 }

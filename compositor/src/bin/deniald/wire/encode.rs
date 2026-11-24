@@ -341,11 +341,15 @@ impl WireBridge {
             ShellAction::ScreenshotRegion
                 | ShellAction::ScreenshotTextureReady
                 | ShellAction::ScreenshotDone
+                | ShellAction::PresentationCover
         );
+        // A presentation cover answers with its texture, or without one when
+        // there is no frozen frame.
         if !valid_action
             || request_id == 0
             || texture_id.is_some_and(|texture_id| texture_id <= 0)
-            || (action == ShellAction::ScreenshotTextureReady) != texture_id.is_some()
+            || (action != ShellAction::PresentationCover
+                && (action == ShellAction::ScreenshotTextureReady) != texture_id.is_some())
         {
             return Err(WireError::Identity);
         }
