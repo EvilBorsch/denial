@@ -953,9 +953,8 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
   // Apps that ask before they close ---------------------------------------
 
   /// How long an app closed from Recents has to close its windows before
-  /// Recents takes it for one that asks the user something first. GTK,
-  /// Firefox and Android apps close theirs within a few hundred
-  /// milliseconds on the tablet.
+  /// Recents takes it for one that asks the user something first. On the
+  /// tablet, GTK apps that do not ask are gone well within it.
   static const Duration _closeGrace = Duration(seconds: 1);
 
   late final _closingApps = RecentsClosing(

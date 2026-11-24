@@ -110,9 +110,12 @@ point 1).
   (about 10 mm at the 2.5 scale, Material's touch target) and at least
   136 px wide, centred in the band between the cards and the bottom
   gesture's area, at least 16 px clear of that area, so a tap on it is
-  never taken for the home swipe. It fades in and out with the cards'
-  labels, dims while pressed, and shows only while Recents holds a card;
-  with no apps Recents shows "No recent apps" as before.
+  never taken for the home swipe. It is glass like the shell's panels over
+  the wallpaper: a slice of the frost Recents already shares, under a light
+  tint, with no blur pass of its own (a solid tint with transparency off).
+  It fades in and out with the cards' labels, dims while pressed, and shows
+  only while Recents holds a card; with no apps Recents shows "No recent
+  apps" as before.
 - **What it closes.** Every card in Recents: each window of an app whose
   windows are grouped (each its own card), both apps of a Split View pair
   and the windows riding on a card (dialogs), Android (Droidloom) windows
@@ -144,6 +147,18 @@ point 1).
 
   A window of an app being closed from Recents never comes to the front
   by the compositor's focus fallback as the others close.
+- **Open: one slow frame as Recents leaves with an empty row.** Measured on
+  the tablet (eb19~r1, kernel trace, the virtual input's own markers): the
+  first frame after the tap takes about 50 ms of raster (build 2 ms), then
+  the cards fly at 120 Hz. eb18 has the same 58 ms stall whenever the last
+  card is swiped away; «Close all» meets it at the tap because the row
+  empties there. Recents left with cards in the row (a tap beside them)
+  costs 12 to 15 ms, the per-app close-all (Recents stays) nothing extra,
+  and «Close all» without going home at once moves the stall to the moment
+  the last card is gone. Not the minimize of the app in front, the frozen
+  poses or the labels' fade (diagnostic toggles, eb19~rdiag1). The cause is
+  not found yet; the next toggles (eb19~rdiag2: the Recents layer hidden,
+  home's fade, the frost, the scrim, the pill, the cards) are built.
 
 ## Split View (iPadOS-like), two apps side by side
 
