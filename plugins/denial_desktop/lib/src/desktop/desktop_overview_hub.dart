@@ -5,7 +5,10 @@ import 'package:denial_flutter_sdk/effects.dart';
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/models.dart';
 import 'package:denial_flutter_sdk/motion.dart';
+import 'package:denial_flutter_sdk/rendering.dart'
+    show FrostedBackdrop, WindowBackdropCache, WindowBackdropSlice;
 import 'package:denial_flutter_sdk/shell_theme.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -119,8 +122,15 @@ mixin _RetainedOverview<T extends ConsumerStatefulWidget> on ConsumerState<T> {
 
 /// The desktop behind the hub and the app windows, dimmed and blurred as
 /// far as the overview is open.
+///
+/// With [wallpaperGlass], the scene's wallpaper frosted once, the glass is
+/// drawn from that image: the same material as the live filter, without
+/// filtering the scene on every frame of the overview's motion. The scene
+/// passes it only while the wallpaper is all the backdrop covers.
 class DesktopOverviewBackdrop extends ConsumerStatefulWidget {
-  const DesktopOverviewBackdrop({super.key});
+  const DesktopOverviewBackdrop({super.key, this.wallpaperGlass});
+
+  final ValueListenable<FrostedBackdrop?>? wallpaperGlass;
 
   @override
   ConsumerState<DesktopOverviewBackdrop> createState() =>
@@ -144,29 +154,70 @@ class _DesktopOverviewBackdropState
     }
     final motion = ref.watch(desktopOverviewMotionProvider).presence;
     final scrim = context.shellColors.overviewScrim;
+    final scrimColor = scrim.withValues(alpha: math.min(1.0, scrim.a * 0.8));
+    Widget live() => RepaintBoundary(
+      child: ShellBackdropBlur(
+        // The blurred desktop fades in over the sharp one; the blur
+        // itself does not change per frame.
+        opacity: motion,
+        blendMode: BlendMode.srcOver,
+        child: ColoredBox(color: scrimColor),
+      ),
+    );
+    final wallpaperGlass = widget.wallpaperGlass;
+    final backdrop = wallpaperGlass == null
+        ? live()
+        : ValueListenableBuilder<FrostedBackdrop?>(
+            valueListenable: wallpaperGlass,
+            builder: (context, frost, _) => desktopFrostedBackdrop(
+              frost: frost,
+              scrim: scrimColor,
+              opacity: motion,
+              live: live,
+            ),
+          );
     return Stack(
       fit: StackFit.expand,
       children: [
         Positioned.fromRect(
           rect: overview.backgroundBounds,
-          child: IgnorePointer(
-            child: RepaintBoundary(
-              child: ShellBackdropBlur(
-                // The blurred desktop fades in over the sharp one; the blur
-                // itself does not change per frame.
-                opacity: motion,
-                blendMode: BlendMode.srcOver,
-                child: ColoredBox(
-                  color: scrim.withValues(alpha: math.min(1.0, scrim.a * 0.8)),
-                ),
-              ),
-            ),
-          ),
+          child: IgnorePointer(child: backdrop),
         ),
       ],
     );
   }
 }
+
+/// The overview's dimmed glass over the desktop drawn from [frost], the
+/// wallpaper frosted once, as the live filter would draw it: the window
+/// material's frost and shading, then [scrim], all faded together by
+/// [opacity] exactly as an opacity layer over both. Without a frost made with
+/// the current theme's material, such as before the first capture or after a
+/// look change, [live] filters the scene instead.
+Widget desktopFrostedBackdrop({
+  required FrostedBackdrop? frost,
+  required Color scrim,
+  required ValueListenable<double> opacity,
+  required Widget Function() live,
+}) => WindowBackdropCache(
+  backdrop: frost,
+  motion: const AlwaysStoppedAnimation<double>(0),
+  overlayColor: scrim,
+  child: Builder(
+    builder: (context) {
+      final cache = WindowBackdropCache.maybeOf(context);
+      if (cache == null) {
+        return live();
+      }
+      return WindowBackdropSlice(
+        cache: cache,
+        glass: ShellTheme.of(context).windowGlassShading,
+        opacity: opacity,
+        fadeOverlay: true,
+      );
+    },
+  ),
+);
 
 /// The hub's chrome over the overview's windows: the search field, its
 /// results and the dimming of what it does not find; and the app windows'
