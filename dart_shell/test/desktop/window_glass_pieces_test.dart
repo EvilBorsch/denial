@@ -216,6 +216,17 @@ void main() {
       ], toDevice: placedAt(const Offset(0, 55))),
       isNull,
     );
+    // A window resized on its way into the overview, between whole device
+    // pixels: the material there is sampled at fractional positions.
+    const shrinking = Size(1500.3, 1012.7);
+    expect(
+      piecesFor(
+        shrinking,
+        gtk4Bands(shrinking),
+        toDevice: placedAt(const Offset(98.4, 120.2)),
+      ),
+      isNull,
+    );
     // A rotated window: no axis-aligned pieces.
     expect(
       piecesFor(

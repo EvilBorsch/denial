@@ -357,8 +357,10 @@ const int _maxPieces = 16;
 /// sampling grid (see [_materialGrid]). The pieces are laid out in device
 /// pixels ([toDevice], an axis-aligned transform from the plane's
 /// coordinates) from the rectangle the engine rounds the whole material to,
-/// limited to [viewport]. Null for any other transform, and when the
-/// material pieces would cover most of the window.
+/// limited to [viewport]. Null for any other transform, for a window whose
+/// size is not a whole number of device pixels (resized on its way into the
+/// overview or the app windows), and when the material pieces would cover
+/// most of the window.
 List<WindowPlanePiece>? windowPlaneMaterialPieces({
   required Rect bounds,
   required Rect content,
@@ -384,6 +386,12 @@ List<WindowPlanePiece>? windowPlaneMaterialPieces({
     rect.right * sx + tx,
     rect.bottom * sy + ty,
   );
+  // Only a window at a whole number of device pixels: one resized on its way
+  // into the overview or the app windows samples the material at fractional
+  // positions, where pieces would drift a level off the whole material.
+  final size = device(content).size;
+  bool integral(double value) => (value - value.roundToDouble()).abs() < 1e-3;
+  if (!integral(size.width) || !integral(size.height)) return null;
   final visible = device(content).intersect(viewport);
   if (visible.width <= 0 || visible.height <= 0) return null;
   // The rectangle the engine rounds the whole window's material to.
