@@ -278,7 +278,9 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
     final deck = widget.deck;
     final shown = deck.shown;
     _open.value = shown;
-    widget.onProgressChanged?.call(shown);
+    if (!(_closingAll && _diag.contains('no-progress'))) {
+      widget.onProgressChanged?.call(shown);
+    }
     final presenting = deck.presenting.value;
     final geometry = deck.geometry;
     final ids = <int>[];
@@ -314,9 +316,10 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
     // DIAGNOSTIC BUILD ONLY (never merged): toggles from /tmp/eb19r-diag.
     var diag = const <String>{};
     try {
-      diag = io.File(
-        '/tmp/eb19r-diag',
-      ).readAsStringSync().split(RegExp(r'\s+')).toSet();
+      diag = io.File('/tmp/eb19r-diag')
+          .readAsStringSync()
+          .split(RegExp(r'\s+'))
+          .toSet();
     } catch (_) {}
     _diag = diag;
     debugPrint("eb19r-diag close-all flags=$diag");
@@ -449,7 +452,10 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_presenting) return const SizedBox.shrink();
+    if (!_presenting || (_closingAll && _diag.contains('hide-layer'))) {
+      return const SizedBox.shrink();
+    }
+    bool off(String flag) => _closingAll && _diag.contains(flag);
     final deck = widget.deck;
     final geometry = deck.geometry;
     final interactive = widget.recents;
@@ -470,7 +476,7 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
                   widget.backdrop ??
                   const AlwaysStoppedAnimation<FrostedBackdrop?>(null),
               builder: (context, backdrop, stack) => WindowBackdropCache(
-                backdrop: backdrop,
+                backdrop: off('no-backdrop') ? null : backdrop,
                 motion: deck,
                 overlayColor: OverviewScrim.colorOf(context),
                 overlayOpacity: _open,
@@ -479,17 +485,20 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  OverviewScrim(
-                    opacity: _openAnimation,
-                    onTap: widget.onCloseRecents,
-                  ),
+                  if (!off('no-scrim'))
+                    OverviewScrim(
+                      opacity: _openAnimation,
+                      onTap: widget.onCloseRecents,
+                    ),
                   // Not while the last cards leave: recents goes home then.
                   if (deck.length == 0 &&
                       deck.leaving.isEmpty &&
                       widget.recents &&
                       !_closingAll)
                     EmptyOverviewState(progress: _openAnimation),
-                  if ((deck.length > 0 || _closingAll) && !geometry.isEmpty)
+                  if ((deck.length > 0 || _closingAll) &&
+                      !geometry.isEmpty &&
+                      !off('no-button'))
                     Positioned(
                       left: 0,
                       right: 0,
@@ -519,35 +528,40 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
                       ),
                     ),
                   ),
-                  for (final (index, id) in _drawn.indexed)
-                    if ((_windows[id], _poses[id]) case (
-                      final window?,
-                      final pose?,
-                    ))
-                      _DeckCard(
-                        key: ValueKey<int>(id),
-                        window: window,
-                        over: widget.windowsOver[id] ?? const <DenialWindow>[],
-                        pose: pose,
-                        coveredBy: index + 1 < _drawn.length
-                            ? _poses[_drawn[index + 1]]
-                            : null,
-                        labelWidth: geometry.card.width,
-                        labelOpacity: _closingAll && _diag.contains("no-labels") ? null : _labelOpacity,
-                        appWindowCount: _appWindows[id]?.length ?? 1,
-                        closing: _closing.contains(id),
-                        onLiftMove:
-                            widget.onSplit == null ||
-                                widget.splitTargetOf?.call(window) == null
-                            ? null
-                            : _liftMoved,
-                        onLiftDrop: _liftDropped,
-                        onOpen: widget.onOpenWindow,
-                        onLeaving: widget.onLeaveWindow,
-                        onDismissed: widget.onDismissWindow,
-                        onCloseApp: _closeApp,
-                        onMoveToDesk: widget.onMoveWindowToDesk,
-                      ),
+                  if (!off('no-cards'))
+                    for (final (index, id) in _drawn.indexed)
+                      if ((_windows[id], _poses[id]) case (
+                        final window?,
+                        final pose?,
+                      ))
+                        _DeckCard(
+                          key: ValueKey<int>(id),
+                          window: window,
+                          over:
+                              widget.windowsOver[id] ?? const <DenialWindow>[],
+                          pose: pose,
+                          coveredBy: index + 1 < _drawn.length
+                              ? _poses[_drawn[index + 1]]
+                              : null,
+                          labelWidth: geometry.card.width,
+                          labelOpacity:
+                              _closingAll && _diag.contains("no-labels")
+                              ? null
+                              : _labelOpacity,
+                          appWindowCount: _appWindows[id]?.length ?? 1,
+                          closing: _closing.contains(id),
+                          onLiftMove:
+                              widget.onSplit == null ||
+                                  widget.splitTargetOf?.call(window) == null
+                              ? null
+                              : _liftMoved,
+                          onLiftDrop: _liftDropped,
+                          onOpen: widget.onOpenWindow,
+                          onLeaving: widget.onLeaveWindow,
+                          onDismissed: widget.onDismissWindow,
+                          onCloseApp: _closeApp,
+                          onMoveToDesk: widget.onMoveWindowToDesk,
+                        ),
                 ],
               ),
             ),
