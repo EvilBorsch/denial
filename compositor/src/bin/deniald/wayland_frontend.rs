@@ -287,7 +287,8 @@ use input::{ClientInputRoute, RoutedPointerTarget};
 pub(super) use input::{
     begin_shell_gesture, cancel_shell_gesture, end_shell_gesture, install_keyboard_settings,
     install_mouse_settings, install_touchpad_settings, middle_drag_moves_strip,
-    middle_drag_releases_strip, set_mac_keys_enabled, shell_gesture_travel, update_shell_gesture,
+    middle_drag_releases_strip, sample_touchpad_motion, set_mac_keys_enabled, shell_gesture_travel,
+    update_shell_gesture,
 };
 pub(super) use input::{init_libinput, reset_all_input_devices};
 #[cfg(feature = "flutter")]

@@ -25,6 +25,9 @@ mod services;
 
 const BACKGROUND_SERVICE_INTERVAL: Duration = Duration::from_nanos(1_000_000_000 / 30);
 const BACKGROUND_MAINTENANCE_INTERVAL: Duration = Duration::from_millis(100);
+/// How long before an output tick a touchpad swipe moves its view: the
+/// shell gets the new scene and asks for its frame before the tick.
+const TOUCHPAD_MOTION_LEAD: Duration = Duration::from_micros(3_000);
 
 /// Runs a background check after the loop wakes, at most once per interval.
 ///
@@ -392,6 +395,37 @@ impl Session<'_, '_> {
                 .as_ref()
                 .is_some_and(|manager| manager.request_id().is_some())
             || events.frontend().wants_frame_ticks()
+            || events.touchpad_motion.is_some()
+    }
+
+    /// A touchpad swipe under way moves its view [`TOUCHPAD_MOTION_LEAD`]
+    /// before each output tick, so the shell has the new scene when the
+    /// tick asks it for a frame.
+    fn sample_touchpad_motion(&mut self, now: Instant) {
+        let Some(frame) = self.touchpad_motion_frame() else {
+            return;
+        };
+        if now + TOUCHPAD_MOTION_LEAD < frame {
+            return;
+        }
+        let Some(clock) = crate::presentation_clock::monotonic_now() else {
+            return;
+        };
+        let clock_micros = u64::try_from(clock.as_micros()).unwrap_or(u64::MAX);
+        let frame_micros = if frame >= now {
+            clock_micros.saturating_add(frame.duration_since(now).as_micros() as u64)
+        } else {
+            clock_micros.saturating_sub(now.duration_since(frame).as_micros() as u64)
+        };
+        wayland_frontend::sample_touchpad_motion(&mut self.events, frame, frame_micros);
+    }
+
+    /// The output tick the touchpad swipe under way samples its motion for
+    /// next, if it has not yet.
+    fn touchpad_motion_frame(&self) -> Option<Instant> {
+        let motion = self.events.touchpad_motion.as_ref()?;
+        let frame = self.frame_scheduler.next_tick()?;
+        (motion.sampled_frame != Some(frame)).then_some(frame)
     }
 
     fn next_dispatch_timeout(&self, now: Instant) -> Option<Duration> {
@@ -409,6 +443,13 @@ impl Session<'_, '_> {
         let mut timeout =
             frame_scheduler.limit_dispatch_timeout(now, runtime.next_dispatch_timeout(now));
         timeout = background.limit_dispatch_timeout(now, timeout);
+        if let Some(frame) = self.touchpad_motion_frame() {
+            timeout = timeout.min(
+                frame
+                    .checked_sub(TOUCHPAD_MOTION_LEAD)
+                    .map_or(Duration::ZERO, |due| due.saturating_duration_since(now)),
+            );
+        }
         timeout = events.idle_policy.limit_dispatch_timeout(now, timeout);
         timeout = events.power_button.limit_dispatch_timeout(now, timeout);
         timeout = events.dpms_topology.limit_dispatch_timeout(now, timeout);
@@ -636,6 +677,7 @@ impl Session<'_, '_> {
             )? {
                 continue;
             }
+            self.sample_touchpad_motion(Instant::now());
             synchronize_flutter_scene_and_input(
                 &self.output_control,
                 self.flutter,

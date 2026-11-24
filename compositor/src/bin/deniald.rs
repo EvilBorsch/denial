@@ -150,6 +150,9 @@ mod sleep_transition;
 mod startup;
 #[cfg(feature = "flutter")]
 #[cfg(feature = "flutter")]
+#[path = "deniald/motion_resampler.rs"]
+mod motion_resampler;
+#[cfg(feature = "flutter")]
 #[path = "deniald/shell_gestures.rs"]
 mod shell_gestures;
 #[path = "deniald/surface_feedback.rs"]
