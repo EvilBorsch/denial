@@ -227,7 +227,16 @@ impl Session<'_, '_> {
                 .ok_or("prepared screenshot has no physical output pools")?,
             &atlas,
         )?;
+        let cover = manager.is_cover();
         match manager.capture_prepared_frame(renderer, runtime, target_output, &mut sources) {
+            Ok(Some((request_id, texture_id))) if cover => {
+                info!(request_id, texture_id, "froze the frame on screen for a presentation switch");
+                runtime.send_screenshot_action(
+                    wire::ShellAction::PresentationCover,
+                    request_id,
+                    Some(texture_id),
+                )?;
+            }
             Ok(Some((request_id, texture_id))) => runtime.send_screenshot_action(
                 wire::ShellAction::ScreenshotTextureReady,
                 request_id,
@@ -235,15 +244,113 @@ impl Session<'_, '_> {
             )?,
             Ok(None) => {}
             Err(error) => {
-                warn!(%error, "could not freeze the screenshot selection canvas");
+                warn!(%error, cover, "could not freeze the screenshot selection canvas");
                 if let Some(request_id) = manager.cancel_selection(runtime, None)? {
+                    let action = if cover {
+                        wire::ShellAction::PresentationCover
+                    } else {
+                        wire::ShellAction::ScreenshotDone
+                    };
+                    runtime.send_screenshot_action(action, request_id, None)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The shell switches presentations and asks for the frame on screen as
+    /// its cover. The next frame of the panel is frozen once it is on screen
+    /// (`freeze_prepared_screenshot_frame`), a GPU copy of what was presented:
+    /// nothing is drawn again. Without a frozen frame (a screenshot holds the
+    /// buffer, the output is off) the shell hears so at once.
+    pub(super) fn handle_presentation_cover_request(
+        &mut self,
+        request: Option<std::num::NonZeroU64>,
+    ) -> Result<(), Box<dyn Error>> {
+        let Self {
+            screenshot_manager: manager,
+            topology,
+            scheduler,
+            swapchain,
+            scanouts,
+            allocator,
+            flutter: runtime,
+            frame_scheduler,
+            ..
+        } = self;
+        let Some(request_id) = request.map(std::num::NonZeroU64::get) else {
+            return Ok(());
+        };
+        let begun = (|| -> Result<Option<OutputId>, Box<dyn Error>> {
+            let Some(manager) = manager.as_mut() else {
+                return Ok(None);
+            };
+            let snapshot = topology.snapshot();
+            let atlas = AtlasPlan::for_snapshot(&snapshot).ok_or("presentation cover has no atlas")?;
+            // The switch happens on one screen.
+            let [output] = atlas.outputs.as_slice() else {
+                return Ok(None);
+            };
+            let target_output = output.id;
+            if scheduler
+                .framebuffer_index_for_output(target_output, scanouts)
+                .is_none()
+            {
+                return Ok(None);
+            }
+            let output_swapchains = swapchain
+                .outputs()
+                .ok_or("presentation cover has no physical output pools")?;
+            let modifier = screenshot_buffer_modifier(scheduler, output_swapchains, target_output)?;
+            Ok(manager
+                .begin_cover(allocator, target_output, atlas, modifier, request_id)?
+                .then_some(target_output))
+        })();
+        match begun {
+            Ok(Some(target_output)) => {
+                if let Err(error) = runtime.arm_screenshot_frame(target_output, request_id) {
+                    warn!(%error, request_id, "could not arm the presentation cover frame");
+                    if let Some(manager) = manager.as_mut() {
+                        manager.release_cover(runtime, request_id)?;
+                    }
                     runtime.send_screenshot_action(
-                        wire::ShellAction::ScreenshotDone,
+                        wire::ShellAction::PresentationCover,
                         request_id,
                         None,
                     )?;
+                    return Ok(());
                 }
+                frame_scheduler.mark_output_dirty(target_output);
             }
+            Ok(None) => runtime.send_screenshot_action(
+                wire::ShellAction::PresentationCover,
+                request_id,
+                None,
+            )?,
+            Err(error) => {
+                warn!(%error, request_id, "could not prepare a presentation cover");
+                runtime.send_screenshot_action(
+                    wire::ShellAction::PresentationCover,
+                    request_id,
+                    None,
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The shell's switch is over: its cover's texture and buffer go.
+    pub(super) fn handle_presentation_cover_release(
+        &mut self,
+        request: Option<std::num::NonZeroU64>,
+    ) -> Result<(), Box<dyn Error>> {
+        let Self {
+            screenshot_manager: manager,
+            flutter: runtime,
+            ..
+        } = self;
+        if let (Some(request_id), Some(manager)) = (request, manager.as_mut()) {
+            manager.release_cover(runtime, request_id.get())?;
         }
         Ok(())
     }

@@ -144,7 +144,13 @@ enum ShellActionKind : ubyte {
   // or a middle-button drag, up or down in the screens layout); see the
   // gesture_* fields of ShellAction. The shell decides what the direction
   // opens where it is (the overview, the app windows).
-  ShellGesture = 28
+  ShellGesture = 28,
+  // Appended. The answer to the shell's presentation cover request (system
+  // command 7): texture_id is the frame on screen, frozen in a texture the
+  // shell shows over a switch between the tablet and desktop presentations
+  // until it releases it (command 8). texture_id 0: no frozen frame (busy
+  // with a screenshot, or the output went away); the shell switches without.
+  PresentationCover = 29
 }
 
 // The direction of a ShellGesture: three fingers (or a middle-button drag)

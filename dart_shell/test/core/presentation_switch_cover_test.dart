@@ -245,6 +245,96 @@ void main() {
       await shell.finish(tester);
     });
 
+    testWidgets('covers with the frame deniald froze, draws nothing again '
+        'for it, and gives it back after the dissolve', (tester) async {
+      final shell = await tabletWith(
+        tester,
+        window(1, geometry: _desktopScreen, onPhone: false),
+      );
+      final released = <int>[];
+      var drawn = 0;
+      Widget frozen(ReferenceShellProfile presentation, {int? texture}) =>
+          UncontrolledProviderScope(
+            container: shell.container,
+            child: MediaQuery(
+              data: const MediaQueryData(size: tabletView),
+              child: Directionality(
+                textDirection: TextDirection.ltr,
+                child: PresentationSwitchCover(
+                  presentation: presentation,
+                  coverTexture: texture,
+                  onDrawn: () => drawn += 1,
+                  onReleased: released.add,
+                  child: Text('$presentation'),
+                ),
+              ),
+            ),
+          );
+      await tester.pumpWidget(frozen(ReferenceShellProfile.desktop));
+      expect(drawn, 1);
+      await tester.pumpWidget(
+        frozen(ReferenceShellProfile.mobile, texture: 42),
+      );
+      final cover = tester.widget<Texture>(find.byType(Texture));
+      expect(cover.textureId, 42);
+      expect(cover.freeze, isTrue);
+      expect(find.byType(RawImage), findsNothing);
+      // Over the new scene, which is live underneath.
+      expect(find.text('${ReferenceShellProfile.mobile}'), findsOneWidget);
+
+      await shell.publish(tester, [window(1)]);
+      await tester.pump(presentationSwitchDissolve ~/ 2);
+      expect(
+        tester
+            .widget<FadeTransition>(
+              find.ancestor(
+                of: find.byType(Texture),
+                matching: find.byType(FadeTransition),
+              ),
+            )
+            .opacity
+            .value,
+        inExclusiveRange(0.0, 1.0),
+      );
+      expect(released, isEmpty);
+      await tester.pump(presentationSwitchDissolve);
+      await tester.pump();
+      expect(find.byType(Texture), findsNothing);
+      expect(released, [42]);
+      expect(drawn, 1);
+      await shell.finish(tester);
+    });
+
+    testWidgets('keeps frames coming while a switch waits for its cover', (
+      tester,
+    ) async {
+      final shell = await tabletWith(tester, window(1));
+      Widget waiting(bool waiting) => UncontrolledProviderScope(
+        container: shell.container,
+        child: MediaQuery(
+          data: const MediaQueryData(size: tabletView),
+          child: Directionality(
+            textDirection: TextDirection.ltr,
+            child: PresentationSwitchCover(
+              presentation: ReferenceShellProfile.mobile,
+              waiting: waiting,
+              child: const SizedBox.expand(),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(waiting(false));
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      await tester.pumpWidget(waiting(true));
+      expect(tester.binding.hasScheduledFrame, isTrue);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.binding.hasScheduledFrame, isTrue);
+      await tester.pumpWidget(waiting(false));
+      await tester.pump();
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      await shell.finish(tester);
+    });
+
     testWidgets('does not cover a start, an unchanged presentation or a '
         'switch together with a monitor', (tester) async {
       final shell = await tabletWith(tester, window(1));

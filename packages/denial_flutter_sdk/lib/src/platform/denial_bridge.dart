@@ -653,6 +653,14 @@ class DenialBridge {
 
   bool cancelScreenshot(int requestId) => _session.cancelScreenshot(requestId);
 
+  /// Asks for the frame on screen as a presentation switch's cover; see
+  /// [DenialShellAction.presentationCover].
+  bool requestPresentationCover(int requestId) =>
+      _session.requestPresentationCover(requestId);
+
+  bool releasePresentationCover(int requestId) =>
+      _session.releasePresentationCover(requestId);
+
   /// Asks the native compositor to end this graphical session cleanly.
   ///
   /// This is deliberately not a process launch: deniald terminates its own

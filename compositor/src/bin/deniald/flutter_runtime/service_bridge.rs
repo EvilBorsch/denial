@@ -188,6 +188,14 @@ impl FlutterRuntime {
         self.system_commands.take_screenshot_cancelled()
     }
 
+    pub fn take_presentation_cover_requested(&mut self) -> Option<std::num::NonZeroU64> {
+        self.system_commands.take_presentation_cover_requested()
+    }
+
+    pub fn take_presentation_cover_released(&mut self) -> Option<std::num::NonZeroU64> {
+        self.system_commands.take_presentation_cover_released()
+    }
+
     pub fn take_idle_policy(&mut self) -> Option<idle_policy::IdlePolicyConfiguration> {
         self.pending_idle_policy.take()
     }

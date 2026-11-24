@@ -360,7 +360,8 @@ enum ShellActionKind {
   AppSwitcherEnd(25),
   AppSwitcherCancel(26),
   Search(27),
-  ShellGesture(28);
+  ShellGesture(28),
+  PresentationCover(29);
 
   final int value;
   const ShellActionKind(this.value);
@@ -396,6 +397,7 @@ enum ShellActionKind {
       case 26: return ShellActionKind.AppSwitcherCancel;
       case 27: return ShellActionKind.Search;
       case 28: return ShellActionKind.ShellGesture;
+      case 29: return ShellActionKind.PresentationCover;
       default: throw StateError('Invalid value $value for bit flag enum');
     }
   }
@@ -404,7 +406,7 @@ enum ShellActionKind {
       value == null ? null : ShellActionKind.fromValue(value);
 
   static const int minValue = 0;
-  static const int maxValue = 28;
+  static const int maxValue = 29;
   static const fb.Reader<ShellActionKind> reader = _ShellActionKindReader();
 }
 

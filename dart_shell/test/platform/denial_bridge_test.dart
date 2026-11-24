@@ -101,6 +101,66 @@ void main() {
     );
   }
 
+  test('a presentation cover crosses the native bridge with its texture, '
+      'and its request goes out as a system command', () async {
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    final bridge = DenialBridge();
+    final events = <DenialShellActionEvent>[];
+    final subscription = bridge.shellActions.listen(events.add);
+    final commands = <Uint8List>[];
+    messenger.setMockMessageHandler('denial/system_command', (data) async {
+      commands.add(Uint8List.sublistView(data!));
+      return null;
+    });
+    try {
+      Future<void> send(int requestId, int textureId) {
+        final envelope = wire.EnvelopeObjectBuilder(
+          protocolVersion: 1,
+          sequence: 9,
+          requestId: requestId,
+          payloadType: wire.PayloadTypeId.ShellAction,
+          payload: wire.ShellActionObjectBuilder(
+            action: wire.ShellActionKind.PresentationCover,
+            textureId: textureId,
+          ),
+        ).toBytes('DENW');
+        return messenger.handlePlatformMessage(
+          wire.denialWireToFlutterChannel,
+          ByteData.sublistView(envelope),
+          null,
+        );
+      }
+
+      expect(bridge.requestPresentationCover(5), isTrue);
+      expect(bridge.releasePresentationCover(5), isTrue);
+      expect(bridge.requestPresentationCover(0), isFalse);
+      await Future<void>.delayed(Duration.zero);
+      // Command, then the request id (little endian), then no arguments.
+      expect(commands.map((command) => command[0]), [7, 8]);
+      expect(
+        ByteData.sublistView(commands.first).getUint64(1, Endian.little),
+        5,
+      );
+
+      await send(5, 42);
+      await send(6, 0);
+      expect(events.map((event) => event.action), [
+        DenialShellAction.presentationCover,
+        DenialShellAction.presentationCover,
+      ]);
+      expect(events[0].requestId, 5);
+      expect(events[0].textureId, 42);
+      // Without a frozen frame.
+      expect(events[1].requestId, 6);
+      expect(events[1].textureId, isNull);
+    } finally {
+      await subscription.cancel();
+      bridge.dispose();
+      messenger.setMockMessageHandler('denial/system_command', null);
+    }
+  });
+
   test('shell gestures cross the native bridge with their progress', () async {
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
