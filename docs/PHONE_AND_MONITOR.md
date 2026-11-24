@@ -52,11 +52,11 @@ The phone's Settings app lists a Monitor page only while a monitor is plugged
 in. Its settings change only the desk:
 
 - **Scale** sets the monitor's output scale through `outputs.apply`, undone by
-  itself unless kept within 15 seconds, as a refresh rate is.
-- **Android apps** sets the density Droidloom gives Android windows on the
-  monitor, per unit of its scale, in Droidloom's `density-v1.json`. Each
-  Android window takes the density of the screen it is on, so moving it
-  between the phone and the monitor keeps its size in that screen's units.
+  itself unless kept within 15 seconds, as a refresh rate is. It sizes the
+  desk's shell and every app on it together (SCALING.md, "One scale per
+  display"). Android windows take Droidloom's density per unit of the scale
+  of the screen they are on, so moving one between the phone and the
+  monitor keeps its size in that screen's units.
 - **Windows** is `layout.windowLayout`: stacking, tiling (`dwindle`) or
   scrolling. The phone always fills its panel, so the setting only reaches
   the desk.
