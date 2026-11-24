@@ -853,6 +853,10 @@
       }
     }
   },
+  "desktopControlCenter": "Control Center",
+  "@desktopControlCenter": {
+    "description": "Name and spoken label of the control in the desktop system bar that opens and closes the dashboard (notifications, quick settings), as macOS's Control Center."
+  },
   "desktopDashboardTitle": "Dashboard",
   "@desktopDashboardTitle": {
     "description": "English UI text for desktopDashboardTitle."
@@ -7060,6 +7064,8 @@
   "@recentsCloseAppWindows": {"description": "Accessibility label of the button on a tablet recents card that closes every window of the card's app.", "placeholders": {"app": {"type": "String"}, "count": {"type": "int"}}},
   "recentsSplitWith": "Side by side with {app}",
   "@recentsSplitWith": {"description": "Tablet recents: label of the screen sides a long-pressed card is dropped on to share the screen with the app in front (Split View).", "placeholders": {"app": {"type": "String"}}},
+  "recentsCloseAll": "Close all",
+  "@recentsCloseAll": {"description": "Tablet recents: the button at the bottom that closes every app in recents and goes home, as on Android and iPadOS app switchers."},
   "splitViewDivider": "Divider between the apps",
   "@splitViewDivider": {"description": "Accessibility label of the divider between two apps side by side (Split View) on the tablet."},
   "splitViewHandle": "Move {app}",

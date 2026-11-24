@@ -49,6 +49,10 @@ class _QuietServices implements ShellServices {
   @override
   void openDashboard() {}
   @override
+  void toggleDashboard() {}
+  @override
+  ProviderListenable<bool> get dashboardOpen => _off;
+  @override
   void openPowerSettings() {}
 
   @override
@@ -65,6 +69,8 @@ class _Strings implements ShellStrings {
   String get openDashboard => 'Open dashboard';
   @override
   String get stayAwakeOn => 'Stay awake is on';
+  @override
+  String get controlCenter => 'Control Center';
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

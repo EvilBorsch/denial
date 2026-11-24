@@ -637,6 +637,9 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String get desktopControlCenter => 'Пункт управления';
+
+  @override
   String get desktopDashboardTitle => 'Панель управления';
 
   @override
@@ -5412,6 +5415,9 @@ class AppLocalizationsRu extends AppLocalizations {
   String recentsSplitWith(String app) {
     return 'Рядом с приложением $app';
   }
+
+  @override
+  String get recentsCloseAll => 'Закрыть все';
 
   @override
   String get splitViewDivider => 'Разделитель между приложениями';

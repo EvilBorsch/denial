@@ -867,8 +867,6 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
 
   void _hoverOpenLauncher() => _openLauncher(byHover: true);
 
-  void _hoverOpenDashboard() => _openDashboard(byHover: true);
-
   void _toggleLauncher() {
     if (ref.read(desktopWorkspaceProvider).launcherOpen) {
       _closePanels();
@@ -883,13 +881,16 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     _applicationSearchFocusNode.unfocus();
   }
 
-  /// Opens the dashboard; [byHover] as for [_openLauncher].
-  void _openDashboard({bool byHover = false}) {
+  /// Opens the dashboard, the control center: from its icon or the clock in
+  /// the system bar, a finger's swipe down from the top right, or the
+  /// dashboard shortcut. Never from a pointer resting at an edge, so it
+  /// stays open until dismissed.
+  void _openDashboard() {
     ref.read(clipboardTrayProvider.notifier).close();
     ref.read(desktopSearchOverlayProvider.notifier).close();
     final workspace = ref.read(desktopWorkspaceProvider);
     if (!workspace.overviewActive && !workspace.dashboardOpen) {
-      _panelHoverController.beginOpening(byHover: byHover);
+      _panelHoverController.beginOpening(byHover: false);
     } else {
       _panelHoverController.cancelClose();
     }
@@ -1368,7 +1369,6 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
               onHoverOpenLauncher: _hoverOpenLauncher,
               onDismissPanel: _closePanels,
               onOpenDashboard: _openDashboard,
-              onHoverOpenDashboard: _hoverOpenDashboard,
               onToggleDashboard: _toggleDashboard,
               onCloseWallpaperSelector: _closeWallpaperSelector,
               onOpenSettings: _openSettings,

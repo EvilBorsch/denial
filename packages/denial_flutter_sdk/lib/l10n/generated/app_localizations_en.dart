@@ -636,6 +636,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get desktopControlCenter => 'Control Center';
+
+  @override
   String get desktopDashboardTitle => 'Dashboard';
 
   @override
@@ -5359,6 +5362,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String recentsSplitWith(String app) {
     return 'Side by side with $app';
   }
+
+  @override
+  String get recentsCloseAll => 'Close all';
 
   @override
   String get splitViewDivider => 'Divider between the apps';

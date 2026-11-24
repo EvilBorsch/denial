@@ -1168,6 +1168,12 @@ abstract class AppLocalizations {
   /// **'Connect {deviceName}'**
   String desktopConnectDevice(String deviceName);
 
+  /// Name and spoken label of the control in the desktop system bar that opens and closes the dashboard (notifications, quick settings), as macOS's Control Center.
+  ///
+  /// In en, this message translates to:
+  /// **'Control Center'**
+  String get desktopControlCenter;
+
   /// English UI text for desktopDashboardTitle.
   ///
   /// In en, this message translates to:
@@ -9563,6 +9569,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Side by side with {app}'**
   String recentsSplitWith(String app);
+
+  /// Tablet recents: the button at the bottom that closes every app in recents and goes home, as on Android and iPadOS app switchers.
+  ///
+  /// In en, this message translates to:
+  /// **'Close all'**
+  String get recentsCloseAll;
 
   /// Accessibility label of the divider between two apps side by side (Split View) on the tablet.
   ///

@@ -603,6 +603,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get desktopControlCenter => '控制中心';
+
+  @override
   String get desktopDashboardTitle => '仪表板';
 
   @override
@@ -5104,6 +5107,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String recentsSplitWith(String app) {
     return '与 $app 并排';
   }
+
+  @override
+  String get recentsCloseAll => '全部关闭';
 
   @override
   String get splitViewDivider => '应用之间的分隔条';
