@@ -1250,9 +1250,54 @@ class _RecentsCloseAllButtonState extends State<RecentsCloseAllButton> {
 
   @override
   Widget build(BuildContext context) {
-    final dark = ShellTheme.of(context).brightness == Brightness.dark;
+    final theme = ShellTheme.of(context);
+    final dark = theme.brightness == Brightness.dark;
     final ink = dark ? const Color(0xFFF5F5F7) : const Color(0xFF1C1C1E);
     final label = context.l10n.recentsCloseAll;
+    const radius = BorderRadius.all(
+      Radius.circular(RecentsCloseAllButton.height / 2),
+    );
+    // Glass, as the shell's other panels over the wallpaper: a slice of the
+    // shared frost under a lighter tint, no blur pass of its own.
+    final glass = theme.effectivePanelOpacity < 1.0
+        ? WindowBackdropCache.maybeOf(context)
+        : null;
+    final tint = switch ((dark, glass != null)) {
+      (true, true) => const Color(0x40000000),
+      (true, false) => const Color(0x73000000),
+      (false, true) => const Color(0x59FFFFFF),
+      (false, false) => const Color(0x8CFFFFFF),
+    };
+    final pill = Container(
+      height: RecentsCloseAllButton.height,
+      constraints: const BoxConstraints(
+        minWidth: RecentsCloseAllButton.minWidth,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      // Sized by its label: an alignment here would stretch the pill across
+      // the free width the layer gives it.
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        color: tint,
+        border: Border.all(
+          color: dark ? const Color(0x24FFFFFF) : const Color(0x1F000000),
+        ),
+      ),
+      child: Center(
+        widthFactor: 1,
+        child: Text(
+          label,
+          maxLines: 1,
+          style: TextStyle(
+            color: ink,
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0,
+            decoration: TextDecoration.none,
+          ),
+        ),
+      ),
+    );
     return RepaintBoundary(
       child: Semantics(
         button: true,
@@ -1267,40 +1312,20 @@ class _RecentsCloseAllButtonState extends State<RecentsCloseAllButton> {
           child: AnimatedOpacity(
             opacity: _pressed ? 0.6 : 1,
             duration: const Duration(milliseconds: 90),
-            // Sized by its label: an alignment here would stretch the pill
-            // across the free width the layer gives it.
-            child: Container(
-              height: RecentsCloseAllButton.height,
-              constraints: const BoxConstraints(
-                minWidth: RecentsCloseAllButton.minWidth,
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 28),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(
-                  RecentsCloseAllButton.height / 2,
-                ),
-                color: dark ? const Color(0x73000000) : const Color(0x8CFFFFFF),
-                border: Border.all(
-                  color: dark
-                      ? const Color(0x24FFFFFF)
-                      : const Color(0x1F000000),
-                ),
-              ),
-              child: Center(
-                widthFactor: 1,
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  style: TextStyle(
-                    color: ink,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0,
-                    decoration: TextDecoration.none,
+            child: glass == null
+                ? pill
+                : Stack(
+                    children: [
+                      Positioned.fill(
+                        child: WindowBackdropSlice(
+                          cache: glass,
+                          borderRadius: radius,
+                          glass: theme.windowGlassShading,
+                        ),
+                      ),
+                      pill,
+                    ],
                   ),
-                ),
-              ),
-            ),
           ),
         ),
       ),
