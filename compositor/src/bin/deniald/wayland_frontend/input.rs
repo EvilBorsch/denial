@@ -2041,7 +2041,6 @@ fn process_touchpad_gesture_event(
                 | InputEvent::GestureSwipeUpdate { .. }
                 | InputEvent::GestureSwipeEnd { .. }
         ) {
-            state.touchpad_motion = None;
             settle_touchpad_swipe_reset(state, "the shell is locked or restarting");
             state.native_escape_shortcut.cancel_gestures();
             return Some(false);
@@ -2049,17 +2048,10 @@ fn process_touchpad_gesture_event(
         return None;
     }
 
-    let time_micros = match event {
-        InputEvent::GestureSwipeBegin { event } => event.time().micros(),
-        InputEvent::GestureSwipeUpdate { event } => event.time().micros(),
-        InputEvent::GestureSwipeEnd { event } => event.time().micros(),
-        _ => 0,
-    };
     let gesture_event = match event {
         InputEvent::GestureSwipeBegin { event } => {
             let device = event.device();
             let tracking = swipe_tracking(state, None);
-            state.touchpad_motion = None;
             state
                 .touchpad_gestures
                 .begin_swipe(device.sysname(), event.fingers(), tracking);
@@ -2085,114 +2077,7 @@ fn process_touchpad_gesture_event(
         _ => return None,
     };
 
-    Some(gesture_event.is_some_and(|event| dispatch_touchpad_swipe(state, event, time_micros)))
-}
-
-/// A touchpad swipe's event, its motion given to the output's frames at
-/// their pace instead of as the touchpad's reports arrive: the cover's come
-/// at 118.6 Hz and 7 % of them late, so a strip or an overview moved by each
-/// report stands still on some 120 Hz refreshes and jumps on the next
-/// (`motion_resampler`). The begin moves at once; updates only report;
-/// [`sample_touchpad_motion`] moves the view shortly before each frame; the
-/// end first gives the strip the rest of the motion.
-#[cfg(feature = "flutter")]
-fn dispatch_touchpad_swipe(
-    state: &mut RuntimeState,
-    gesture_event: super::super::touchpad_gestures::TouchpadGestureEvent,
-    time_micros: u64,
-) -> bool {
-    use super::super::motion_resampler::{TouchpadMotion, TouchpadMotionTarget};
-    use super::super::touchpad_gestures::TouchpadGestureEvent;
-
-    match gesture_event {
-        TouchpadGestureEvent::HorizontalScrollUpdate { delta_x } => {
-            if let Some(motion) = state
-                .touchpad_motion
-                .as_mut()
-                .filter(|motion| motion.target == TouchpadMotionTarget::Strip)
-            {
-                motion.report_delta(time_micros, delta_x);
-                return true;
-            }
-        }
-        TouchpadGestureEvent::VerticalUpdate {
-            travel, velocity, ..
-        } => {
-            if let Some(motion) = state
-                .touchpad_motion
-                .as_mut()
-                .filter(|motion| motion.target == TouchpadMotionTarget::Shell)
-            {
-                motion.report_travel(time_micros, travel, velocity);
-                return true;
-            }
-        }
-        TouchpadGestureEvent::HorizontalScrollEnd { .. } => {
-            if let Some(mut motion) = state
-                .touchpad_motion
-                .take()
-                .filter(|motion| motion.target == TouchpadMotionTarget::Strip)
-            {
-                let rest = motion.resampler.finish();
-                if rest != 0.0 {
-                    update_horizontal_layout_scroll(state, rest, false);
-                }
-            }
-        }
-        TouchpadGestureEvent::VerticalEnd { .. } => {
-            // The end carries the final travel itself.
-            state.touchpad_motion = None;
-        }
-        _ => {}
-    }
-    let handled = dispatch_swipe_gesture(state, gesture_event, None);
-    match gesture_event {
-        TouchpadGestureEvent::HorizontalScrollBegin { .. } if handled => {
-            state.touchpad_motion = Some(TouchpadMotion::strip(time_micros));
-        }
-        TouchpadGestureEvent::VerticalBegin { travel, .. } if handled => {
-            state.touchpad_motion = Some(TouchpadMotion::shell(time_micros, travel));
-        }
-        _ => {}
-    }
-    handled
-}
-
-/// Moves the strip or the shell's view the touchpad swipe under way drives
-/// to where its fingers were shortly before the output frame due at `frame`
-/// (`frame_micros` on the input clock). Called once per frame, before the
-/// scene goes to the shell, so the frame shows it.
-#[cfg(feature = "flutter")]
-pub(in super::super) fn sample_touchpad_motion(
-    state: &mut RuntimeState,
-    frame: std::time::Instant,
-    frame_micros: u64,
-) {
-    use super::super::motion_resampler::TouchpadMotionTarget;
-    use super::super::shell_gestures::ShellGestureSource;
-
-    let Some(motion) = state.touchpad_motion.as_mut() else {
-        return;
-    };
-    let target = motion.target;
-    let velocity = motion.velocity;
-    let Some(value) = motion.sample(frame, frame_micros) else {
-        return;
-    };
-    match target {
-        TouchpadMotionTarget::Strip => {
-            update_horizontal_layout_scroll(state, value, false);
-        }
-        TouchpadMotionTarget::Shell => {
-            let full = shell_gesture_travel(state, None);
-            update_shell_gesture(
-                state,
-                ShellGestureSource::Touchpad,
-                value / full,
-                velocity / full,
-            );
-        }
-    }
+    Some(gesture_event.is_some_and(|event| dispatch_swipe_gesture(state, event, None)))
 }
 
 /// Which motions of a three-finger swipe starting now follow the fingers:
@@ -2562,7 +2447,6 @@ pub(in super::super) fn cancel_shell_gesture(
 /// with the fingers snaps back, a shell gesture is cancelled.
 #[cfg(feature = "flutter")]
 fn settle_touchpad_swipe_reset(state: &mut RuntimeState, reason: &str) {
-    state.touchpad_motion = None;
     let reset = state.touchpad_gestures.reset();
     if reset.horizontal_scrolling {
         finish_horizontal_layout_scroll(state, true, None);

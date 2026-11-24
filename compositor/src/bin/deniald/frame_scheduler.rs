@@ -394,15 +394,6 @@ impl FrameScheduler {
         self.outputs.ticks()
     }
 
-    /// The next output tick: the frame whose rendering starts there.
-    pub(super) fn next_tick(&self) -> Option<Instant> {
-        self.outputs
-            .timelines
-            .iter()
-            .map(|timeline| timeline.next_tick)
-            .min()
-    }
-
     pub(super) fn output_tick_due(&self, now: Instant) -> bool {
         self.outputs
             .timelines

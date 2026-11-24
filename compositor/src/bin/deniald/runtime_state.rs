@@ -171,10 +171,6 @@ pub(super) struct RuntimeState {
     pub(super) flutter_input: flutter_runtime::InputQueue,
     #[cfg(feature = "flutter")]
     pub(super) touchpad_gestures: touchpad_gestures::TouchpadGestureRecognizer,
-    /// The touchpad swipe that moves the strip or the shell's view, given to
-    /// the output's frames at their pace (`motion_resampler`).
-    #[cfg(feature = "flutter")]
-    pub(super) touchpad_motion: Option<motion_resampler::TouchpadMotion>,
     /// The shell gesture that follows the fingers or the pointer, if one
     /// does (the full-screen apps layout's overview and app windows).
     #[cfg(feature = "flutter")]
