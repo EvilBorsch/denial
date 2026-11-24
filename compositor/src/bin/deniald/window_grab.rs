@@ -238,6 +238,15 @@ pub(super) fn pointer_grab_drives_window(
         .unwrap_or(false)
 }
 
+/// Whether `pointer` already drags a split divider, as a tiled X11 client's
+/// first `_NET_WM_MOVERESIZE` for this press made it do.
+#[cfg(all(feature = "xwayland", feature = "flutter"))]
+pub(super) fn pointer_grab_drags_divider(pointer: &PointerHandle<RuntimeState>) -> bool {
+    pointer
+        .with_grab(|_, grab| grab.downcast_ref::<DividerGrab>().is_some())
+        .unwrap_or(false)
+}
+
 fn window_is_mapped(data: &RuntimeState, window: &Window) -> bool {
     let Some(frontend) = data.wayland.as_ref() else {
         return false;
@@ -869,15 +878,15 @@ impl PointerGrab<RuntimeState> for TileResizeGrab {
     }
 }
 
-/// A plain left-button drag of a split divider. The boundary follows the
-/// pointer from where it was pressed, stopping at the split's limits; it
-/// does not drift when the pointer comes back from past a limit.
+/// A plain left-button drag of a split divider, or a tiled client's resize
+/// from its own edge, which drags the split beside that edge (two for a
+/// corner). Each boundary follows the pointer from where it was pressed,
+/// stopping at the split's limits; it does not drift when the pointer comes
+/// back from past a limit.
 #[cfg(feature = "flutter")]
 pub(super) struct DividerGrab {
     start_data: GrabStartData<RuntimeState>,
-    hit: super::wayland_frontend::DividerHit,
-    start_boundary: f64,
-    start_along: f64,
+    handles: Vec<super::wayland_frontend::DividerHandle>,
     /// False for the second press of a double click: it evened the split
     /// out and only holds the divider until the button is released.
     drags: bool,
@@ -888,15 +897,16 @@ pub(super) struct DividerGrab {
 impl DividerGrab {
     pub(super) fn new(
         start_data: GrabStartData<RuntimeState>,
-        hit: super::wayland_frontend::DividerHit,
+        hits: Vec<super::wayland_frontend::DividerHit>,
         drags: bool,
     ) -> Self {
-        let start_along = hit.along(start_data.location);
+        let handles = hits
+            .into_iter()
+            .map(|hit| super::wayland_frontend::DividerHandle::new(hit, start_data.location))
+            .collect();
         Self {
-            start_boundary: hit.boundary(),
-            start_along,
             start_data,
-            hit,
+            handles,
             drags,
             affected_windows: Vec::new(),
         }
@@ -916,10 +926,19 @@ impl PointerGrab<RuntimeState> for DividerGrab {
         if !self.drags || !event.location.x.is_finite() || !event.location.y.is_finite() {
             return;
         }
-        let boundary = self.start_boundary + self.hit.along(event.location) - self.start_along;
-        let changed = data
-            .frontend_mut()
-            .drag_layout_divider_to(&self.hit, boundary);
+        let mut changed = Vec::new();
+        for divider in &self.handles {
+            let boundary = divider.boundary_at(event.location);
+            for (window, geometry) in data
+                .frontend_mut()
+                .drag_layout_divider_to(&divider.hit, boundary)
+            {
+                // A corner's second split can move a tile the first did:
+                // its final rectangle is the one to publish.
+                changed.retain(|(moved, _): &(Window, _)| moved != &window);
+                changed.push((window, geometry));
+            }
+        }
         if changed.is_empty() {
             return;
         }
@@ -1290,6 +1309,17 @@ impl ResizeEdges {
             bottom,
             left,
             right,
+        }
+    }
+
+    /// The same edges, as the layouts name them.
+    #[cfg(feature = "flutter")]
+    pub(super) const fn layout_edges(self) -> LayoutResizeEdges {
+        LayoutResizeEdges {
+            top: self.top,
+            bottom: self.bottom,
+            left: self.left,
+            right: self.right,
         }
     }
 }

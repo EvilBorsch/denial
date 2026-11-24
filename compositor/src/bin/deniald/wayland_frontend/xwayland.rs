@@ -33,6 +33,10 @@ use tracing::{debug, error, info, warn};
 use super::super::PendingWindowEvent;
 use super::super::RuntimeState;
 use super::focus::request_keyboard_focus;
+#[cfg(feature = "flutter")]
+use super::input::flutter_route::{TiledResizePress, begin_tiled_edge_resize};
+#[cfg(feature = "flutter")]
+use super::pointer_grab_drags_divider;
 use super::window_management::activate_window;
 use super::window_management::{
     ManagedClientStateRequest, apply_managed_client_state_request, managed_client_grab_allowed,
@@ -40,6 +44,7 @@ use super::window_management::{
 #[cfg(feature = "flutter")]
 use super::window_management::{
     apply_managed_minimize, queue_restored_window_state, queue_window_placement,
+    tiled_client_resize_allowed,
 };
 use super::{
     KeyboardFocusTarget, MoveSurfaceGrab, ResizeEdges, ResizeSurfaceGrab, WindowIdentity,
@@ -1253,6 +1258,37 @@ impl XwmHandler for RuntimeState {
         let Some(element) = window_for_x11(self, &window) else {
             return;
         };
+        // A tiled X11 window resizes by dragging the splits beside the edge
+        // it names, as a tiled Wayland one does.
+        #[cfg(feature = "flutter")]
+        if tiled_client_resize_allowed(self, &element) {
+            let pointer = self
+                .frontend()
+                .seat
+                .get_pointer()
+                .expect("seat has no pointer");
+            if pointer_grab_drags_divider(&pointer) {
+                debug!(
+                    window = window.window_id(),
+                    "ignored repeated X11 resize during a divider drag"
+                );
+                return;
+            }
+            let Some(start_data) = pointer.grab_start_data() else {
+                info!(
+                    window = window.window_id(),
+                    "ignored tiled X11 resize without a pointer grab"
+                );
+                return;
+            };
+            begin_tiled_edge_resize(
+                self,
+                &element,
+                ResizeEdges::from_x11(edge).layout_edges(),
+                TiledResizePress::Pointer(start_data, SERIAL_COUNTER.next_serial()),
+            );
+            return;
+        }
         if !managed_client_grab_allowed(self, &element) {
             return;
         }
