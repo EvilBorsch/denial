@@ -9570,6 +9570,12 @@ abstract class AppLocalizations {
   /// **'Side by side with {app}'**
   String recentsSplitWith(String app);
 
+  /// Tablet recents: the button at the bottom that closes every app in recents and goes home, as on Android and iPadOS app switchers.
+  ///
+  /// In en, this message translates to:
+  /// **'Close all'**
+  String get recentsCloseAll;
+
   /// Accessibility label of the divider between two apps side by side (Split View) on the tablet.
   ///
   /// In en, this message translates to:

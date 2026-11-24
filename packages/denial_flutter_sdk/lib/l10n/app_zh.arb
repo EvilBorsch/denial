@@ -1605,6 +1605,7 @@
   "moveToMonitor": "移到显示器",
   "recentsCloseAppWindows": "关闭“{app}”的全部 {count} 个窗口",
   "recentsSplitWith": "与 {app} 并排",
+  "recentsCloseAll": "全部关闭",
   "splitViewDivider": "应用之间的分隔条",
   "splitViewHandle": "移动{app}",
   "setupWelcome": "欢迎",

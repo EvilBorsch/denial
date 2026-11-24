@@ -105,17 +105,17 @@ class AppDeck extends ChangeNotifier {
   }
 
   /// The apps thrown out of recents whose cards are still on their way
-  /// out, each with how far along the row from the screen it left. The row
-  /// has closed over them; the deck draws them where they were.
+  /// out, each where it was drawn when it left. The row has closed over
+  /// them; the deck draws them there whatever the row and recents do
+  /// meanwhile, so a card goes straight out even as recents leaves for home
+  /// behind it, and it presents until they are gone.
   Iterable<int> get leaving => _leaving.keys;
-  final Map<int, double> _leaving = {};
+  final Map<int, WindowPose> _leaving = {};
 
   /// Where [objectId] sits along the row. It differs from its index only
-  /// while the row closes a gap, and for an app that is [leaving].
-  double slotOf(int objectId) {
-    if (_leaving[objectId] case final along?) return row.value + along;
-    return _slots[objectId]?.value ?? (indexOf(objectId) ?? 0).toDouble();
-  }
+  /// while the row closes a gap.
+  double slotOf(int objectId) =>
+      _slots[objectId]?.value ?? (indexOf(objectId) ?? 0).toDouble();
 
   bool get _moving =>
       open.moving ||
@@ -130,8 +130,7 @@ class AppDeck extends ChangeNotifier {
   /// [rowAt], nothing open. Nothing moves on screen; the deck presents
   /// nothing at rest.
   void arrange(List<int> order, {required double rowAt}) {
-    if (_moving || _held || open.value != 0) return;
-    _leaving.clear();
+    if (_moving || _held || open.value != 0 || _leaving.isNotEmpty) return;
     if (_flying case final id? when !order.contains(id)) _flying = null;
     _hidden = null;
     final same =
@@ -210,7 +209,7 @@ class AppDeck extends ChangeNotifier {
   /// ends it.
   void leave(int objectId, motor.Motion motion) {
     if (!_order.contains(objectId)) return;
-    _leaving[objectId] = slotOf(objectId) - row.value;
+    _leaving[objectId] = poseOf(objectId);
     reorder([
       for (final id in _order)
         if (id != objectId) id,
@@ -265,13 +264,15 @@ class AppDeck extends ChangeNotifier {
   }
 
   /// Where the deck draws [objectId] now.
-  WindowPose poseOf(int objectId) => geometry.pose(
-    slotOf(objectId),
-    open: open.value,
-    row: row.value,
-    homeward: homeward.value,
-    attached: attached.value,
-  );
+  WindowPose poseOf(int objectId) =>
+      _leaving[objectId] ??
+      geometry.pose(
+        slotOf(objectId),
+        open: open.value,
+        row: row.value,
+        homeward: homeward.value,
+        attached: attached.value,
+      );
 
   /// The flight home of [objectId] has reached its icon.
   void flightLanded(int objectId) {
@@ -364,7 +365,9 @@ class AppDeck extends ChangeNotifier {
       homeward._set(0);
       open._set(0);
     }
-    final presenting = _moving || _held || open.value > 0;
+    // A card still on its way out keeps the deck on screen until it is gone.
+    final presenting =
+        _moving || _held || open.value > 0 || _leaving.isNotEmpty;
     if (!presenting) _hidden = null;
     // Whoever draws the apps at rest hears of it in the same frame as the
     // deck's own listeners.
