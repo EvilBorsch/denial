@@ -100,6 +100,82 @@ Baseline screenshots: `D:\androidlinux\device-logs\eb18-baseline\m*.png`.
   app, each card on screen leaving as a flung one does. Flinging one card
   closes that window, as now.
 
+### Recents: «Close all» (eb19)
+
+The owner: "in the tablet presentation, a button at the bottom to close the
+active windows instead of swiping each one away" (design, iteration 3,
+point 1).
+
+- **The button.** «Закрыть все» / "Close all" / «全部关闭», a pill 48 px tall
+  (about 10 mm at the 2.5 scale, Material's touch target) and at least
+  136 px wide, centred in the band between the cards and the bottom
+  gesture's area, at least 16 px clear of that area, so a tap on it is
+  never taken for the home swipe. It is glass like the shell's panels over
+  the wallpaper: a slice of the frost Recents already shares, under a light
+  tint, with no blur pass of its own (a solid tint with transparency off).
+  It fades in and out with the cards' labels, dims while pressed, and shows
+  only while Recents holds a card; with no apps Recents shows "No recent
+  apps" as before.
+- **What it closes.** Every card in Recents: each window of an app whose
+  windows are grouped (each its own card), both apps of a Split View pair
+  and the windows riding on a card (dialogs), Android (Droidloom) windows
+  alike. Each gets the close request a swiped card's app gets (the
+  compositor's `CloseWindow`: `xdg_toplevel.close`, `WM_DELETE_WINDOW` for
+  X11), once its card has left the screen. Nothing is killed.
+- **The motion.** Every card leaves the row where it is drawn and flies
+  straight up as a flung card does; Recents goes home at once behind them
+  (the scrim fades, home comes in), so the cards fly out over home. The
+  deck keeps drawing a leaving card where it left, whatever Recents does
+  meanwhile, until it is gone.
+- **An app that asks first.** An app may answer the close request with a
+  question, such as GNOME Text Editor's "Save changes?", and keep its
+  window open. Recents takes an app for one that asks when it opens a
+  window over its card (a dialog of its own: it counts at once) or still
+  has a window of the card open a second after the last app closed with it
+  (dialogs drawn inside the window, as libadwaita's). Such an app:
+  - is back in Recents at once, never hidden away as a closed app (before
+    eb19 a swiped app that kept its window vanished from Recents and the
+    app switcher until it closed);
+  - after «Close all», or whenever Recents has gone home meanwhile, comes
+    to the front with its question, opening as from its home icon, so the
+    question is neither hidden nor lost. With several, the one used last
+    comes first, and each next one once the one in front has closed;
+  - while Recents is still open (one card flung of several), only comes
+    back to the row: Recents does not pull the user out of it;
+  - and when the user turns elsewhere (home, another app), the rest stay in
+    Recents without coming forward.
+
+  A window of an app being closed from Recents never comes to the front
+  by the compositor's focus fallback as the others close.
+- **Open: one slow frame as Recents leaves with an empty row.** Measured on
+  the tablet (eb19~r1, kernel trace, the virtual input's own markers): the
+  first frame after the tap takes about 50 ms of raster (build 2 ms), then
+  the cards fly at 120 Hz. eb18 has the same 58 ms stall whenever the last
+  card is swiped away; «Close all» meets it at the tap because the row
+  empties there. Recents left with cards in the row (a tap beside them)
+  costs 12 to 15 ms, the per-app close-all (Recents stays) nothing extra,
+  and «Close all» without going home at once moves the stall to the moment
+  the last card is gone. Not the minimize of the app in front, the frozen
+  poses or the labels' fade (diagnostic toggles, eb19~rdiag1).
+  - The cause is home's fade, not Recents (eb19~rdiag2, 24.11 20:13, two
+    runs per toggle, first frame after the tap's release): with nothing
+    toggled 74 and 7 ms (the stall then 67 ms a few frames on); with the
+    whole Recents layer gone at the tap 63 and 51 ms; without the frost,
+    the scrim, the pill or the cards 59 to 82 ms; with home's content not
+    faded in (Recents' progress not reported to home) 30 and 26 ms, the
+    baseline. The slow frame is 42 to 57 ms of raster with 2 ms of build.
+    Opening Recents from home, when home fades out, has the same frame:
+    69 ms of raster with 0.3 ms of build, in eb18 too.
+  - Home fades its content through `FadeSnapshot` (SDK): when a fade
+    begins, the whole home grid is rendered into a full-screen image
+    (`toImageSync`) on the raster thread, and that is the frame. Recents
+    only starts the fade. Not explained yet: Recents left by a tap beside
+    the cards fades home in without that frame; its frames take 11 to
+    12 ms of raster each instead, as a live fade would. The fix belongs to the home's fade (reuse the
+    snapshot while home is hidden and unchanged, or take it before it is
+    needed) or to the engine's offscreen snapshot, not to Recents; reported
+    to the coordinator with these numbers.
+
 ## Split View (iPadOS-like), two apps side by side
 
 ### Where the split lives: deniald

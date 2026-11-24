@@ -603,6 +603,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get desktopControlCenter => '控制中心';
+
+  @override
   String get desktopDashboardTitle => '仪表板';
 
   @override
@@ -5106,6 +5109,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get recentsCloseAll => '全部关闭';
+
+  @override
   String get splitViewDivider => '应用之间的分隔条';
 
   @override
@@ -5323,6 +5329,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeSearchNoResults => '未找到结果';
 
   @override
+  String get shellSearchAllApps => '所有应用';
+
+  @override
+  String get shellSearchOpenWindowsHint => '搜索已打开的窗口';
+
+  @override
   String get powerActionRestartDenial => '重启 Denial';
 
   @override
@@ -5411,4 +5423,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String screensOverviewStackExpand(String app) {
     return '分别显示 $app 的窗口';
   }
+
+  @override
+  String get screensOverviewNewScreen => '新屏幕';
 }

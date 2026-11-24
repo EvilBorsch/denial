@@ -51,19 +51,6 @@ abstract final class DesktopMetrics {
     return placement.resolve(_outputBounds(viewSize, outputRect));
   }
 
-  static Rect dashboardRect(
-    Size viewSize, {
-    Rect? outputRect,
-    ShellPopupPlacement placement = const ShellPopupPlacement(
-      anchor: ShellPopupAnchor.bottomLeft,
-      width: 470,
-      height: 620,
-      margin: panelMargin,
-    ),
-  }) {
-    return placement.resolve(_outputBounds(viewSize, outputRect));
-  }
-
   static Rect launcherTriggerRect(
     Size viewSize, {
     Rect? outputRect,
@@ -81,14 +68,17 @@ abstract final class DesktopMetrics {
   static const double panelSwipeWidth = 24.0;
 
   /// The strips a finger swipes in from to open the launcher and the
-  /// dashboard. Touch has no hover, so this is its way in. When both panels
-  /// would open from the same place, the launcher keeps it.
+  /// dashboard (the control center, whose strip
+  /// `DesktopControlCenterGeometry` places). Touch only: a pointer opens
+  /// neither from an edge. When both panels would open from the same place,
+  /// the launcher keeps it.
   static ({DesktopPanelSwipe? launcher, DesktopPanelSwipe? dashboard})
   panelSwipes(
     Size viewSize, {
     Rect? outputRect,
     required ShellOverlaySettings overlays,
     required bool hasLauncher,
+    required DesktopPanelSwipe? dashboard,
   }) {
     final launcher = hasLauncher
         ? panelSwipeEdge(
@@ -97,11 +87,6 @@ abstract final class DesktopMetrics {
             placement: overlays.launcher,
           )
         : null;
-    final dashboard = panelSwipeEdge(
-      viewSize,
-      outputRect: outputRect,
-      placement: overlays.dashboard,
-    );
     final shared =
         launcher != null &&
         dashboard != null &&
@@ -169,19 +154,6 @@ abstract final class DesktopMetrics {
     }
     final rect = swipe.rect.intersect(bounds);
     return rect.isEmpty ? null : (rect: rect, edge: swipe.edge);
-  }
-
-  static Rect dashboardTriggerRect(
-    Size viewSize, {
-    Rect? outputRect,
-    ShellPopupPlacement placement = const ShellPopupPlacement(
-      anchor: ShellPopupAnchor.bottomLeft,
-      width: 470,
-      height: 620,
-      margin: panelMargin,
-    ),
-  }) {
-    return _edgeTriggerRect(viewSize, outputRect, placement);
   }
 
   static Rect _edgeTriggerRect(

@@ -284,7 +284,6 @@ class DesktopScene extends ConsumerStatefulWidget {
     required this.onHoverOpenLauncher,
     required this.onDismissPanel,
     required this.onOpenDashboard,
-    required this.onHoverOpenDashboard,
     required this.onToggleDashboard,
     required this.onCloseWallpaperSelector,
     required this.onOpenSettings,
@@ -331,9 +330,6 @@ class DesktopScene extends ConsumerStatefulWidget {
   final VoidCallback onHoverOpenLauncher;
   final VoidCallback onDismissPanel;
   final VoidCallback onOpenDashboard;
-
-  /// The pointer entered the dashboard's hot edge.
-  final VoidCallback onHoverOpenDashboard;
   final VoidCallback onToggleDashboard;
   final VoidCallback onCloseWallpaperSelector;
   final VoidCallback onOpenSettings;
@@ -1052,11 +1048,13 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                   ),
                 ),
               ),
+              // Above the windows, so the dragged one never hides it.
+              Positioned.fill(
+                child: DesktopScreensNewScreenLabel(desktop: desktop),
+              ),
               Positioned.fill(
                 child: DesktopOverviewHub(
                   onActivateWindow: onActivateWindow,
-                  onLaunchApplication: onLaunchApp,
-                  onLaunchLocalApplication: onLaunchLocalApp,
                   onDismiss: widget.onDismissOverview,
                   onNavigate: widget.onNavigateOverview,
                   onActivateSelection: widget.onActivateOverviewSelection,
@@ -1086,6 +1084,7 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
               DesktopPanelOverlay(
                 viewSize: viewSize,
                 shellOutputRect: shellOutputRect,
+                displayLayout: displayLayout,
                 panelTravel: widget.panelTravel,
                 panelDurationScale: widget.panelDurationScale,
                 applicationSearchFocusNode: applicationSearchFocusNode,
@@ -1093,7 +1092,6 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                 onHoverOpenLauncher: widget.onHoverOpenLauncher,
                 onDismissPanel: onDismissPanel,
                 onOpenDashboard: onOpenDashboard,
-                onHoverOpenDashboard: widget.onHoverOpenDashboard,
                 onOpenSettings: onOpenSettings,
                 onCancelPanelClose: onCancelPanelClose,
                 onSchedulePanelClose: onSchedulePanelClose,

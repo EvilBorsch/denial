@@ -11,7 +11,7 @@ import 'package:test/test.dart';
 /// before running this integration test from packages/denial_plugin_manager.
 void main() {
   test(
-    'reference desktop accepts, omits and rejects conflicting launchers',
+    'the launcher action composes with or without an alternative launcher',
     () async {
       final repo = p.normalize(p.absolute('../..'));
       final config = File(
@@ -134,15 +134,12 @@ class ExampleAction implements ShellAction {
         // The shell's manual entry-point dev dependencies must never activate.
         expect(found.plugins, isNot(contains('denial_taskbar')));
         expect(found.plugins, isNot(contains('denial_top_bar')));
-        if (roots.length > 1) {
-          expect(
-            () => CompositionPlan.resolve(found),
-            throwsA(isA<CompositionException>()),
-          );
-          continue;
-        }
+        // Since eb19 denial_launcher provides only its action: the shell's
+        // one search is the launcher, so an alternative launcher is the only
+        // provider of the contract and nothing conflicts.
+        final launchers = roots.contains('alternative_launcher') ? 1 : 0;
         final plan = CompositionPlan.resolve(found);
-        expect(plan.providers[contract], hasLength(roots.length));
+        expect(plan.providers[contract] ?? [], hasLength(launchers));
         final actionProviders =
             plan.providers[const TypeId(
               'package:denial_flutter_sdk/actions.dart',
@@ -159,18 +156,13 @@ class ExampleAction implements ShellAction {
         }
         if (roots.isEmpty) {
           expect(found.plugins, isNot(contains('denial_launcher')));
+        }
+        expect(source, isNot(contains('LauncherPlugin')));
+        if (launchers == 0) {
           expect(source, contains('launcher: null'));
-          expect(source, isNot(contains('LauncherPlugin')));
         } else {
           expect(source, contains('launcher: provider'));
-          expect(
-            source,
-            contains(
-              roots.single == 'denial_launcher'
-                  ? 'LauncherPlugin()'
-                  : 'AlternativeLauncher()',
-            ),
-          );
+          expect(source, contains('AlternativeLauncher()'));
         }
       }
     },

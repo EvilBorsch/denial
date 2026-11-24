@@ -126,6 +126,8 @@ use super::frame_scheduler::FrameTick;
 use super::local_windows::{LocalFlutterWindows, LocalWindowError};
 use super::native_shortcut::ShortcutManager;
 use super::settings::SettingsManager;
+#[cfg(all(feature = "xwayland", feature = "flutter"))]
+use super::window_grab::pointer_grab_drags_divider;
 #[cfg(feature = "xwayland")]
 use super::window_grab::pointer_grab_drives_window;
 use super::window_grab::{
@@ -225,7 +227,10 @@ mod screens;
 #[path = "wayland_frontend/split_view.rs"]
 mod split_view;
 #[cfg(feature = "flutter")]
-pub(crate) use dividers::{DividerHit, DividerPress, TouchDivider, TouchDividers};
+pub(crate) use dividers::{DividerHandle, DividerHit, DividerPress, TouchDivider, TouchDividers};
+// The layouts' own tests check the edge matching against real arrangements.
+#[cfg(all(test, feature = "flutter"))]
+pub(crate) use dividers::edge_dividers;
 #[path = "wayland_frontend/startup.rs"]
 mod startup;
 pub(crate) use startup::FrontendConfig;
@@ -647,6 +652,11 @@ pub(super) struct WaylandFrontend {
     flutter_touch_slots: HashSet<i32>,
     #[cfg(feature = "flutter")]
     client_touch_routes: HashMap<i32, ClientInputRoute>,
+    /// The serial and place of each client contact's touch down, so that a
+    /// tiled client's resize request naming it can take the finger
+    /// (`flutter_route::begin_tiled_edge_resize`). One entry per slot.
+    #[cfg(feature = "flutter")]
+    client_touch_downs: HashMap<i32, (Serial, Point<f64, Logical>)>,
     /// Client contacts that started in a shell edge-swipe region and may
     /// still be claimed by Flutter.
     #[cfg(feature = "flutter")]

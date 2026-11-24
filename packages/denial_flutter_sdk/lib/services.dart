@@ -104,6 +104,10 @@ abstract interface class ShellDesktopServices {
   /// Opens the host's dashboard, including from touch-only desktop controls.
   void openDashboard();
   void toggleDashboard();
+
+  /// Whether the dashboard (the desktop's control center) is open: the bar
+  /// lights the control that opened it.
+  ProviderListenable<bool> get dashboardOpen;
   void openPowerSettings();
 }
 
@@ -196,6 +200,10 @@ abstract interface class ShellStrings {
   String get wifiTitle;
   String get notConnected;
   String get openDashboard;
+
+  /// Name of the bar's control that opens and closes the dashboard, the
+  /// desktop's control center.
+  String get controlCenter;
   String get percentSign;
   String get celsiusUnit;
   String get metricCpu;

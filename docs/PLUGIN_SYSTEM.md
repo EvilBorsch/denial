@@ -467,6 +467,15 @@ nullable launcher through generated constructor injection, independently of its
 panel. The built-in preset and manual development entry point select the launcher;
 existing saved plugin selections are not changed automatically.
 
+In the EvilBorsch fork (eb19) the shell has one search for every way in (a
+bare Super, Super+S, Alt+F, four fingers up, the overview restricted to open
+windows, the tablet's app drawer and pull-down search), with one index, matcher
+and ranking in `plugins/denial_desktop/lib/src/search/`, and
+`plugins/denial_launcher` provides only `denial_launcher.openApplications`.
+Without a `ShellLauncher` provider that action opens the search, and the edge
+swipe that opened the launcher opens it too. What follows describes a
+`ShellLauncher` provider, which still replaces the search as the launcher panel.
+
 The plugin owns launcher presentation, filtering, suggestions and keyboard
 navigation. Its public context supplies application/history snapshots, localized
 labels, icons, cursors, focus and semantic actions. Native launching and recents persistence use SDK services. The consuming root

@@ -3412,3 +3412,210 @@ fn dwindle_and_scrolling_splits_have_dividers_but_scrolling_columns_do_not() {
     assert_eq!(dividers[0].axis, LayoutAxis::Vertical);
     assert!(scrolling.drag_divider(&dividers[0], work_area, 10, 40.0));
 }
+
+// A tiled client's resize from its own edge drags the split beside it
+// (`wayland_frontend::dividers::edge_dividers`). Its tile and the dividers
+// come from one arrangement, so the shared edges meet exactly in every
+// layout that tiles.
+
+fn resize_edges(top: bool, bottom: bool, left: bool, right: bool) -> LayoutResizeEdges {
+    LayoutResizeEdges {
+        top,
+        bottom,
+        left,
+        right,
+    }
+}
+
+fn edge_paths(
+    layout: &mut dyn WindowLayout<u64>,
+    work_area: Rectangle<i32, Logical>,
+    gap: i32,
+    window: u64,
+    edges: LayoutResizeEdges,
+) -> (Vec<(LayoutAxis, Vec<bool>)>, LayoutResizeEdges) {
+    layout.prepare_arrange(OUTPUT, work_area, gap, LayoutAxis::Horizontal);
+    let tile = geometry_of(&layout.arrange(OUTPUT, work_area, gap), window);
+    let dividers = layout.dividers(OUTPUT, work_area, gap);
+    let (found, outer) = crate::wayland_frontend::edge_dividers(&dividers, tile, edges);
+    (
+        found
+            .into_iter()
+            .map(|divider| (divider.axis, divider.path.clone()))
+            .collect(),
+        outer,
+    )
+}
+
+#[test]
+fn a_tiled_edge_resize_in_halves_drags_their_split_and_the_border_stays() {
+    let mut layout = screens_layout(&[1, 2]);
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Right));
+    let right = resize_edges(false, false, false, true);
+    let left = resize_edges(false, false, true, false);
+    assert_eq!(
+        edge_paths(layout.as_mut(), screen_area(), SCREEN_GAP, 1, right),
+        (
+            vec![(LayoutAxis::Horizontal, vec![])],
+            LayoutResizeEdges::default()
+        )
+    );
+    assert_eq!(
+        edge_paths(layout.as_mut(), screen_area(), SCREEN_GAP, 2, left),
+        (
+            vec![(LayoutAxis::Horizontal, vec![])],
+            LayoutResizeEdges::default()
+        )
+    );
+    // The screen's outer border.
+    assert_eq!(
+        edge_paths(layout.as_mut(), screen_area(), SCREEN_GAP, 1, left),
+        (vec![], left)
+    );
+    let top = resize_edges(true, false, false, false);
+    assert_eq!(
+        edge_paths(layout.as_mut(), screen_area(), SCREEN_GAP, 2, top),
+        (vec![], top)
+    );
+    // A drag of what the right edge found resizes both, and they still
+    // fill the screen.
+    layout.prepare_arrange(OUTPUT, screen_area(), SCREEN_GAP, LayoutAxis::Horizontal);
+    let divider = layout.dividers(OUTPUT, screen_area(), SCREEN_GAP).remove(0);
+    let before = settle(layout.as_mut());
+    assert!(layout.drag_divider(&divider, screen_area(), SCREEN_GAP, -120.0));
+    let after = settle(layout.as_mut());
+    assert_eq!(
+        geometry_of(&after, 1).size.w,
+        geometry_of(&before, 1).size.w - 120
+    );
+    let (one, two) = (geometry_of(&after, 1), geometry_of(&after, 2));
+    assert_eq!(one.loc.x, screen_area().loc.x);
+    assert_eq!(one.loc.x + one.size.w + SCREEN_GAP, two.loc.x);
+    assert_eq!(
+        two.loc.x + two.size.w,
+        screen_area().loc.x + screen_area().size.w
+    );
+}
+
+#[test]
+fn a_tiled_corner_resize_in_quarters_drags_both_splits_it_touches() {
+    // [[1 / 4] | [2 / 3]]
+    let mut layout = screens_layout(&[1, 2, 3, 4]);
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Right));
+    assert!(layout.move_beside(&3, &2, LayoutDirection::Down));
+    assert!(layout.move_beside(&4, &1, LayoutDirection::Down));
+    let (found, outer) = edge_paths(
+        layout.as_mut(),
+        screen_area(),
+        SCREEN_GAP,
+        2,
+        resize_edges(false, true, true, false),
+    );
+    assert_eq!(
+        found,
+        vec![
+            (LayoutAxis::Horizontal, vec![]),
+            (LayoutAxis::Vertical, vec![true])
+        ]
+    );
+    assert_eq!(outer, LayoutResizeEdges::default());
+    // Window 4's top right corner: the upright split and its own half's.
+    let (found, _) = edge_paths(
+        layout.as_mut(),
+        screen_area(),
+        SCREEN_GAP,
+        4,
+        resize_edges(true, false, false, true),
+    );
+    assert_eq!(
+        found,
+        vec![
+            (LayoutAxis::Horizontal, vec![]),
+            (LayoutAxis::Vertical, vec![false])
+        ]
+    );
+    // Window 1's top left corner is the screen's own corner.
+    let corner = resize_edges(true, false, true, false);
+    assert_eq!(
+        edge_paths(layout.as_mut(), screen_area(), SCREEN_GAP, 1, corner),
+        (vec![], corner)
+    );
+}
+
+#[test]
+fn a_tiled_edge_resize_finds_the_split_after_its_divider_moved() {
+    let mut layout = screens_layout(&[1, 2]);
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Right));
+    settle(layout.as_mut());
+    let divider = layout.dividers(OUTPUT, screen_area(), SCREEN_GAP).remove(0);
+    // Far past the limit: 90 %, and the left tile's minimum is irrelevant.
+    assert!(layout.drag_divider(&divider, screen_area(), SCREEN_GAP, 5_000.0));
+    assert_eq!(
+        edge_paths(
+            layout.as_mut(),
+            screen_area(),
+            SCREEN_GAP,
+            2,
+            resize_edges(false, false, true, false)
+        )
+        .0,
+        vec![(LayoutAxis::Horizontal, vec![])]
+    );
+}
+
+#[test]
+fn a_tiled_edge_resize_works_in_dwindle_and_inside_scrolling_columns_only() {
+    let work_area = rect(0, 0, 1000, 600);
+    let mut dwindle = DwindleLayout::<u64>::default();
+    for (window, anchor) in [(1, None), (2, Some(1)), (3, Some(2))] {
+        dwindle.insert(LayoutInsertion {
+            window,
+            space: OUTPUT,
+            anchor,
+        });
+    }
+    // [1 | [2 / 3]]: 2's lower edge is the nested split, its left the root.
+    let (found, outer) = edge_paths(
+        &mut dwindle,
+        work_area,
+        10,
+        2,
+        resize_edges(false, true, true, false),
+    );
+    assert_eq!(
+        found,
+        vec![
+            (LayoutAxis::Horizontal, vec![]),
+            (LayoutAxis::Vertical, vec![true])
+        ]
+    );
+    assert_eq!(outer, LayoutResizeEdges::default());
+
+    // Scrolling: the gap between columns is no split, so a column's own
+    // edges stay as they were (no resize from the client); a split inside
+    // a column drags.
+    let mut scrolling = ScrollingLayout::<u64>::default();
+    for window in 1..=3 {
+        scrolling.insert(LayoutInsertion {
+            window,
+            space: OUTPUT,
+            anchor: None,
+        });
+        prepare_scrolling(&mut scrolling, work_area, 10, LayoutAxis::Horizontal);
+    }
+    let right = resize_edges(false, false, false, true);
+    assert_eq!(
+        edge_paths(&mut scrolling, work_area, 10, 2, right),
+        (vec![], right)
+    );
+    assert!(scrolling.move_beside(&1, &2, LayoutDirection::Down));
+    let (found, outer) = edge_paths(
+        &mut scrolling,
+        work_area,
+        10,
+        2,
+        resize_edges(false, true, false, true),
+    );
+    assert_eq!(found, vec![(LayoutAxis::Vertical, vec![])]);
+    assert_eq!(outer, right);
+}

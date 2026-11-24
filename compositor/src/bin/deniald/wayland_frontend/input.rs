@@ -1059,6 +1059,29 @@ impl WaylandFrontend {
             location: press.location,
         })
     }
+
+    /// The contact whose touch down had `serial`, if it is still down on a
+    /// surface of the client that names it: its slot, and where it came
+    /// down.
+    pub(super) fn take_client_touch_press(
+        &mut self,
+        surface: &WlSurface,
+        serial: Serial,
+    ) -> Option<(i32, Point<f64, Logical>)> {
+        let (slot, position) = self
+            .client_touch_downs
+            .iter()
+            .find(|(slot, (down, _))| {
+                *down == serial
+                    && self
+                        .client_touch_routes
+                        .get(slot)
+                        .is_some_and(|route| route.surface.id().same_client_as(&surface.id()))
+            })
+            .map(|(slot, (_, position))| (*slot, *position))?;
+        self.client_touch_downs.remove(&slot);
+        Some((slot, position))
+    }
 }
 
 #[cfg(feature = "flutter")]

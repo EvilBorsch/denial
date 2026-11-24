@@ -260,6 +260,9 @@ final class DesktopShellServices implements ShellServices {
   @override
   void toggleDashboard() => onToggleDashboard();
   @override
+  ProviderListenable<bool> get dashboardOpen =>
+      desktopWorkspaceProvider.select((state) => state.dashboardOpen);
+  @override
   void toggleDesktop() => ref.read(desktopVisibleProvider.notifier).toggle();
   @override
   ProviderListenable<bool> get desktopVisible => desktopVisibleProvider;
@@ -483,6 +486,8 @@ final class _Strings implements ShellStrings {
   String get notConnected => context.l10n.commonNotConnected;
   @override
   String get openDashboard => context.l10n.settingsShortcutActionOpenDashboard;
+  @override
+  String get controlCenter => context.l10n.desktopControlCenter;
   @override
   String get percentSign => context.l10n.percentSign;
   @override
