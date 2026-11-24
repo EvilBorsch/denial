@@ -156,9 +156,25 @@ point 1).
   costs 12 to 15 ms, the per-app close-all (Recents stays) nothing extra,
   and «Close all» without going home at once moves the stall to the moment
   the last card is gone. Not the minimize of the app in front, the frozen
-  poses or the labels' fade (diagnostic toggles, eb19~rdiag1). The cause is
-  not found yet; the next toggles (eb19~rdiag2: the Recents layer hidden,
-  home's fade, the frost, the scrim, the pill, the cards) are built.
+  poses or the labels' fade (diagnostic toggles, eb19~rdiag1).
+  - The cause is home's fade, not Recents (eb19~rdiag2, 24.11 20:13, two
+    runs per toggle, first frame after the tap's release): with nothing
+    toggled 74 and 7 ms (the stall then 67 ms a few frames on); with the
+    whole Recents layer gone at the tap 63 and 51 ms; without the frost,
+    the scrim, the pill or the cards 59 to 82 ms; with home's content not
+    faded in (Recents' progress not reported to home) 30 and 26 ms, the
+    baseline. The slow frame is 42 to 57 ms of raster with 2 ms of build.
+    Opening Recents from home, when home fades out, has the same frame:
+    69 ms of raster with 0.3 ms of build, in eb18 too.
+  - Home fades its content through `FadeSnapshot` (SDK): when a fade
+    begins, the whole home grid is rendered into a full-screen image
+    (`toImageSync`) on the raster thread, and that is the frame. Recents
+    only starts the fade. Not explained yet: Recents left by a tap beside
+    the cards fades home in without that frame; its frames take 11 to
+    12 ms of raster each instead, as a live fade would. The fix belongs to the home's fade (reuse the
+    snapshot while home is hidden and unchanged, or take it before it is
+    needed) or to the engine's offscreen snapshot, not to Recents; reported
+    to the coordinator with these numbers.
 
 ## Split View (iPadOS-like), two apps side by side
 
