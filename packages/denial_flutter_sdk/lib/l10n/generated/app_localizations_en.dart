@@ -636,6 +636,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get desktopControlCenter => 'Control Center';
+
+  @override
   String get desktopDashboardTitle => 'Dashboard';
 
   @override

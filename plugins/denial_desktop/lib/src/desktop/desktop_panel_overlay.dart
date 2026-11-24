@@ -1,21 +1,31 @@
 import 'package:denial_flutter_sdk/applications.dart';
 import 'package:denial_flutter_sdk/input.dart';
+import 'package:denial_flutter_sdk/models.dart';
 import 'package:denial_flutter_sdk/settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/default_shell/panel_composition.dart';
 import 'desktop_application_launcher.dart';
+import 'desktop_control_center.dart';
 import 'desktop_dashboard.dart';
 import 'desktop_panel_edges.dart';
 import 'desktop_panel_transition.dart';
 import 'desktop_workspace.dart';
 
+/// The desktop's transient panels: the launcher of a launcher plugin and the
+/// control center (the dashboard), the barrier that closes them on a click
+/// outside, and the strips a finger swipes in from to open them.
+///
+/// A pointer resting at a screen edge never opens the control center: it
+/// opens from its icon and the clock in the system bar (and Super's
+/// dashboard shortcut), and by touch from the top right of the screen.
 class DesktopPanelOverlay extends ConsumerStatefulWidget {
   const DesktopPanelOverlay({
     super.key,
     required this.viewSize,
     required this.shellOutputRect,
+    required this.displayLayout,
     required this.panelTravel,
     required this.panelDurationScale,
     required this.applicationSearchFocusNode,
@@ -23,7 +33,6 @@ class DesktopPanelOverlay extends ConsumerStatefulWidget {
     required this.onHoverOpenLauncher,
     required this.onDismissPanel,
     required this.onOpenDashboard,
-    required this.onHoverOpenDashboard,
     required this.onOpenSettings,
     required this.onCancelPanelClose,
     required this.onSchedulePanelClose,
@@ -34,6 +43,9 @@ class DesktopPanelOverlay extends ConsumerStatefulWidget {
 
   final Size viewSize;
   final Rect? shellOutputRect;
+
+  /// Places the control center under the system bar's trailing end.
+  final DisplayLayout? displayLayout;
   final double panelTravel;
   final double panelDurationScale;
   final FocusNode applicationSearchFocusNode;
@@ -44,9 +56,6 @@ class DesktopPanelOverlay extends ConsumerStatefulWidget {
   final VoidCallback onHoverOpenLauncher;
   final VoidCallback onDismissPanel;
   final VoidCallback onOpenDashboard;
-
-  /// The pointer entered the dashboard's hot edge.
-  final VoidCallback onHoverOpenDashboard;
   final VoidCallback onOpenSettings;
   final VoidCallback onCancelPanelClose;
   final VoidCallback onSchedulePanelClose;
@@ -87,14 +96,12 @@ class _DesktopPanelOverlayState extends ConsumerState<DesktopPanelOverlay> {
   DesktopDashboard _cachedDashboard() {
     final cached = _dashboard;
     if (cached != null &&
-        cached.onEnter == widget.onCancelPanelClose &&
-        cached.onExit == widget.onSchedulePanelClose &&
+        cached.onDismiss == widget.onDismissPanel &&
         cached.onOpenSettings == widget.onOpenSettings) {
       return cached;
     }
     return _dashboard = DesktopDashboard(
-      onEnter: widget.onCancelPanelClose,
-      onExit: widget.onSchedulePanelClose,
+      onDismiss: widget.onDismissPanel,
       onOpenSettings: widget.onOpenSettings,
     );
   }
@@ -114,10 +121,10 @@ class _DesktopPanelOverlayState extends ConsumerState<DesktopPanelOverlay> {
       outputRect: widget.shellOutputRect,
       placement: overlaySettings.launcher,
     );
-    final dashboardRect = DesktopMetrics.dashboardRect(
-      widget.viewSize,
-      outputRect: widget.shellOutputRect,
-      placement: overlaySettings.dashboard,
+    final controlCenter = DesktopControlCenterGeometry.resolve(
+      viewSize: widget.viewSize,
+      displayLayout: widget.displayLayout,
+      configured: overlaySettings.dashboard,
     );
     final launcherTriggerRect = DesktopMetrics.launcherTriggerRect(
       widget.viewSize,
@@ -130,11 +137,7 @@ class _DesktopPanelOverlayState extends ConsumerState<DesktopPanelOverlay> {
       outputRect: widget.shellOutputRect,
       overlays: overlaySettings,
       hasLauncher: hasLauncher,
-    );
-    final dashboardTriggerRect = DesktopMetrics.dashboardTriggerRect(
-      widget.viewSize,
-      outputRect: widget.shellOutputRect,
-      placement: overlaySettings.dashboard,
+      dashboard: controlCenter?.swipe,
     );
     final launcherOpen =
         hasLauncher && panelState.panel == DesktopPanel.launcher;
@@ -180,21 +183,13 @@ class _DesktopPanelOverlayState extends ConsumerState<DesktopPanelOverlay> {
               child: _cachedApplicationLauncher(),
             ),
           ),
-        if (!dashboardRect.isEmpty)
+        if (controlCenter != null)
           Positioned.fromRect(
             key: const ValueKey<String>('desktop-dashboard-position'),
-            rect: dashboardRect,
-            child: DesktopPanelTransition(
-              key: const ValueKey<String>('desktop-dashboard-panel'),
-              inputDebugLabel: 'Desktop dashboard',
-              keyboardPolicy: ShellKeyboardPolicy.capture,
-              maintainState: true,
+            rect: controlCenter.reveal,
+            child: DesktopControlCenter(
+              geometry: controlCenter,
               visible: dashboardOpen,
-              entryDirection: desktopPanelEntryDirection(
-                overlaySettings.dashboard.anchor.horizontal,
-                overlaySettings.dashboard.anchor.vertical,
-              ),
-              entryDistance: widget.panelTravel,
               durationScale: widget.panelDurationScale,
               onOpened: widget.onPanelOpened,
               child: _cachedDashboard(),
@@ -213,18 +208,7 @@ class _DesktopPanelOverlayState extends ConsumerState<DesktopPanelOverlay> {
               ),
             ),
           ),
-        if (!panelState.overviewActive && !dashboardTriggerRect.isEmpty)
-          Positioned.fromRect(
-            rect: dashboardTriggerRect,
-            child: ShellInputRegion(
-              debugLabel: 'Desktop dashboard edge trigger',
-              child: DesktopPanelEdgeTrigger(
-                onEnter: widget.onHoverOpenDashboard,
-                onExit: widget.onSchedulePanelClose,
-              ),
-            ),
-          ),
-        // Above the hover triggers: a finger has no hover. The compositor
+        // Above the hover trigger: a finger has no hover. The compositor
         // hands a swipe over a window to the shell once it moves inward.
         if (!panelState.overviewActive) ...[
           if (swipes.launcher case final swipe?)

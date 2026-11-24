@@ -879,6 +879,10 @@
       }
     }
   },
+  "desktopControlCenter": "Пункт управления",
+  "@desktopControlCenter": {
+    "description": "Name and spoken label of the control in the desktop system bar that opens and closes the dashboard (notifications, quick settings), as macOS's Control Center."
+  },
   "desktopDashboardTitle": "Панель управления",
   "@desktopDashboardTitle": {
     "description": "English UI text for desktopDashboardTitle."

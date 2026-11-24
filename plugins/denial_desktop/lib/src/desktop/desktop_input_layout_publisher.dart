@@ -18,6 +18,7 @@ import 'package:denial_flutter_sdk/state.dart';
 import 'package:denial_flutter_sdk/settings.dart';
 
 import 'desktop_workspace.dart';
+import 'desktop_control_center.dart';
 import 'desktop_held_layers.dart';
 import 'desktop_input_surface_index.dart';
 import '../state/phone_desk.dart';
@@ -138,13 +139,19 @@ class _DesktopInputLayoutPublisherState
       final deckActive =
           !shell.locked && ref.read(inputDeckProvider).activeOutput != null;
       final desktop = ref.read(desktopWorkspaceProvider);
+      final overlays = ref.read(shellSettingsProvider).overlays;
       final panelSwipes = desktop.overviewActive
           ? (launcher: null, dashboard: null)
           : DesktopMetrics.panelSwipes(
               viewSize,
               outputRect: displayLayout?.systemBarOutput?.logicalRect,
-              overlays: ref.read(shellSettingsProvider).overlays,
+              overlays: overlays,
               hasLauncher: ref.read(desktopLauncherProvider) != null,
+              dashboard: DesktopControlCenterGeometry.resolve(
+                viewSize: viewSize,
+                displayLayout: displayLayout,
+                configured: overlays.dashboard,
+              )?.swipe,
             );
       final source = _DesktopInputLayoutSource(
         desktopVisible: ref.read(desktopVisibleProvider),

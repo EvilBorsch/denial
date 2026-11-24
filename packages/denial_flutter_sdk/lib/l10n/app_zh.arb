@@ -178,6 +178,7 @@
   "desktopCloseApplicationAudio": "关闭应用音量",
   "desktopCloseAudioOutputDevices": "关闭输出设备",
   "desktopConnectDevice": "连接 {deviceName}",
+  "desktopControlCenter": "控制中心",
   "desktopDashboardTitle": "仪表板",
   "desktopDisconnectDevice": "断开 {deviceName}",
   "desktopLoadingAudioOutputDevices": "正在加载输出设备…",
