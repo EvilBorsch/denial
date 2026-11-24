@@ -4980,6 +4980,7 @@ impl<'a> Window<'a> {
   pub const VT_LAYOUT_SCREEN_FLOATING: flatbuffers::VOffsetT = 114;
   pub const VT_SPLIT_VIEW_PARTNER_ID: flatbuffers::VOffsetT = 116;
   pub const VT_SPLIT_VIEW_RATIO: flatbuffers::VOffsetT = 118;
+  pub const VT_TRANSLUCENT_CORNER: flatbuffers::VOffsetT = 120;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -4991,6 +4992,7 @@ impl<'a> Window<'a> {
     args: &'args WindowArgs<'args>
   ) -> flatbuffers::WIPOffset<Window<'bldr>> {
     let mut builder = WindowBuilder::new(_fbb);
+    builder.add_translucent_corner(args.translucent_corner);
     builder.add_split_view_ratio(args.split_view_ratio);
     builder.add_split_view_partner_id(args.split_view_partner_id);
     builder.add_pet_anchor_y(args.pet_anchor_y);
@@ -5459,6 +5461,13 @@ impl<'a> Window<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<f64>(Window::VT_SPLIT_VIEW_RATIO, Some(0.0)).unwrap()}
   }
+  #[inline]
+  pub fn translucent_corner(&self) -> f64 {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<f64>(Window::VT_TRANSLUCENT_CORNER, Some(0.0)).unwrap()}
+  }
 }
 
 impl flatbuffers::Verifiable for Window<'_> {
@@ -5526,6 +5535,7 @@ impl flatbuffers::Verifiable for Window<'_> {
      .visit_field::<bool>("layout_screen_floating", Self::VT_LAYOUT_SCREEN_FLOATING, false)?
      .visit_field::<u64>("split_view_partner_id", Self::VT_SPLIT_VIEW_PARTNER_ID, false)?
      .visit_field::<f64>("split_view_ratio", Self::VT_SPLIT_VIEW_RATIO, false)?
+     .visit_field::<f64>("translucent_corner", Self::VT_TRANSLUCENT_CORNER, false)?
      .finish();
     Ok(())
   }
@@ -5589,6 +5599,7 @@ pub struct WindowArgs<'a> {
     pub layout_screen_floating: bool,
     pub split_view_partner_id: u64,
     pub split_view_ratio: f64,
+    pub translucent_corner: f64,
 }
 impl<'a> Default for WindowArgs<'a> {
   #[inline]
@@ -5652,6 +5663,7 @@ impl<'a> Default for WindowArgs<'a> {
       layout_screen_floating: false,
       split_view_partner_id: 0,
       split_view_ratio: 0.0,
+      translucent_corner: 0.0,
     }
   }
 }
@@ -5894,6 +5906,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> WindowBuilder<'a, 'b, A> {
     self.fbb_.push_slot::<f64>(Window::VT_SPLIT_VIEW_RATIO, split_view_ratio, 0.0);
   }
   #[inline]
+  pub fn add_translucent_corner(&mut self, translucent_corner: f64) {
+    self.fbb_.push_slot::<f64>(Window::VT_TRANSLUCENT_CORNER, translucent_corner, 0.0);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> WindowBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     WindowBuilder {
@@ -5969,6 +5985,7 @@ impl core::fmt::Debug for Window<'_> {
       ds.field("layout_screen_floating", &self.layout_screen_floating());
       ds.field("split_view_partner_id", &self.split_view_partner_id());
       ds.field("split_view_ratio", &self.split_view_ratio());
+      ds.field("translucent_corner", &self.translucent_corner());
       ds.finish()
   }
 }
