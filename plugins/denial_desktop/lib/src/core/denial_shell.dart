@@ -407,17 +407,20 @@ class _ShellEnvironment extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final animatedTheme = context.shellTheme;
-    final textInputPolicy = TapRegionSurface(
-      child: ShellDefaultTextStyle(child: child),
-    );
     return MediaQuery(
       data: MediaQueryData.fromView(View.of(context))
           .copyWith(platformBrightness: animatedTheme.brightness),
       child: ScrollConfiguration(
         behavior: const _ShellScrollBehavior(),
-        child: profile == ReferenceShellProfile.mobile
-            ? MobileTextInputPolicy(child: textInputPolicy)
-            : textInputPolicy,
+        // One tree for both presentations: a switch keeps the state of
+        // everything below, the cursor, the fingerprint stage and the
+        // switch's own cover included.
+        child: MobileTextInputPolicy(
+          enabled: profile == ReferenceShellProfile.mobile,
+          child: TapRegionSurface(
+            child: ShellDefaultTextStyle(child: child),
+          ),
+        ),
       ),
     );
   }
