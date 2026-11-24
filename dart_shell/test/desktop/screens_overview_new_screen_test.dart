@@ -1,7 +1,6 @@
 import 'package:denial_desktop/src/desktop/desktop_workspace.dart';
 import 'package:denial_desktop/src/desktop/desktop_workspace_overview_deck.dart';
 import 'package:denial_flutter_sdk/applications.dart';
-import 'package:denial_flutter_sdk/launcher.dart';
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/models.dart';
 import 'package:denial_flutter_sdk/settings.dart';

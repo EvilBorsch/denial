@@ -494,7 +494,7 @@ void main() {
         find.byWidgetPredicate(
           (widget) =>
               widget is ShellInputRegion &&
-              (widget.debugLabel?.contains('dashboard edge') ?? false),
+              widget.debugLabel.contains('dashboard edge'),
         ),
         findsNothing,
       );

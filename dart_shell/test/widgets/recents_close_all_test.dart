@@ -1,5 +1,4 @@
 import 'package:denial_desktop/src/features/mobile/mobile_window_layers.dart';
-import 'package:denial_desktop/src/state/reference_shell_controller.dart';
 import 'package:denial_desktop/src/widgets/overview/app_deck_layer.dart';
 import 'package:denial_flutter_sdk/glass_configuration.dart';
 import 'package:denial_flutter_sdk/localization.dart';
