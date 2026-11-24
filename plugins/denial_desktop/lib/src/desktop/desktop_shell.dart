@@ -694,24 +694,28 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     return ref.read(desktopWorkspaceProvider).overviewActive;
   }
 
-  /// The search key: the search over the desktop, opened on [monitorId]'s
-  /// output, or closed again. In the hub of the full-screen apps layout it
-  /// puts the keyboard into the overview's own search field instead.
+  /// The search key (Super+S, Alt+F in the Mac preset), and a bare Super and
+  /// four fingers up when no launcher plugin replaces it: the one search
+  /// over the desktop, opened on [monitorId]'s output, or closed again. Over
+  /// the overview, whose own search finds only open windows, it opens too.
   void _toggleSearch(int? monitorId) {
+    if (ref.read(desktopSearchOverlayProvider) != null) {
+      ref.read(desktopSearchOverlayProvider.notifier).close();
+      return;
+    }
+    _openSearch(monitorId);
+  }
+
+  void _openSearch(int? monitorId) {
     final shell = ref.read(referenceShellProvider);
     if (shell.locked) {
       return;
     }
-    final workspace = ref.read(desktopWorkspaceProvider);
-    if (desktopOverviewIsHub(workspace.overview)) {
-      ref.read(desktopOverviewSearchFocusProvider.notifier).request();
-      return;
-    }
     final search = ref.read(desktopSearchOverlayProvider.notifier);
     if (ref.read(desktopSearchOverlayProvider) != null) {
-      search.close();
       return;
     }
+    final workspace = ref.read(desktopWorkspaceProvider);
     _cancelWindowSwitcher();
     _overviewGestures.interrupt();
     if (workspace.overviewActive) {
@@ -845,8 +849,16 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   /// Opens the launcher. [byHover]: the pointer entered its hot edge, so it
   /// closes again when the pointer leaves it; opened any other way (Super,
   /// four fingers up, a finger's edge swipe) it stays until dismissed.
+  ///
+  /// Without a launcher plugin (the shipped shell since eb19) the one search
+  /// is the launcher.
   void _openLauncher({bool byHover = false}) {
-    if (ref.read(desktopLauncherProvider) == null) return;
+    if (ref.read(desktopLauncherProvider) == null) {
+      if (!byHover) {
+        _openSearch(null);
+      }
+      return;
+    }
     ref.read(clipboardTrayProvider.notifier).close();
     ref.read(desktopSearchOverlayProvider.notifier).close();
     final workspace = ref.read(desktopWorkspaceProvider);
@@ -867,9 +879,11 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
 
   void _hoverOpenLauncher() => _openLauncher(byHover: true);
 
-  void _hoverOpenDashboard() => _openDashboard(byHover: true);
-
   void _toggleLauncher() {
+    if (ref.read(desktopLauncherProvider) == null) {
+      _toggleSearch(null);
+      return;
+    }
     if (ref.read(desktopWorkspaceProvider).launcherOpen) {
       _closePanels();
       return;
@@ -883,13 +897,16 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     _applicationSearchFocusNode.unfocus();
   }
 
-  /// Opens the dashboard; [byHover] as for [_openLauncher].
-  void _openDashboard({bool byHover = false}) {
+  /// Opens the dashboard, the control center: from its icon or the clock in
+  /// the system bar, a finger's swipe down from the top right, or the
+  /// dashboard shortcut. Never from a pointer resting at an edge, so it
+  /// stays open until dismissed.
+  void _openDashboard() {
     ref.read(clipboardTrayProvider.notifier).close();
     ref.read(desktopSearchOverlayProvider.notifier).close();
     final workspace = ref.read(desktopWorkspaceProvider);
     if (!workspace.overviewActive && !workspace.dashboardOpen) {
-      _panelHoverController.beginOpening(byHover: byHover);
+      _panelHoverController.beginOpening(byHover: false);
     } else {
       _panelHoverController.cancelClose();
     }
@@ -1212,8 +1229,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   }
 
   /// Ends a drag in the screens overview: joining a screen's split on the
-  /// side it landed on, or taking a screen of its own in a gap. The preview
-  /// returns to its card; the compositor's new arrangement moves it.
+  /// side it landed on, or taking a screen of its own in a gap or, out of
+  /// its split, anywhere else. The preview returns to its card; the
+  /// compositor's new arrangement moves it.
   void _dropOverviewWindowOnScreens(DenialWindow window) {
     final controller = ref.read(desktopWorkspaceProvider.notifier);
     final drop = controller.planScreensDrop(window.objectId);
@@ -1367,7 +1385,6 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
               onHoverOpenLauncher: _hoverOpenLauncher,
               onDismissPanel: _closePanels,
               onOpenDashboard: _openDashboard,
-              onHoverOpenDashboard: _hoverOpenDashboard,
               onToggleDashboard: _toggleDashboard,
               onCloseWallpaperSelector: _closeWallpaperSelector,
               onOpenSettings: _openSettings,

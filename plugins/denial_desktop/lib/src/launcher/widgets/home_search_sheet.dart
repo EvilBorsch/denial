@@ -2,21 +2,20 @@ import 'package:flutter/gestures.dart' show VelocityTracker;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:denial_flutter_sdk/applications.dart';
 import 'package:denial_flutter_sdk/effects.dart';
 import 'package:denial_flutter_sdk/input.dart';
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 import 'package:denial_flutter_sdk/tokens.dart';
 
-import '../home_search.dart';
-import 'home_search_view.dart';
+import '../../search/shell_search_backend.dart';
+import '../../search/shell_search_view.dart';
 
 /// Search over home, pulled down from the middle of home as on iPadOS: a
 /// glass sheet that comes down from the top as [openness] goes from 0 to 1,
-/// with the search field and, under it, the matching open windows and apps.
-/// Before anything is typed it shows every open window and the apps started
-/// most recently.
+/// with the shell's one search sized for fingers, as in the app drawer.
+/// Before anything is typed it shows the apps started last and every app;
+/// typing finds apps, then open windows.
 ///
 /// Once open, its field takes the focus, which brings up the on-screen
 /// keyboard. Pulled up from the end of its list, or from its field, it
@@ -26,7 +25,6 @@ class HomeSearchSheet extends ConsumerStatefulWidget {
   const HomeSearchSheet({
     super.key,
     required this.openness,
-    required this.apps,
     required this.columns,
     required this.onLaunch,
     required this.onOpenWindow,
@@ -37,10 +35,9 @@ class HomeSearchSheet extends ConsumerStatefulWidget {
   });
 
   final Animation<double> openness;
-  final Iterable<HomeGridItem> apps;
   final int columns;
-  final HomeLaunchCallback onLaunch;
-  final HomeOpenWindowCallback onOpenWindow;
+  final ShellSearchAppCallback onLaunch;
+  final ShellSearchWindowCallback onOpenWindow;
   final VoidCallback onClose;
 
   /// Downward travel, in logical pixels.
@@ -58,8 +55,11 @@ class HomeSearchSheet extends ConsumerStatefulWidget {
 
 class _HomeSearchSheetState extends ConsumerState<HomeSearchSheet> {
   final _scroll = ScrollController();
-  final _query = TextEditingController();
-  final _focus = FocusNode(debugLabel: 'home search');
+  late final ShellSearchSession _session =
+      ShellSearchSession(debugLabel: 'home search')
+        ..onActivate = _activate
+        ..onDismiss = _dismiss
+        ..fieldIconRect = _fieldIconRect;
   final _field = GlobalKey();
 
   int? _pointer;
@@ -70,13 +70,10 @@ class _HomeSearchSheetState extends ConsumerState<HomeSearchSheet> {
 
   late final _physics = _SheetPushPhysics(pulling: () => _pulling);
 
-  String _shownQuery = '';
-
   @override
   void initState() {
     super.initState();
-    _query.addListener(_queryChanged);
-    _focus.addListener(_focusChanged);
+    _session.focus.addListener(_focusChanged);
     widget.openness.addStatusListener(_opennessChanged);
   }
 
@@ -93,29 +90,27 @@ class _HomeSearchSheetState extends ConsumerState<HomeSearchSheet> {
   void dispose() {
     widget.openness.removeStatusListener(_opennessChanged);
     _scroll.dispose();
-    _query.dispose();
-    _focus.dispose();
+    _session.focus.removeListener(_focusChanged);
+    _session.dispose();
     super.dispose();
   }
 
-  void _queryChanged() {
-    if (_query.text == _shownQuery) return;
-    setState(() => _shownQuery = _query.text);
-  }
-
   void _focusChanged() => setState(() {});
+
+  /// Esc with nothing typed closes the search, as Cancel does.
+  void _dismiss() => widget.onClose();
 
   /// Open, the field takes the focus and the keyboard comes up; on the way
   /// out the keyboard goes, and closed the search starts afresh.
   void _opennessChanged(AnimationStatus status) {
     switch (status) {
       case AnimationStatus.completed:
-        if (!_pulling) _focus.requestFocus();
+        if (!_pulling) _session.focus.requestFocus();
       case AnimationStatus.reverse:
-        _focus.unfocus();
+        _session.focus.unfocus();
       case AnimationStatus.dismissed:
-        _focus.unfocus();
-        _query.clear();
+        _session.focus.unfocus();
+        _session.start(focusField: false);
         if (_scroll.hasClients) _scroll.jumpTo(0);
       case AnimationStatus.forward:
         break;
@@ -140,7 +135,7 @@ class _HomeSearchSheetState extends ConsumerState<HomeSearchSheet> {
         (!_scroll.hasClients ||
             _scroll.position.pixels >= _scroll.position.maxScrollExtent)) {
       _pulling = true;
-      _focus.unfocus();
+      _session.focus.unfocus();
     }
     if (_pulling) widget.onDrag(event.delta.dy);
   }
@@ -155,31 +150,30 @@ class _HomeSearchSheetState extends ConsumerState<HomeSearchSheet> {
     );
   }
 
-  void _submit(HomeSearchMatches matches) {
-    final field = globalRectOf(_field);
-    final from = Rect.fromLTWH(
+  /// Enter acts on the best match from the field's magnifier.
+  void _activate(ShellSearchTarget target, Rect from) {
+    switch (target) {
+      case ShellSearchAppTarget(:final app):
+        widget.onLaunch(app, from);
+      case ShellSearchWindowTarget(:final window):
+        widget.onOpenWindow(window, from);
+    }
+  }
+
+  Rect _fieldIconRect() {
+    final field = shellSearchGlobalRect(_field.currentContext);
+    return Rect.fromLTWH(
       field.left + 12,
       field.top + (field.height - 36) / 2,
       36,
       36,
     );
-    switch (matches.first) {
-      case final HomeSearchWindow window:
-        widget.onOpenWindow(window, from);
-      case final HomeGridItem app:
-        widget.onLaunch(app, from);
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = ShellTheme.of(context);
     final padding = MediaQuery.viewPaddingOf(context);
-    final catalog = homeSearchCatalog(context, ref, widget.apps);
-    final matches = catalog.search(_shownQuery);
-    final recent = _shownQuery.trim().isEmpty
-        ? catalog.recentApps(ref.watch(applicationRecentsProvider))
-        : const <HomeGridItem>[];
     return AnimatedBuilder(
       animation: widget.openness,
       builder: (context, sheet) {
@@ -194,7 +188,7 @@ class _HomeSearchSheetState extends ConsumerState<HomeSearchSheet> {
       },
       child: ShellInputRegion(
         debugLabel: 'home search',
-        active: _focus.hasFocus,
+        active: _session.focus.hasFocus,
         pointerPolicy: ShellPointerPolicy.none,
         keyboardPolicy: ShellKeyboardPolicy.capture,
         child: Semantics(
@@ -224,11 +218,13 @@ class _HomeSearchSheetState extends ConsumerState<HomeSearchSheet> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Flexible(
-                              child: HomeSearchField(
+                              child: ShellSearchField(
                                 key: _field,
-                                controller: _query,
-                                focusNode: _focus,
-                                onSubmitted: () => _submit(matches),
+                                style: ShellSearchStyle.touch,
+                                controller: _session.query,
+                                focusNode: _session.focus,
+                                hint: context.l10n.homeSearchHint,
+                                onSubmitted: _session.submit,
                               ),
                             ),
                             const SizedBox(width: 8),
@@ -237,11 +233,12 @@ class _HomeSearchSheetState extends ConsumerState<HomeSearchSheet> {
                         ),
                       ),
                       Expanded(
-                        child: HomeSearchResults(
-                          matches: matches,
-                          recentApps: recent,
+                        child: ShellSearchResults(
+                          session: _session,
+                          style: ShellSearchStyle.touch,
+                          windows: ShellSearchWindows.phone,
                           columns: widget.columns,
-                          onLaunch: widget.onLaunch,
+                          onLaunchApp: widget.onLaunch,
                           onOpenWindow: widget.onOpenWindow,
                           controller: _scroll,
                           physics: _physics,
@@ -276,15 +273,15 @@ class _CancelButton extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
         child: SizedBox(
-          height: HomeSearchMetrics.fieldHeight,
+          height: ShellSearchMetrics.touch.fieldHeight,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Center(
               child: Text(
                 context.l10n.commonCancel,
-                style: const TextStyle(
+                style: TextStyle(
                   color: ShellMediaColors.lightForeground,
-                  fontSize: HomeSearchMetrics.nameSize,
+                  fontSize: ShellSearchMetrics.touch.nameSize,
                   fontWeight: FontWeight.w500,
                   letterSpacing: 0,
                   decoration: TextDecoration.none,

@@ -1,5 +1,5 @@
 name: denial_launcher
-description: Denial's desktop application launcher with search and recent apps.
+description: The launcher's shortcut action; the shell's one search is the launcher.
 publish_to: none
 version: 0.0.0
 environment:
@@ -19,5 +19,4 @@ denial_plugin:
   schema: 1
   name: App Launcher
   provides:
-    - contract: package:denial_flutter_sdk/launcher.dart#ShellLauncher
     - contract: package:denial_flutter_sdk/actions.dart#ShellAction

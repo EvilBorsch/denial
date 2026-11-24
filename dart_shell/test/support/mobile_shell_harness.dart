@@ -29,6 +29,7 @@ DenialWindow phoneWindow(
   bool texture = true,
   int? splitPartner,
   double splitRatio = 0,
+  int? transientParent,
 }) {
   final frame = geometry ?? const Rect.fromLTWH(0, 48, 1357, 912);
   return DenialWindow(
@@ -59,6 +60,7 @@ DenialWindow phoneWindow(
     minimized: minimized,
     splitViewPartnerObjectId: splitPartner,
     splitViewRatio: splitRatio,
+    transientParentObjectId: transientParent,
   );
 }
 

@@ -49,6 +49,13 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
   // the user spread into separate cards, and the drop under a drag.
   final Set<String> _expandedScreenStacks = <String>{};
   DesktopScreensDrop? _screensDrop;
+  // A tile dragged out of its split card in the screens overview: the
+  // grid keeps a slot for its new screen until the drag ends.
+  int? _screensLeavingObjectId;
+  // Where the dragged preview's centre would be without the clamp that
+  // keeps the preview on the output: it follows the pointer one to one, so
+  // a drop reaches the margins of the screens overview too.
+  Offset? _screensDragPoint;
   List<DenialWindow>? _lastSyncedWindows;
   int _lastSyncedSnapshotSequence = -1;
   double _devicePixelRatio = 1.0;
@@ -898,6 +905,8 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
     _overviewDropSlot = null;
     _overviewDropWorkspace = null;
     _screensDrop = null;
+    _screensLeavingObjectId = null;
+    _screensDragPoint = null;
   }
 
   /// Opens the screens overview of the full-screen apps layout: every
@@ -1006,6 +1015,7 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
       items: items,
       expandedApps: _expandedScreenStacks,
       currentScreen: currentScreen,
+      leavingObjectId: _screensLeavingObjectId,
     );
     if (arrangement.cards.isEmpty && arrangement.shelf.isEmpty) {
       return null;
@@ -1059,25 +1069,45 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
   }
 
   /// Resolves what dropping [objectId]'s dragged preview now would do in
-  /// the screens overview, and highlights where it would land.
+  /// the screens overview, and highlights where it would land. As soon as
+  /// a tile of a split leaves its card, the grid makes the slot of its new
+  /// screen right after that card, and keeps it until the drag ends.
   DesktopScreensDrop? planScreensDrop(int objectId) {
-    final overview = state.overview;
-    final arrangement = overview?.workspaces?.screens;
+    var overview = state.overview;
     final preview = overview?.frames[objectId];
     final dragging = state.placements[objectId]?.dragging ?? false;
+    final items = overview == null
+        ? const <DesktopScreensOverviewItem>[]
+        : _screensOverviewItems(
+            state.placements,
+            overview.monitorId,
+            overview.backgroundBounds,
+          );
+    if (overview?.workspaces?.screens case final arrangement?
+        when dragging &&
+            preview != null &&
+            _screensLeavingObjectId != objectId &&
+            DesktopScreensOverviewLayout.leavesSplitCard(
+              arrangement: arrangement,
+              items: items,
+              objectId: objectId,
+              point: _screensDragPoint ?? preview.center,
+            )) {
+      _screensLeavingObjectId = objectId;
+      overview =
+          _rearrangedWorkspaceOverview(state.placements, overview!) ?? overview;
+      state = state.copyWith(overview: overview);
+    }
+    final arrangement = overview?.workspaces?.screens;
     final drop =
         overview == null || arrangement == null || preview == null || !dragging
         ? null
         : DesktopScreensOverviewLayout.dropAt(
             arrangement: arrangement,
             frames: overview.frames,
-            items: _screensOverviewItems(
-              state.placements,
-              overview.monitorId,
-              overview.backgroundBounds,
-            ),
+            items: items,
             objectId: objectId,
-            point: preview.center,
+            point: _screensDragPoint ?? preview.center,
           );
     if (drop != _screensDrop && overview?.workspaces != null) {
       _screensDrop = drop;
@@ -1267,6 +1297,8 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
     _overviewDropSlot = null;
     _overviewDropWorkspace = null;
     _screensDrop = null;
+    _screensLeavingObjectId = null;
+    _screensDragPoint = previewFrame.center;
     final next = Map<int, DesktopWindowPlacement>.of(state.placements);
     next[objectId] = placement.copyWith(z: state.nextZ, dragging: true);
     state = state.copyWith(placements: next, nextZ: state.nextZ + 1);
@@ -1285,8 +1317,14 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
     }
     final frames = Map<int, Rect>.of(overview.frames);
     frames[objectId] = _clampFrame(previewFrame.shift(delta), state.viewSize);
+    _screensDragPoint = (_screensDragPoint ?? previewFrame.center) + delta;
     state = state.copyWith(overview: overview.copyWith(frames: frames));
   }
+
+  /// Where a drag in the screens overview drops: the dragged preview's
+  /// centre as the pointer carries it, unclamped.
+  @visibleForTesting
+  Offset? get screensDragPoint => _screensDragPoint;
 
   bool endOverviewDrag(
     int objectId, {
@@ -1398,6 +1436,8 @@ class DesktopWorkspaceController extends Notifier<DesktopWorkspaceState> {
       // highlight would stay on screen in the old arrangement's place, an
       // empty card frame, after the compositor rearranges the strip.
       _screensDrop = null;
+      _screensLeavingObjectId = null;
+      _screensDragPoint = null;
       state = state.copyWith(
         placements: next,
         overview: _rearrangedWorkspaceOverview(next, overview) ?? overview,

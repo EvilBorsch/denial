@@ -636,6 +636,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get desktopControlCenter => 'Control Center';
+
+  @override
   String get desktopDashboardTitle => 'Dashboard';
 
   @override
@@ -5361,6 +5364,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get recentsCloseAll => 'Close all';
+
+  @override
   String get splitViewDivider => 'Divider between the apps';
 
   @override
@@ -5587,6 +5593,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeSearchNoResults => 'Nothing found';
 
   @override
+  String get shellSearchAllApps => 'All apps';
+
+  @override
+  String get shellSearchOpenWindowsHint => 'Search open windows';
+
+  @override
   String get powerActionRestartDenial => 'Restart Denial';
 
   @override
@@ -5679,4 +5691,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String screensOverviewStackExpand(String app) {
     return 'Show each window of $app';
   }
+
+  @override
+  String get screensOverviewNewScreen => 'New screen';
 }

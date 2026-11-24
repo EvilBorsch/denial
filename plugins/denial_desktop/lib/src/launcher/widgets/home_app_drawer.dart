@@ -2,28 +2,25 @@ import 'package:flutter/gestures.dart' show VelocityTracker;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:denial_flutter_sdk/applications.dart';
 import 'package:denial_flutter_sdk/effects.dart';
 import 'package:denial_flutter_sdk/input.dart';
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 import 'package:denial_flutter_sdk/tokens.dart';
 
-import '../home_search.dart';
-import 'home_app_tile.dart';
-import 'home_search_view.dart';
+import '../../search/shell_search_backend.dart';
+import '../../search/shell_search_view.dart';
 
-/// Every app on home, folders opened, by name, in a full-screen glass sheet
-/// that rises from the bottom as [openness] goes from 0 to 1, with a search
-/// field on top. Typing in it lists the matching open windows and apps
-/// instead ([HomeSearchResults]). Pulled down from the top of its list, it
-/// follows the finger up and down until the finger lifts, and [onDrag] and
-/// [onDragEnd] report it.
+/// Every app, in a full-screen glass sheet that rises from the bottom as
+/// [openness] goes from 0 to 1: the shell's one search sized for fingers
+/// ([ShellSearchStyle.touch]). With nothing typed it shows the apps started
+/// last and every app by name; typing finds apps, then open windows.
+/// Pulled down from the top of its list, it follows the finger up and down
+/// until the finger lifts, and [onDrag] and [onDragEnd] report it.
 class HomeAppDrawer extends ConsumerStatefulWidget {
   const HomeAppDrawer({
     super.key,
     required this.openness,
-    required this.apps,
     required this.columns,
     required this.onLaunch,
     required this.onOpenWindow,
@@ -33,14 +30,13 @@ class HomeAppDrawer extends ConsumerStatefulWidget {
   });
 
   final Animation<double> openness;
-  final Iterable<HomeGridItem> apps;
   final int columns;
 
   /// Opens an app from its icon, in global coordinates.
-  final HomeLaunchCallback onLaunch;
+  final ShellSearchAppCallback onLaunch;
 
   /// Brings a window found by the search to the front.
-  final HomeOpenWindowCallback onOpenWindow;
+  final ShellSearchWindowCallback onOpenWindow;
 
   /// Downward travel, in logical pixels.
   final ValueChanged<double> onDrag;
@@ -57,8 +53,10 @@ class HomeAppDrawer extends ConsumerStatefulWidget {
 
 class _HomeAppDrawerState extends ConsumerState<HomeAppDrawer> {
   final _scroll = ScrollController();
-  final _query = TextEditingController();
-  final _focus = FocusNode(debugLabel: 'home drawer search');
+  late final ShellSearchSession _session =
+      ShellSearchSession(debugLabel: 'home drawer search')
+        ..onActivate = _activate
+        ..fieldIconRect = _fieldIconRect;
 
   /// The finger that moves the list, or the sheet once it pulls.
   int? _pointer;
@@ -78,8 +76,7 @@ class _HomeAppDrawerState extends ConsumerState<HomeAppDrawer> {
   @override
   void initState() {
     super.initState();
-    _query.addListener(_queryChanged);
-    _focus.addListener(_focusChanged);
+    _session.focus.addListener(_focusChanged);
     widget.openness.addStatusListener(_opennessChanged);
   }
 
@@ -96,16 +93,9 @@ class _HomeAppDrawerState extends ConsumerState<HomeAppDrawer> {
   void dispose() {
     widget.openness.removeStatusListener(_opennessChanged);
     _scroll.dispose();
-    _query.dispose();
-    _focus.dispose();
+    _session.focus.removeListener(_focusChanged);
+    _session.dispose();
     super.dispose();
-  }
-
-  String _shownQuery = '';
-
-  void _queryChanged() {
-    if (_query.text == _shownQuery) return;
-    setState(() => _shownQuery = _query.text);
   }
 
   void _focusChanged() => setState(() {});
@@ -114,8 +104,8 @@ class _HomeAppDrawerState extends ConsumerState<HomeAppDrawer> {
   /// field's focus.
   void _opennessChanged(AnimationStatus status) {
     if (status != AnimationStatus.dismissed) return;
-    _focus.unfocus();
-    _query.clear();
+    _session.focus.unfocus();
+    _session.start(focusField: false);
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
@@ -138,7 +128,7 @@ class _HomeAppDrawerState extends ConsumerState<HomeAppDrawer> {
             _scroll.position.pixels <= _scroll.position.minScrollExtent)) {
       _pulling = true;
       // Pulled away, the drawer takes the keyboard with it.
-      _focus.unfocus();
+      _session.focus.unfocus();
     }
     if (_pulling) widget.onDrag(event.delta.dy);
   }
@@ -153,22 +143,21 @@ class _HomeAppDrawerState extends ConsumerState<HomeAppDrawer> {
     );
   }
 
-  /// Enter acts on the best match: a window comes to the front, an app
-  /// starts. The icon it grows from is the field's start.
-  void _submit(HomeSearchMatches matches) {
-    final from = _fieldIconRect();
-    switch (matches.first) {
-      case final HomeSearchWindow window:
-        widget.onOpenWindow(window, from);
-      case final HomeGridItem app:
+  /// Enter acts on the best match: an app starts, a window comes to the
+  /// front. The icon it grows from is the field's start.
+  void _activate(ShellSearchTarget target, Rect from) {
+    switch (target) {
+      case ShellSearchAppTarget(:final app):
         widget.onLaunch(app, from);
+      case ShellSearchWindowTarget(:final window):
+        widget.onOpenWindow(window, from);
     }
   }
 
   final _field = GlobalKey();
 
   Rect _fieldIconRect() {
-    final field = globalRectOf(_field);
+    final field = shellSearchGlobalRect(_field.currentContext);
     return Rect.fromLTWH(
       field.left + 12,
       field.top + (field.height - 36) / 2,
@@ -181,55 +170,6 @@ class _HomeAppDrawerState extends ConsumerState<HomeAppDrawer> {
   Widget build(BuildContext context) {
     final theme = ShellTheme.of(context);
     final padding = MediaQuery.viewPaddingOf(context);
-    final query = _shownQuery;
-    final searching = query.trim().isNotEmpty;
-    final HomeSearchMatches? matches;
-    if (searching) {
-      matches = homeSearchCatalog(context, ref, widget.apps).search(query);
-    } else {
-      matches = null;
-    }
-    final names = {
-      for (final app in widget.apps)
-        app: HomeAppTile.nameOf(context, app).toLowerCase(),
-    };
-    final apps = names.keys.toList()
-      ..sort((a, b) => names[a]!.compareTo(names[b]!));
-    final listPadding = EdgeInsets.only(
-      top: 16,
-      bottom: padding.bottom + 72 + widget.keyboardInset,
-    );
-    final Widget list = matches != null
-        ? HomeSearchResults(
-            key: const ValueKey('home drawer results'),
-            matches: matches,
-            columns: widget.columns,
-            onLaunch: widget.onLaunch,
-            onOpenWindow: widget.onOpenWindow,
-            controller: _scroll,
-            physics: _physics,
-            padding: listPadding,
-          )
-        : GridView.builder(
-            key: const ValueKey('home drawer apps'),
-            controller: _scroll,
-            physics: _physics,
-            padding: listPadding.add(
-              const EdgeInsets.symmetric(horizontal: 20),
-            ),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: widget.columns,
-              mainAxisExtent: HomeGridLayout.minTileHeight,
-              mainAxisSpacing: 18,
-              crossAxisSpacing: HomeGridLayout.gridGap,
-            ),
-            itemCount: apps.length,
-            itemBuilder: (context, index) => HomeLaunchTile(
-              key: ValueKey(apps[index].id),
-              app: apps[index],
-              onLaunch: widget.onLaunch,
-            ),
-          );
     return AnimatedBuilder(
       animation: widget.openness,
       builder: (context, sheet) {
@@ -247,7 +187,7 @@ class _HomeAppDrawerState extends ConsumerState<HomeAppDrawer> {
       child: ShellInputRegion(
         debugLabel: 'home drawer search',
         // Typed keys, the software keyboard's too, go to the field.
-        active: _focus.hasFocus,
+        active: _session.focus.hasFocus,
         pointerPolicy: ShellPointerPolicy.none,
         keyboardPolicy: ShellKeyboardPolicy.capture,
         child: Semantics(
@@ -270,16 +210,31 @@ class _HomeAppDrawerState extends ConsumerState<HomeAppDrawer> {
                     SizedBox(height: padding.top + 56),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: HomeSearchField(
+                      child: ShellSearchField(
                         key: _field,
-                        controller: _query,
-                        focusNode: _focus,
-                        onSubmitted: () {
-                          if (matches != null) _submit(matches);
-                        },
+                        style: ShellSearchStyle.touch,
+                        controller: _session.query,
+                        focusNode: _session.focus,
+                        hint: context.l10n.homeSearchHint,
+                        onSubmitted: _session.submit,
                       ),
                     ),
-                    Expanded(child: list),
+                    Expanded(
+                      child: ShellSearchResults(
+                        session: _session,
+                        style: ShellSearchStyle.touch,
+                        windows: ShellSearchWindows.phone,
+                        columns: widget.columns,
+                        controller: _scroll,
+                        physics: _physics,
+                        padding: EdgeInsets.only(
+                          top: 16,
+                          bottom: padding.bottom + 72 + widget.keyboardInset,
+                        ),
+                        onLaunchApp: widget.onLaunch,
+                        onOpenWindow: widget.onOpenWindow,
+                      ),
+                    ),
                   ],
                 ),
               ),

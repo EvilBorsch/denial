@@ -30,7 +30,9 @@ import 'overview_chrome.dart';
 /// In recents a tap opens a card, a card swiped up closes its app, a
 /// sideways drag scrolls the row, and a tap beside the cards goes home.
 /// Cards of an app with several windows name their window under the app,
-/// and carry a button that closes them all.
+/// and carry a button that closes them all. «Close all» under the cards
+/// closes every app in recents: every card leaves as a swiped one does, and
+/// recents goes home at once behind them.
 class AppDeckLayer extends StatefulWidget {
   const AppDeckLayer({
     super.key,
@@ -129,6 +131,10 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
   /// Cards told to leave by a close-all: they go as a flung card goes.
   var _closing = <int>{};
 
+  /// «Close all» was tapped: every card is leaving and recents goes home.
+  /// The button fades out with recents and takes no second tap.
+  bool _closingAll = false;
+
   /// A card lifted to share the screen: its window, the app it would share
   /// it with, and where the finger is, in this layer's coordinates.
   final _lifted =
@@ -183,6 +189,9 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
     }
     if (!identical(widget.windows, oldWidget.windows)) _indexWindows();
     if (!widget.recents) _endRowDrag(null);
+    // Recents opened again, even over cards still leaving: what is left in
+    // it can be closed again.
+    if (widget.recents && !oldWidget.recents) _closingAll = false;
   }
 
   @override
@@ -287,24 +296,45 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
       setState(() {
         _presenting = presenting;
         _drawn = ids;
+        if (!presenting) _closingAll = false;
       });
     }
   }
 
+  /// «Close all»: every card in recents leaves as a flung card does, each
+  /// app closing as its card goes, just as a swipe closes it. Recents goes
+  /// home at once: the cards have left the row where they were drawn, so
+  /// they fly straight out over home as it comes.
+  void _closeAll() {
+    final deck = widget.deck;
+    if (_closingAll || !widget.recents || deck.length == 0) return;
+    _sendAway(deck.order);
+    setState(() => _closingAll = true);
+    widget.onCloseRecents();
+  }
+
   /// The close-all of [window]'s card: every card of its app leaves, as a
-  /// flung card does. Cards off screen have nothing to show and leave at
-  /// once.
-  void _closeApp(DenialWindow window) {
-    final windows = _appWindows[window.objectId] ?? [window.objectId];
+  /// flung card does.
+  void _closeApp(DenialWindow window) =>
+      _sendAway(_appWindows[window.objectId] ?? [window.objectId]);
+
+  /// The cards of [ids] leave the row now, each where it is drawn, and fly
+  /// out as flung cards; cards off screen have nothing to show and are gone
+  /// at once.
+  void _sendAway(Iterable<int> ids) {
     final drawn = _drawn.toSet();
+    final cards = [
+      for (final id in [...ids])
+        if (_windows[id] case final card?) card,
+    ];
+    for (final card in cards) {
+      widget.onLeaveWindow(card);
+    }
     final animated = <int>{};
-    for (final id in windows) {
-      final card = _windows[id];
-      if (card == null) continue;
-      if (drawn.contains(id)) {
-        animated.add(id);
+    for (final card in cards) {
+      if (drawn.contains(card.objectId)) {
+        animated.add(card.objectId);
       } else {
-        widget.onLeaveWindow(card);
         widget.onDismissWindow(card);
       }
     }
@@ -436,8 +466,28 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
                     opacity: _openAnimation,
                     onTap: widget.onCloseRecents,
                   ),
-                  if (deck.length == 0)
+                  // Not while the last cards leave: recents goes home then.
+                  if (deck.length == 0 &&
+                      deck.leaving.isEmpty &&
+                      widget.recents &&
+                      !_closingAll)
                     EmptyOverviewState(progress: _openAnimation),
+                  if ((deck.length > 0 || _closingAll) && !geometry.isEmpty)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top: recentsCloseAllTop(geometry),
+                      height: RecentsCloseAllButton.height,
+                      child: IgnorePointer(
+                        ignoring: _closingAll,
+                        child: FadeTransition(
+                          opacity: _labelOpacity,
+                          child: Center(
+                            child: RecentsCloseAllButton(onTap: _closeAll),
+                          ),
+                        ),
+                      ),
+                    ),
                   Positioned.fill(
                     child: IgnorePointer(
                       child: ValueListenableBuilder(
@@ -632,7 +682,8 @@ class _DeckCardState extends State<_DeckCard>
         1.0,
         _pose.base.value.rect.bottom + _offscreenMargin,
       );
-      _leave(-_closeAllVelocity);
+      // The layer took the card out of the row as it sent it away.
+      _leave(-_closeAllVelocity, rowClosed: true);
     }
   }
 
@@ -698,15 +749,15 @@ class _DeckCardState extends State<_DeckCard>
   }
 
   /// The card leaves upward at [velocity], and its window closes once it
-  /// is gone.
-  void _leave(double velocity) {
+  /// is gone. The row closes over it at once, unless [rowClosed] already.
+  void _leave(double velocity, {bool rowClosed = false}) {
     if (_leaving) return;
     _leaving = true;
     _exit = -_pose.length;
     _throw
       ..motion = ShellSprings.cardDismiss
       ..animateTo(_exit, withVelocity: velocity);
-    widget.onLeaving(widget.window);
+    if (!rowClosed) widget.onLeaving(widget.window);
   }
 
   void _settleBack([double velocity = 0]) {
@@ -1148,6 +1199,133 @@ class _CloseAppButton extends ConsumerWidget {
                 ),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Where «Close all» sits in recents, its top edge in the layer's
+/// coordinates: in the middle of the free band under the cards, and always
+/// clear of the bottom gesture's area, so a tap on it is never taken for
+/// the home swipe and a swipe never lands on it.
+@visibleForTesting
+double recentsCloseAllTop(DeckGeometry geometry) {
+  const height = RecentsCloseAllButton.height;
+  const clearance = RecentsCloseAllButton.gestureClearance;
+  final gesture = ReferenceShellMetrics.gestureRect(geometry.size).top;
+  final lowest = gesture - clearance - height;
+  final centred = (geometry.card.bottom + gesture - clearance - height) / 2;
+  return math.max(0.0, math.min(centred, lowest));
+}
+
+/// «Close all» at the bottom of recents: closes every app in it, as the
+/// app switchers of Android and iPadOS offer. A pill sized for a finger,
+/// dimmed while pressed.
+@visibleForTesting
+class RecentsCloseAllButton extends StatefulWidget {
+  const RecentsCloseAllButton({super.key, required this.onTap});
+
+  /// 48 logical pixels, about 10 mm on the tablet's panel at the shell's
+  /// scale of 2.5: Material's touch target, above Apple's 44 points.
+  static const double height = 48;
+  static const double minWidth = 136;
+
+  /// The least gap between the button and the bottom gesture's area.
+  static const double gestureClearance = 16;
+
+  final VoidCallback onTap;
+
+  @override
+  State<RecentsCloseAllButton> createState() => _RecentsCloseAllButtonState();
+}
+
+class _RecentsCloseAllButtonState extends State<RecentsCloseAllButton> {
+  bool _pressed = false;
+
+  void _press(bool pressed) {
+    if (_pressed != pressed) setState(() => _pressed = pressed);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = ShellTheme.of(context);
+    final dark = theme.brightness == Brightness.dark;
+    final ink = dark ? const Color(0xFFF5F5F7) : const Color(0xFF1C1C1E);
+    final label = context.l10n.recentsCloseAll;
+    const radius = BorderRadius.all(
+      Radius.circular(RecentsCloseAllButton.height / 2),
+    );
+    // Glass, as the shell's other panels over the wallpaper: a slice of the
+    // shared frost under a lighter tint, no blur pass of its own.
+    final glass = theme.effectivePanelOpacity < 1.0
+        ? WindowBackdropCache.maybeOf(context)
+        : null;
+    final tint = switch ((dark, glass != null)) {
+      (true, true) => const Color(0x40000000),
+      (true, false) => const Color(0x73000000),
+      (false, true) => const Color(0x59FFFFFF),
+      (false, false) => const Color(0x8CFFFFFF),
+    };
+    final pill = Container(
+      height: RecentsCloseAllButton.height,
+      constraints: const BoxConstraints(
+        minWidth: RecentsCloseAllButton.minWidth,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 28),
+      // Sized by its label: an alignment here would stretch the pill across
+      // the free width the layer gives it.
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        color: tint,
+        border: Border.all(
+          color: dark ? const Color(0x24FFFFFF) : const Color(0x1F000000),
+        ),
+      ),
+      child: Center(
+        widthFactor: 1,
+        child: Text(
+          label,
+          maxLines: 1,
+          style: TextStyle(
+            color: ink,
+            fontSize: 17,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0,
+            decoration: TextDecoration.none,
+          ),
+        ),
+      ),
+    );
+    return RepaintBoundary(
+      child: Semantics(
+        button: true,
+        label: label,
+        excludeSemantics: true,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTapDown: (_) => _press(true),
+          onTapCancel: () => _press(false),
+          onTapUp: (_) => _press(false),
+          onTap: widget.onTap,
+          child: AnimatedOpacity(
+            opacity: _pressed ? 0.6 : 1,
+            duration: const Duration(milliseconds: 90),
+            child: glass == null
+                ? pill
+                : Stack(
+                    children: [
+                      Positioned.fill(
+                        child: WindowBackdropSlice(
+                          cache: glass,
+                          borderRadius: radius,
+                          glass: theme.windowGlassShading,
+                        ),
+                      ),
+                      pill,
+                    ],
+                  ),
           ),
         ),
       ),

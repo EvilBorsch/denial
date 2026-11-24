@@ -853,6 +853,10 @@
       }
     }
   },
+  "desktopControlCenter": "Control Center",
+  "@desktopControlCenter": {
+    "description": "Name and spoken label of the control in the desktop system bar that opens and closes the dashboard (notifications, quick settings), as macOS's Control Center."
+  },
   "desktopDashboardTitle": "Dashboard",
   "@desktopDashboardTitle": {
     "description": "English UI text for desktopDashboardTitle."
@@ -7060,6 +7064,8 @@
   "@recentsCloseAppWindows": {"description": "Accessibility label of the button on a tablet recents card that closes every window of the card's app.", "placeholders": {"app": {"type": "String"}, "count": {"type": "int"}}},
   "recentsSplitWith": "Side by side with {app}",
   "@recentsSplitWith": {"description": "Tablet recents: label of the screen sides a long-pressed card is dropped on to share the screen with the app in front (Split View).", "placeholders": {"app": {"type": "String"}}},
+  "recentsCloseAll": "Close all",
+  "@recentsCloseAll": {"description": "Tablet recents: the button at the bottom that closes every app in recents and goes home, as on Android and iPadOS app switchers."},
   "splitViewDivider": "Divider between the apps",
   "@splitViewDivider": {"description": "Accessibility label of the divider between two apps side by side (Split View) on the tablet."},
   "splitViewHandle": "Move {app}",
@@ -7198,6 +7204,10 @@
   "@homeSearchRecentApps": {"description": "Heading of the apps started most recently, which the tablet's search shows before anything is typed."},
   "homeSearchNoResults": "Nothing found",
   "@homeSearchNoResults": {"description": "Shown when the tablet's search matches no window and no app."},
+  "shellSearchAllApps": "All apps",
+  "@shellSearchAllApps": {"description": "Heading of every app, by name, in the shell's one search (Super, Alt+F, the tablet's app drawer and pull-down search) before anything is typed."},
+  "shellSearchOpenWindowsHint": "Search open windows",
+  "@shellSearchOpenWindowsHint": {"description": "Placeholder and accessible label of the overview's search field: it finds only the open windows and the apps that run, not apps to start."},
   "powerActionRestartDenial": "Restart Denial",
   "@powerActionRestartDenial": {"description": "Power action that starts Denial again in the same session, closing open apps."},
   "powerActionRestartDenialDescription": "Start Denial again; open apps close",
@@ -7251,5 +7261,7 @@
   "screensOverviewStackCount": "{count, plural, one{{count} window} other{{count} windows}}",
   "@screensOverviewStackCount": {"description": "Badge of a stack of screens that show windows of one app in the screens overview; activating it shows them one by one.", "placeholders": {"count": {"type": "int"}}},
   "screensOverviewStackExpand": "Show each window of {app}",
-  "@screensOverviewStackExpand": {"description": "Accessible label of the count badge that expands a stack of screens of one app.", "placeholders": {"app": {"type": "String"}}}
+  "@screensOverviewStackExpand": {"description": "Accessible label of the count badge that expands a stack of screens of one app.", "placeholders": {"app": {"type": "String"}}},
+  "screensOverviewNewScreen": "New screen",
+  "@screensOverviewNewScreen": {"description": "Placeholder card in the screens overview where a window dragged out of a split screen becomes a full-screen screen of its own."}
 }

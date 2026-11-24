@@ -2956,6 +2956,28 @@ pub(super) fn apply_managed_client_state_request(
     true
 }
 
+/// Whether a client's own resize request for `window` drags the splits
+/// beside its edges (`flutter_route::begin_tiled_edge_resize`): a layout
+/// tiles it, and no fullscreen, maximize or shell-owned geometry holds it.
+/// Such a window never takes the free-form resize of
+/// [`managed_client_grab_allowed`].
+#[cfg(feature = "flutter")]
+pub(super) fn tiled_client_resize_allowed(state: &RuntimeState, window: &Window) -> bool {
+    let Some(facts) = ManagedWindow::new(window).map(|window| window.facts()) else {
+        return false;
+    };
+    let Some(frontend) = state.wayland.as_ref() else {
+        return false;
+    };
+    !facts.override_redirect
+        && !facts.client_state.fullscreen
+        && !facts.client_state.maximized
+        && frontend.window_is_layout_managed(window)
+        && !frontend.window_has_constrained_state(window)
+        && !frontend.window_shell_fullscreen_locked(window)
+        && frontend.exact_window_geometry(window).is_none()
+}
+
 /// Common admission gate for protocol-initiated move and resize grabs.
 pub(super) fn managed_client_grab_allowed(state: &RuntimeState, window: &Window) -> bool {
     let Some(facts) = ManagedWindow::new(window).map(|window| window.facts()) else {
