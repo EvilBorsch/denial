@@ -2333,11 +2333,11 @@ class Window {
   int get splitViewPartnerId => const fb.Uint64Reader().vTableGet(_bc, _bcOffset, 116, 0);
   double get splitViewRatio => const fb.Float64Reader().vTableGet(_bc, _bcOffset, 118, 0.0);
   bool get onPhone => const fb.BoolReader().vTableGet(_bc, _bcOffset, 120, false);
-  double get translucentCorner => const fb.Float64Reader().vTableGet(_bc, _bcOffset, 122, 0.0);
+  List<WireRect>? get translucentRects => const fb.ListReader<WireRect>(WireRect.reader).vTableGetNullable(_bc, _bcOffset, 122);
 
   @override
   String toString() {
-    return 'Window{objectId: ${objectId}, objectKind: ${objectKind}, surfaceId: ${surfaceId}, windowId: ${windowId}, textureId: ${textureId}, title: ${title}, appId: ${appId}, width: ${width}, height: ${height}, surfaceX: ${surfaceX}, surfaceY: ${surfaceY}, surfaceWidth: ${surfaceWidth}, surfaceHeight: ${surfaceHeight}, textureSourceX: ${textureSourceX}, textureSourceY: ${textureSourceY}, textureSourceWidth: ${textureSourceWidth}, textureSourceHeight: ${textureSourceHeight}, geometryX: ${geometryX}, geometryY: ${geometryY}, geometryWidth: ${geometryWidth}, geometryHeight: ${geometryHeight}, monitorId: ${monitorId}, transform: ${transform}, scale120: ${scale120}, statusColorArgb: ${statusColorArgb}, hasStatusColor: ${hasStatusColor}, contentX: ${contentX}, contentY: ${contentY}, contentWidth: ${contentWidth}, contentHeight: ${contentHeight}, surfaces: ${surfaces}, pinned: ${pinned}, suppressAnimations: ${suppressAnimations}, serverSideDecorated: ${serverSideDecorated}, opacity: ${opacity}, contentKind: ${contentKind}, opacityClass: ${opacityClass}, workspaceId: ${workspaceId}, minimized: ${minimized}, fullscreen: ${fullscreen}, maximized: ${maximized}, transientParentId: ${transientParentId}, heldByWindowId: ${heldByWindowId}, heldHold: ${heldHold}, heldShare: ${heldShare}, petAnchorX: ${petAnchorX}, petAnchorY: ${petAnchorY}, petBelow: ${petBelow}, pet: ${pet}, petHolds: ${petHolds}, petDragged: ${petDragged}, clientTexture: ${clientTexture}, keyboardInset: ${keyboardInset}, layoutScreen: ${layoutScreen}, layoutScreenRect: ${layoutScreenRect}, layoutScreenFloating: ${layoutScreenFloating}, splitViewPartnerId: ${splitViewPartnerId}, splitViewRatio: ${splitViewRatio}, onPhone: ${onPhone}, translucentCorner: ${translucentCorner}}';
+    return 'Window{objectId: ${objectId}, objectKind: ${objectKind}, surfaceId: ${surfaceId}, windowId: ${windowId}, textureId: ${textureId}, title: ${title}, appId: ${appId}, width: ${width}, height: ${height}, surfaceX: ${surfaceX}, surfaceY: ${surfaceY}, surfaceWidth: ${surfaceWidth}, surfaceHeight: ${surfaceHeight}, textureSourceX: ${textureSourceX}, textureSourceY: ${textureSourceY}, textureSourceWidth: ${textureSourceWidth}, textureSourceHeight: ${textureSourceHeight}, geometryX: ${geometryX}, geometryY: ${geometryY}, geometryWidth: ${geometryWidth}, geometryHeight: ${geometryHeight}, monitorId: ${monitorId}, transform: ${transform}, scale120: ${scale120}, statusColorArgb: ${statusColorArgb}, hasStatusColor: ${hasStatusColor}, contentX: ${contentX}, contentY: ${contentY}, contentWidth: ${contentWidth}, contentHeight: ${contentHeight}, surfaces: ${surfaces}, pinned: ${pinned}, suppressAnimations: ${suppressAnimations}, serverSideDecorated: ${serverSideDecorated}, opacity: ${opacity}, contentKind: ${contentKind}, opacityClass: ${opacityClass}, workspaceId: ${workspaceId}, minimized: ${minimized}, fullscreen: ${fullscreen}, maximized: ${maximized}, transientParentId: ${transientParentId}, heldByWindowId: ${heldByWindowId}, heldHold: ${heldHold}, heldShare: ${heldShare}, petAnchorX: ${petAnchorX}, petAnchorY: ${petAnchorY}, petBelow: ${petBelow}, pet: ${pet}, petHolds: ${petHolds}, petDragged: ${petDragged}, clientTexture: ${clientTexture}, keyboardInset: ${keyboardInset}, layoutScreen: ${layoutScreen}, layoutScreenRect: ${layoutScreenRect}, layoutScreenFloating: ${layoutScreenFloating}, splitViewPartnerId: ${splitViewPartnerId}, splitViewRatio: ${splitViewRatio}, onPhone: ${onPhone}, translucentRects: ${translucentRects}}';
   }
 }
 
@@ -2594,8 +2594,8 @@ class WindowBuilder {
     fbBuilder.addBool(58, onPhone);
     return fbBuilder.offset;
   }
-  int addTranslucentCorner(double? translucentCorner) {
-    fbBuilder.addFloat64(59, translucentCorner);
+  int addTranslucentRectsOffset(int? offset) {
+    fbBuilder.addOffset(59, offset);
     return fbBuilder.offset;
   }
 
@@ -2664,7 +2664,7 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
   final int? _splitViewPartnerId;
   final double? _splitViewRatio;
   final bool? _onPhone;
-  final double? _translucentCorner;
+  final List<WireRectObjectBuilder>? _translucentRects;
 
   WindowObjectBuilder({
     int? objectId,
@@ -2726,7 +2726,7 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
     int? splitViewPartnerId,
     double? splitViewRatio,
     bool? onPhone,
-    double? translucentCorner,
+    List<WireRectObjectBuilder>? translucentRects,
   })
       : _objectId = objectId,
         _objectKind = objectKind,
@@ -2787,7 +2787,7 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
         _splitViewPartnerId = splitViewPartnerId,
         _splitViewRatio = splitViewRatio,
         _onPhone = onPhone,
-        _translucentCorner = translucentCorner;
+        _translucentRects = translucentRects;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -2799,6 +2799,8 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
     final int? surfacesOffset = _surfaces == null ? null
         : fbBuilder.writeList(_surfaces!.map((b) => b.getOrCreateOffset(fbBuilder)).toList());
     final int? clientTextureOffset = _clientTexture?.getOrCreateOffset(fbBuilder);
+    final int? translucentRectsOffset = _translucentRects == null ? null
+        : fbBuilder.writeListOfStructs(_translucentRects!);
     fbBuilder.startTable(60);
     fbBuilder.addUint64(0, _objectId);
     fbBuilder.addUint8(1, _objectKind?.value);
@@ -2861,7 +2863,7 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
     fbBuilder.addUint64(56, _splitViewPartnerId);
     fbBuilder.addFloat64(57, _splitViewRatio);
     fbBuilder.addBool(58, _onPhone);
-    fbBuilder.addFloat64(59, _translucentCorner);
+    fbBuilder.addOffset(59, translucentRectsOffset);
     return fbBuilder.endTable();
   }
 

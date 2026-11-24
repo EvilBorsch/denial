@@ -572,12 +572,12 @@ table Window {
   // from it that deniald laid the window out for the presentation shown.
   on_phone:bool;
   // Appended for compatibility. With opacity_class BorderAlphaOnly: the
-  // content is opaque everywhere but in a square of this side (logical
-  // pixels) at each of its corners, as a client with rounded corners
-  // declares through wl_surface.set_opaque_region. Zero when no such bound
-  // is known. The shell evaluates a window's backdrop material only where
-  // it can show.
-  translucent_corner:double;
+  // parts of the content its opaque region leaves out, relative to the
+  // content's origin in logical pixels: the only places the client can be
+  // translucent, such as rounded corners (GTK 4 declares the bands above
+  // and below them). Absent when unknown or too many. The shell evaluates a
+  // window's backdrop material only where it can show.
+  translucent_rects:[WireRect];
 }
 
 table WindowSnapshot {
