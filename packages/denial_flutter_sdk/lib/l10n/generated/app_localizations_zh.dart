@@ -5329,6 +5329,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get homeSearchNoResults => '未找到结果';
 
   @override
+  String get shellSearchAllApps => '所有应用';
+
+  @override
+  String get shellSearchOpenWindowsHint => '搜索已打开的窗口';
+
+  @override
   String get powerActionRestartDenial => '重启 Denial';
 
   @override

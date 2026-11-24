@@ -9990,6 +9990,18 @@ abstract class AppLocalizations {
   /// **'Nothing found'**
   String get homeSearchNoResults;
 
+  /// Heading of every app, by name, in the shell's one search (Super, Alt+F, the tablet's app drawer and pull-down search) before anything is typed.
+  ///
+  /// In en, this message translates to:
+  /// **'All apps'**
+  String get shellSearchAllApps;
+
+  /// Placeholder and accessible label of the overview's search field: it finds only the open windows and the apps that run, not apps to start.
+  ///
+  /// In en, this message translates to:
+  /// **'Search open windows'**
+  String get shellSearchOpenWindowsHint;
+
   /// Power action that starts Denial again in the same session, closing open apps.
   ///
   /// In en, this message translates to:

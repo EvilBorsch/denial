@@ -22,7 +22,7 @@ import 'home_interactions.dart';
 import 'home_launch.dart';
 import 'home_pager.dart';
 import 'home_resize_controller.dart';
-import 'home_search.dart';
+import '../search/shell_search_backend.dart';
 import 'home_sheets.dart';
 import 'widgets/home_app_drawer.dart';
 import 'widgets/home_backdrop.dart';
@@ -265,20 +265,21 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
     unawaited(launchHomeApp(context, ref, app, iconRect));
   }
 
-  void _launchFromDrawer(HomeGridItem app, Rect iconRect) {
-    launch(app, iconRect);
+  /// An app found by search starts, or comes to the front when it runs.
+  void _launchFromSearch(ShellSearchApp app, Rect iconRect) {
+    launch(app.item, iconRect);
     _drawer.value = 0;
     _search.value = 0;
   }
 
   /// A window found by search comes to the front, growing out of its icon
   /// in the results like an app out of its home icon.
-  void _openWindowFromSearch(HomeSearchWindow found, Rect iconRect) {
+  void _openWindowFromSearch(ShellSearchOpenWindow found, Rect iconRect) {
     if (_swallowTap || drag.active) return;
     final shell = ref.read(referenceShellProvider.notifier);
     final window =
         shell.state.deckFocusOf(found.window.objectId) ?? found.window;
-    final app = found.app;
+    final app = found.app?.item;
     if (window.isLocalFlutter && app != null) {
       // An in-bundle app comes back through its own launch.
       launch(app, iconRect);
@@ -781,9 +782,8 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
                 if (contents.drawer && apps != null && _geometry != null)
                   HomeAppDrawer(
                     openness: _drawer,
-                    apps: apps,
                     columns: _geometry!.columns,
-                    onLaunch: _launchFromDrawer,
+                    onLaunch: _launchFromSearch,
                     onOpenWindow: _openWindowFromSearch,
                     onDrag: _moveDrawer,
                     onDragEnd: _settleDrawer,
@@ -792,9 +792,8 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
                 if (apps != null && _geometry != null)
                   HomeSearchSheet(
                     openness: _search,
-                    apps: apps,
                     columns: _geometry!.columns,
-                    onLaunch: _launchFromDrawer,
+                    onLaunch: _launchFromSearch,
                     onOpenWindow: _openWindowFromSearch,
                     onClose: () => _animateSearch(0),
                     onDrag: _moveSearch,

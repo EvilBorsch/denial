@@ -1045,8 +1045,6 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
               Positioned.fill(
                 child: DesktopOverviewHub(
                   onActivateWindow: onActivateWindow,
-                  onLaunchApplication: onLaunchApp,
-                  onLaunchLocalApplication: onLaunchLocalApp,
                   onDismiss: widget.onDismissOverview,
                   onNavigate: widget.onNavigateOverview,
                   onActivateSelection: widget.onActivateOverviewSelection,

@@ -1,12 +1,12 @@
-import 'package:denial_desktop/src/desktop/desktop_application_catalog.dart';
 import 'package:denial_desktop/src/desktop/desktop_overview_hub.dart';
 import 'package:denial_desktop/src/desktop/desktop_overview_layout.dart';
 import 'package:denial_desktop/src/desktop/desktop_overview_motion.dart';
 import 'package:denial_desktop/src/desktop/desktop_search_overlay.dart';
 import 'package:denial_desktop/src/desktop/desktop_shell_search.dart';
 import 'package:denial_desktop/src/desktop/desktop_workspace.dart';
+import 'package:denial_desktop/src/search/shell_search_backend.dart';
+import 'package:denial_desktop/src/search/shell_search_view.dart';
 import 'package:denial_flutter_sdk/applications.dart';
-import 'package:denial_flutter_sdk/launcher.dart';
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/models.dart';
 import 'package:denial_flutter_sdk/platform.dart';
@@ -143,6 +143,20 @@ class _Catalog extends HomeGridController {
 
 class _Bridge extends DenialBridge {}
 
+class _Recents extends ApplicationRecentsController {
+  @override
+  List<String> build() => const [];
+}
+
+/// [_strip]'s windows by their last use: Firefox's news window, then the
+/// split screen, then Firefox's first window and Settings.
+List<DenialWindow> _recent() {
+  final byId = {for (final window in _strip()) window.objectId: window};
+  return [
+    for (final id in [4, 2, 3, 1, 5]) byId[id]!,
+  ];
+}
+
 /// The shell around the hub and the search: windows, the app catalog, and
 /// what choosing a result asks of the shell.
 class _Harness {
@@ -151,7 +165,8 @@ class _Harness {
       overrides: [
         denialBridgeProvider.overrideWithValue(_Bridge()),
         homeGridControllerProvider.overrideWith(_Catalog.new),
-        desktopSearchWindowsProvider.overrideWithValue(_strip()),
+        applicationRecentsProvider.overrideWith(_Recents.new),
+        shellSearchDeskWindowsProvider.overrideWithValue(_recent()),
       ],
     );
     workspace.syncWindows(
@@ -204,8 +219,6 @@ class _Harness {
 
   Widget hub() => DesktopOverviewHub(
     onActivateWindow: (window) => activated.add(window.objectId),
-    onLaunchApplication: (app) => launched.add(app.id),
-    onLaunchLocalApplication: (app) => launched.add(app.id),
     onDismiss: () {
       dismissed += 1;
       workspace.closeOverview();
@@ -242,73 +255,12 @@ FocusNode? _focused() => FocusManager.instance.primaryFocus;
 
 bool _fieldFocused() => _focused()?.debugLabel == 'desktop-search';
 
+String _query(WidgetTester tester) =>
+    tester.widget<EditableText>(find.byType(EditableText)).controller.text;
+
 void main() {
-  group('the search listing', () {
-    final windows = desktopSearchWindows(
-      windows: _strip(),
-      placements: {
-        for (final (index, window) in _strip().indexed)
-          window.objectId: DesktopWindowPlacement(
-            objectId: window.objectId,
-            frame: window.geometry!,
-            z: window.objectId == 4 ? 99 : index,
-            monitorId: 1,
-          ),
-      },
-      catalog: DesktopApplicationCatalog.empty,
-      titleOf: (window) => window.title,
-    );
-
-    test('windows come most recent first, named by their app', () {
-      expect(windows.first.id, 4);
-      expect(windows.first.appName, 'firefox');
-    });
-
-    test('windows, then apps; the first is what Enter acts on', () {
-      final listing = DesktopSearchListing(
-        searchShell(
-          'fire',
-          windows: windows,
-          applications: const [
-            LauncherApplication(
-              id: 'desktop:firefox',
-              name: 'Firefox',
-              searchableText: 'firefox network',
-            ),
-          ],
-        ),
-      );
-      expect(listing.searching, isTrue);
-      expect(
-        listing.entries.map(
-          (entry) => switch (entry) {
-            DesktopSearchWindowEntry(:final window) => window.id,
-            DesktopSearchApplicationEntry(:final application) => application.id,
-          },
-        ),
-        [4, 1, 'desktop:firefox'],
-      );
-      expect(listing.windowIds, {1, 4});
-      expect(
-        listing.entries.first,
-        DesktopSearchWindowEntry(
-          (listing.results.first! as ShellSearchWindowHit).window,
-        ),
-      );
-    });
-
-    test('nothing typed finds nothing and dims nothing', () {
-      final listing = DesktopSearchListing(
-        searchShell('  ', windows: windows, applications: const []),
-      );
-      expect(listing.searching, isFalse);
-      expect(listing.entries, isEmpty);
-      expect(listing.windowIds, isEmpty);
-    });
-  });
-
   group('the overview hub', () {
-    testWidgets('typing finds windows and apps; Enter goes to the best', (
+    testWidgets('typing finds open windows; Enter goes to the best', (
       tester,
     ) async {
       final shell = _Harness();
@@ -316,30 +268,35 @@ void main() {
       await shell.openOverview(tester);
       // The keyboard is in the field as soon as the overview opens.
       expect(_fieldFocused(), isTrue);
+      expect(find.text('Search open windows'), findsOneWidget);
 
       await tester.enterText(find.byType(EditableText), 'doc');
       await tester.pump();
-      expect(find.text('Windows'), findsOneWidget);
+      expect(find.text('Open windows'), findsOneWidget);
       expect(find.text('Documents'), findsWidgets);
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pump();
       expect(shell.activated, [2]);
-      expect(shell.launched, isEmpty);
     });
 
-    testWidgets('an app that is not open starts from the hub', (tester) async {
+    testWidgets('it does not offer apps to start', (tester) async {
       final shell = _Harness();
       await shell.pump(tester, shell.hub());
       await shell.openOverview(tester);
+      // Text Editor is in the catalog, but not open.
       await tester.enterText(find.byType(EditableText), 'edit');
       await tester.pump();
-      expect(find.text('Apps'), findsOneWidget);
-      expect(find.text('Text Editor'), findsOneWidget);
+      expect(find.text('Text Editor'), findsNothing);
+      expect(find.text('Apps'), findsNothing);
+      expect(find.text('Nothing found'), findsOneWidget);
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pump();
-      expect(shell.launched, ['org.gnome.TextEditor.desktop']);
-      expect(shell.dismissed, 1);
       expect(shell.activated, isEmpty);
+      expect(shell.dismissed, 0);
+      // An open app is found by its name: Firefox's two windows.
+      await tester.enterText(find.byType(EditableText), 'firefox');
+      await tester.pump();
+      expect(find.byType(ShellSearchWindowRow), findsNWidgets(2));
     });
 
     testWidgets('the arrows choose another result', (tester) async {
@@ -348,7 +305,7 @@ void main() {
       await shell.openOverview(tester);
       await tester.enterText(find.byType(EditableText), 'fire');
       await tester.pump();
-      // Firefox's two windows, the one used last first, then the app.
+      // Firefox's two windows, the one used last first.
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
@@ -358,7 +315,7 @@ void main() {
       await tester.pump();
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pump();
-      expect(shell.activated, [1]);
+      expect(shell.activated, [4]);
       expect(shell.navigated, isEmpty);
     });
 
@@ -381,7 +338,7 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(selected(), 1);
-      // The app below the windows leaves the selection on the last window.
+      // Past the last result the selection stays.
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pump();
       await tester.pump();
@@ -396,10 +353,7 @@ void main() {
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump();
-      expect(
-        tester.widget<EditableText>(find.byType(EditableText)).controller.text,
-        isEmpty,
-      );
+      expect(_query(tester), isEmpty);
       expect(shell.dismissed, 0);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump();
@@ -425,49 +379,33 @@ void main() {
       expect(shell.activated, isEmpty);
     });
 
-    testWidgets('the search key puts the keyboard back into the field', (
-      tester,
-    ) async {
-      final shell = _Harness();
-      await shell.pump(tester, shell.hub());
-      await shell.openOverview(tester);
-      _focused()?.unfocus();
-      await tester.pump();
-      expect(_fieldFocused(), isFalse);
-      shell.container
-          .read(desktopOverviewSearchFocusProvider.notifier)
-          .request();
-      await tester.pump();
-      await tester.pump();
-      expect(_fieldFocused(), isTrue);
-    });
-
     testWidgets('what the search does not find is dimmed', (tester) async {
       final shell = _Harness();
       await shell.pump(tester, shell.hub());
       await shell.openOverview(tester);
       final desktop = shell.container.read(desktopWorkspaceProvider);
       final overview = desktop.overview!;
+      const backend = ShellSearchBackend();
+      final windows = shellSearchOpenWindows(
+        _recent(),
+        index: ShellSearchIndex.empty,
+        titleOf: (window) => window.title,
+      );
+      ShellSearchOutcome found(
+        String query, [
+        List<ShellSearchOpenWindow>? among,
+      ]) => backend.search(
+        query,
+        scope: ShellSearchScope.openWindows,
+        index: ShellSearchIndex.empty,
+        windows: among ?? windows,
+      );
       List<DesktopOverviewVeil> veils(String query) =>
           desktopOverviewSearchVeils(
             overview: overview,
             desktop: desktop,
             dragged: null,
-            listing: DesktopSearchListing(
-              searchShell(
-                query,
-                windows: [
-                  for (final window in _strip())
-                    ShellSearchWindow(
-                      id: window.objectId,
-                      appId: window.appId,
-                      appName: window.appId,
-                      title: window.title,
-                    ),
-                ],
-                applications: const [],
-              ),
-            ),
+            outcome: found(query),
             windowRadius: 12,
             cardRadius: 20,
           );
@@ -494,20 +432,10 @@ void main() {
           overview: overview,
           desktop: desktop,
           dragged: 3,
-          listing: DesktopSearchListing(
-            searchShell(
-              'doc',
-              windows: const [
-                ShellSearchWindow(
-                  id: 2,
-                  appId: 'org.gnome.Nautilus',
-                  appName: 'Files',
-                  title: 'Documents',
-                ),
-              ],
-              applications: const [],
-            ),
-          ),
+          outcome: found('doc', [
+            for (final window in windows)
+              if (window.id == 2) window,
+          ]),
           windowRadius: 12,
           cardRadius: 20,
         ).map((veil) => veil.rect),
@@ -516,29 +444,115 @@ void main() {
     });
   });
 
-  group('the search over the desktop', () {
-    testWidgets('opens with the keyboard in it and goes to what it finds', (
-      tester,
-    ) async {
-      final shell = _Harness();
-      await shell.pump(tester, shell.overlay());
-      expect(find.byType(DesktopSearchField), findsNothing);
-
+  group('the one search over the desktop', () {
+    Future<void> open(WidgetTester tester, _Harness shell) async {
       shell.container.read(desktopSearchOverlayProvider.notifier).open(1);
       await tester.pump();
       await tester.pump();
-      expect(find.byType(DesktopSearchField), findsOneWidget);
-      expect(_fieldFocused(), isTrue);
+    }
 
+    testWidgets('opens with the keyboard in it on every app', (tester) async {
+      final shell = _Harness();
+      await shell.pump(tester, shell.overlay());
+      expect(find.byType(ShellSearchField), findsNothing);
+      await open(tester, shell);
+      expect(find.byType(ShellSearchField), findsOneWidget);
+      expect(_fieldFocused(), isTrue);
+      expect(find.text('Search apps and windows'), findsOneWidget);
+      expect(find.text('All apps'), findsOneWidget);
+      for (final name in ['Console', 'Files', 'Firefox', 'Text Editor']) {
+        expect(find.text(name), findsOneWidget);
+      }
+      // No windows before anything is typed.
+      expect(find.byType(ShellSearchWindowRow), findsNothing);
+    });
+
+    testWidgets('typing finds apps first, then open windows', (tester) async {
+      final shell = _Harness();
+      await shell.pump(tester, shell.overlay());
+      await open(tester, shell);
       await tester.enterText(find.byType(EditableText), 'fire');
       await tester.pump();
+      expect(find.text('Apps'), findsOneWidget);
+      expect(find.text('Open windows'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text('Apps')).dy,
+        lessThan(tester.getTopLeft(find.text('Open windows')).dy),
+      );
       expect(find.text('News — Mozilla Firefox'), findsOneWidget);
+      expect(find.text('Mozilla Firefox'), findsOneWidget);
+      expect(find.text('Console'), findsNothing);
+    });
+
+    testWidgets('Enter switches to a running app', (tester) async {
+      final shell = _Harness();
+      await shell.pump(tester, shell.overlay());
+      await open(tester, shell);
+      await tester.enterText(find.byType(EditableText), 'fire');
+      await tester.pump();
       await tester.testTextInput.receiveAction(TextInputAction.search);
       await tester.pump();
+      // Firefox runs: its window used last comes to the front.
       expect(shell.activated, [4]);
+      expect(shell.launched, isEmpty);
       expect(shell.container.read(desktopSearchOverlayProvider), isNull);
       await tester.pumpAndSettle();
-      expect(find.byType(DesktopSearchField), findsNothing);
+      expect(find.byType(ShellSearchField), findsNothing);
+    });
+
+    testWidgets('Enter starts an app that does not run', (tester) async {
+      final shell = _Harness();
+      await shell.pump(tester, shell.overlay());
+      await open(tester, shell);
+      await tester.enterText(find.byType(EditableText), 'edit');
+      await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pump();
+      expect(shell.launched, ['org.gnome.TextEditor.desktop']);
+      expect(shell.activated, isEmpty);
+    });
+
+    testWidgets('the arrows choose a window among the results', (tester) async {
+      final shell = _Harness();
+      await shell.pump(tester, shell.overlay());
+      await open(tester, shell);
+      await tester.enterText(find.byType(EditableText), 'fire');
+      await tester.pump();
+      // Firefox the app, then its two windows.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pump();
+      expect(shell.activated, [1]);
+    });
+
+    testWidgets('with nothing typed the arrows walk the grid', (tester) async {
+      final shell = _Harness();
+      await shell.pump(tester, shell.overlay());
+      await open(tester, shell);
+      // Enter does nothing before an app is chosen.
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pump();
+      expect(shell.launched, isEmpty);
+      // Console, Files, Firefox, Text Editor: the second is Files.
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pump();
+      // Files runs: it comes to the front.
+      expect(shell.activated, [2]);
+    });
+
+    testWidgets('a click on an app starts it', (tester) async {
+      final shell = _Harness();
+      await shell.pump(tester, shell.overlay());
+      await open(tester, shell);
+      await tester.tap(find.text('Text Editor'));
+      await tester.pump();
+      expect(shell.launched, ['org.gnome.TextEditor.desktop']);
     });
 
     testWidgets('Esc clears, then closes; so does a click outside', (
@@ -550,14 +564,13 @@ void main() {
         desktopSearchOverlayProvider.notifier,
       );
 
-      search.open(1);
-      await tester.pump();
-      await tester.pump();
+      await open(tester, shell);
       await tester.enterText(find.byType(EditableText), 'term');
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump();
       expect(shell.container.read(desktopSearchOverlayProvider), 1);
+      expect(_query(tester), isEmpty);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump();
       expect(shell.container.read(desktopSearchOverlayProvider), isNull);
@@ -567,10 +580,7 @@ void main() {
       search.open(1);
       await tester.pump();
       await tester.pump();
-      expect(
-        tester.widget<EditableText>(find.byType(EditableText)).controller.text,
-        isEmpty,
-      );
+      expect(_query(tester), isEmpty);
       await tester.tapAt(const Offset(20, 900));
       await tester.pump();
       expect(shell.container.read(desktopSearchOverlayProvider), isNull);
@@ -636,7 +646,7 @@ void main() {
       expect(find.text('Mozilla Firefox'), findsOneWidget);
       expect(find.text('News — Mozilla Firefox'), findsOneWidget);
       // No search field in the app windows.
-      expect(find.byType(DesktopSearchField), findsNothing);
+      expect(find.byType(ShellSearchField), findsNothing);
 
       // A single window is shown and named too.
       shell.workspace.closeOverview();

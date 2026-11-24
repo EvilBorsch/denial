@@ -7,10 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/default_shell/panel_composition.dart';
-import 'desktop_application_catalog.dart';
+import '../search/shell_search_backend.dart';
 import 'desktop_workspace.dart';
 
-/// Runtime adapter for the statically selected launcher presentation.
+/// Runtime adapter for a launcher plugin that replaces the one search as the
+/// desktop's launcher. The shipped shell has none since eb19: a bare Super
+/// and four fingers up open the one search. A plugin gets the apps of the
+/// one index and does its own presentation.
 class DesktopApplicationLauncher extends ConsumerStatefulWidget {
   const DesktopApplicationLauncher({
     super.key,
@@ -36,47 +39,41 @@ class DesktopApplicationLauncher extends ConsumerStatefulWidget {
 
 class _DesktopApplicationLauncherHostState
     extends ConsumerState<DesktopApplicationLauncher> {
-  final DesktopApplicationCatalogCache _catalogCache =
-      DesktopApplicationCatalogCache();
-  DesktopApplicationCatalog _catalog = DesktopApplicationCatalog.empty;
+  final ShellSearchIndexCache _indexCache = ShellSearchIndexCache();
+  ShellSearchIndex _index = ShellSearchIndex.empty;
 
   void _launch(String id) {
-    if (_catalog.desktopApps[id] case final app?) {
-      widget.onLaunch(app);
-    } else if (_catalog.localApps[id] case final app?) {
-      widget.onLaunchLocal(app);
+    final app = _index[id];
+    if (app?.desktopApp case final desktop?) {
+      widget.onLaunch(desktop);
+    } else if (app?.localApp case final local?) {
+      widget.onLaunchLocal(local);
     }
   }
 
   Widget _buildIcon(BuildContext context, String id) {
-    if (_catalog.localApps[id] case final app?) {
+    final app = _index[id];
+    if (app?.localApp case final local?) {
       return ExcludeSemantics(
         child: Icon(
-          app.icon,
+          local.icon,
           size: 46,
           color: context.shellTheme.accentPalette.primary,
         ),
       );
     }
-    return DeferredAppIcon(iconPath: _catalog.desktopApps[id]?.iconPath);
+    return DeferredAppIcon(iconPath: app?.desktopApp?.iconPath);
   }
 
   @override
   Widget build(BuildContext context) {
     final plugin = ref.watch(desktopLauncherProvider);
     if (plugin == null) return const SizedBox.shrink();
-    _catalog = _catalogCache.resolve(
-      context,
-      slots: ref.watch(
-        homeGridControllerProvider.select((state) => state.asData?.value.slots),
-      ),
-      registry: ref.watch(localFlutterApplicationRegistryProvider),
-      launcher: ref.watch(appLauncherProvider),
-    );
+    _index = _indexCache.resolve(context, ref);
     return plugin.build(
       context,
       launcher: LauncherContext(
-        applications: _catalog.applications,
+        applications: _index.launcherApplications,
         recentApplicationIds: ref.watch(applicationRecentsProvider),
         visible: ref.watch(
           desktopWorkspaceProvider.select((state) => state.launcherOpen),

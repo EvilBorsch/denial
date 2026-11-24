@@ -5593,6 +5593,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get homeSearchNoResults => 'Nothing found';
 
   @override
+  String get shellSearchAllApps => 'All apps';
+
+  @override
+  String get shellSearchOpenWindowsHint => 'Search open windows';
+
+  @override
   String get powerActionRestartDenial => 'Restart Denial';
 
   @override

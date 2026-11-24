@@ -5649,6 +5649,12 @@ class AppLocalizationsRu extends AppLocalizations {
   String get homeSearchNoResults => 'Ничего не найдено';
 
   @override
+  String get shellSearchAllApps => 'Все приложения';
+
+  @override
+  String get shellSearchOpenWindowsHint => 'Поиск открытых окон';
+
+  @override
   String get powerActionRestartDenial => 'Перезапустить Denial';
 
   @override
