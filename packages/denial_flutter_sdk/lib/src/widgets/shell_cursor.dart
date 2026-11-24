@@ -191,7 +191,9 @@ class ShellCursorHost extends StatefulWidget {
   final bool hideCursor;
   final DisplayLayout? displayLayout;
 
-  /// Target size of the longest cursor-artwork edge in physical pixels.
+  /// Size of the longest cursor-artwork edge in logical pixels: the cursor
+  /// looks the same at every display scale, `cursorSize × scale` physical
+  /// pixels on each display, as clients size theirs from `XCURSOR_SIZE`.
   final double cursorSize;
   final ValueChanged<int>? onCursorStatePresented;
   final String? benchmarkSocket;
@@ -424,13 +426,9 @@ class _ShellCursorHostState extends State<ShellCursorHost>
       return;
     }
     final wasHidden = _position == null;
-    final outputScaleChanged =
-        previous != null &&
-        _cursorOutputScale(widget.displayLayout, previous, 1.0) !=
-            _cursorOutputScale(widget.displayLayout, position, 1.0);
     _position = position;
     _cursorTranslation.value = position;
-    if (wasHidden || outputScaleChanged) {
+    if (wasHidden) {
       setState(() {});
     }
   }
@@ -465,16 +463,6 @@ class _ShellCursorHostState extends State<ShellCursorHost>
       clientSurfaceRequested: clientSurface != null,
       dragActive: dragActive,
     );
-    final fallbackScale = MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0;
-    final outputScale = _cursorOutputScale(
-      widget.displayLayout,
-      position ?? Offset.zero,
-      fallbackScale,
-    );
-    final configuredSize = widget.cursorSize.isFinite && widget.cursorSize > 0
-        ? widget.cursorSize
-        : shellCursorDefaultSize;
-    final artworkExtent = configuredSize / outputScale;
     return MouseRegion(
       opaque: false,
       cursor: ShellMouseCursors.normal,
@@ -554,7 +542,7 @@ class _ShellCursorHostState extends State<ShellCursorHost>
                         child: ShellCursorArtwork(
                           theme: widget.theme,
                           kind: !dragActive ? _kind : ShellCursorKind.normal,
-                          longestEdge: artworkExtent,
+                          longestEdge: widget.cursorSize,
                           anchorAtHotspot: true,
                         ),
                       ),
@@ -710,11 +698,17 @@ class _ShellCursorArtworkState extends State<ShellCursorArtwork> {
     final scale = requestedExtent / nativeExtent;
     final artworkSize = nativeSize * scale;
     final hotspot = role.hotspotAt(_frame);
+    // Pixel for pixel the frame is drawn as it is; resampled (a larger size,
+    // a display scale above 1) it is filtered rather than left blocky.
+    final pixelScale =
+        scale * (MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0);
     final artwork = Image(
       image: widget.theme.imageProvider(widget.kind, _frame)!,
       width: artworkSize.width,
       height: artworkSize.height,
-      filterQuality: FilterQuality.none,
+      filterQuality: pixelScale == 1.0
+          ? FilterQuality.none
+          : FilterQuality.medium,
       gaplessPlayback: true,
       excludeFromSemantics: true,
     );
@@ -723,54 +717,6 @@ class _ShellCursorArtworkState extends State<ShellCursorArtwork> {
     }
     return Transform.translate(offset: -hotspot * scale, child: artwork);
   }
-}
-
-double _cursorOutputScale(
-  DisplayLayout? layout,
-  Offset position,
-  double fallback,
-) {
-  final outputs = layout?.outputs ?? const <DisplayOutput>[];
-  for (final output in outputs) {
-    if (output.logicalRect.contains(position)) {
-      return _validDisplayScale(output.scale, fallback);
-    }
-  }
-
-  DisplayOutput? nearest;
-  var nearestDistanceSquared = double.infinity;
-  for (final output in outputs) {
-    final distanceSquared = _distanceSquaredToRect(
-      position,
-      output.logicalRect,
-    );
-    if (distanceSquared < nearestDistanceSquared) {
-      nearest = output;
-      nearestDistanceSquared = distanceSquared;
-    }
-  }
-  return _validDisplayScale(nearest?.scale, fallback);
-}
-
-double _validDisplayScale(double? scale, double fallback) {
-  if (scale != null && scale.isFinite && scale > 0) {
-    return scale;
-  }
-  return fallback.isFinite && fallback > 0 ? fallback : 1.0;
-}
-
-double _distanceSquaredToRect(Offset point, Rect rect) {
-  final dx = point.dx < rect.left
-      ? rect.left - point.dx
-      : point.dx > rect.right
-      ? point.dx - rect.right
-      : 0.0;
-  final dy = point.dy < rect.top
-      ? rect.top - point.dy
-      : point.dy > rect.bottom
-      ? point.dy - rect.bottom
-      : 0.0;
-  return dx * dx + dy * dy;
 }
 
 class _ShellCursorController extends ChangeNotifier {

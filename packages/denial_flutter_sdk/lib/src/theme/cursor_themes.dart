@@ -4,8 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:path/path.dart' as p;
 
-/// The saved cursor size is a physical-pixel target. Cursor artwork is drawn
-/// at this size on every output, independent of that output's display scale.
+/// The saved cursor size is in logical pixels, like `XCURSOR_SIZE`: cursor
+/// artwork keeps its look at every display scale, `size × scale` physical
+/// pixels on each output.
 const double shellCursorMinimumSize = 16;
 const double shellCursorDefaultSize = 32;
 const double shellCursorMaximumSize = 64;
