@@ -260,5 +260,23 @@ The owner used eb18 and said "all great, but" listed six points (quoted, transla
      - floating dialogs stay with their parents;
      - the change is animated smoothly at 120 fps, without flashes of the wallpaper or a lock-screen flicker.
    - Write down each bug found with its cause and fix.
+7. **"This panel in the desktop presentation must not slide out from the side when the mouse reaches the left part of the screen. It should open on a click on a new icon or the clock (the new icon means a control center) and slide out from the top."** (added 2026-11-24)
+   - "This panel" is read as Denial's desktop Dashboard (notifications, quick settings, the «Мобильный режим» button), opened today by the hover edge trigger (`plugins/denial_desktop/lib/src/desktop/desktop_workspace.dart`, `desktop_panel_edges.dart`) and by the clock in `denial_top_bar`. If a left-edge hover opens another panel, the same rule applies to it.
+   - Like the macOS Control Center:
+     - No hover-to-open in the desktop presentation: no edge hover trigger and no pointer edge swipe. A pointer never opens it by accident. Whether a finger swipe from the top edge still opens it in the desktop presentation is the builder's call.
+     - A new control-center icon in the top bar near the clock (a glyph like macOS's two toggles; Denial's icon set if a fitting one exists). Clicking it or the clock toggles the panel.
+     - The panel drops down from the top, anchored under the icon at the top right, and opens and closes with a smooth 120 fps animation. A click outside, Esc or a second click on the icon closes it.
+   - The tablet presentation's top shade stays as it is.
+   - Old settings (dashboard placement or hover keys in `settings.json`) do not bring back the side hover in the desktop presentation. Rollback safety as for the other keys.
+   - Tests, and a section of `eb19-check.sh` with the virtual mouse: a hover at the left edge opens nothing; a click on the icon drops the panel from the top.
+8. **"I set scale to 200% and the screen to 100%. Having two different settings is not convenient at all, and there are probably more settings tied to them."** (added 2026-11-24; on the tablet then: `scale=DSI-1,2` in `outputs.conf`, `apps.scale` 1.0)
+   - Today several independent controls decide how big things look (denial-apps `apps/settings/src`): the display's «Масштаб» / «Свой масштаб» (output scale, `denial.rs` `try_scale`); «Размер приложений» (`apps.scale`, `settings/panel.rs` `APP_SIZES` 1.0–3.0, a multiplier for apps over the shell); the Android «Размер» (`settings/android.rs`, Small/Default/Large/Larger, `DEFAULT_DPI` 230 per unit of scale, through `droidloom::set_density`/`set_densities`; Droidloom ignores `apps.scale`, so Android apps came out about 1.2× bigger than GTK in eb18); `appearance.cursorSize`.
+   - Like macOS "Larger text / More space", iPadOS Display Zoom and Android "Display size":
+     1. One control per display, «Масштаб»: a picker of a few sensible steps, each saying what it looks like ("выглядит как 1357×960"), the default marked. It scales everything together: the shell, Wayland apps, X11 apps through Xwayland, Android apps and the cursor.
+     2. «Размер приложений» leaves Settings; `apps.scale` stays 1.0 in effect. Existing documents migrate by folding the old product into the display scale, so nobody's look jumps on upgrade. Rollback safety: eb18 and eb17 still load the files and look the same (as eb18's explicit scale line did).
+     3. Android follows the same scale by itself and matches GTK text size at every step, verified on the tablet with screenshots of Android «Настройки» or «Файлы» next to a GTK app (`DEFAULT_DPI` adjusted if needed). The separate Android «Размер» picker goes, or becomes a text-size preference if Android needs one; the builder says which and why.
+     4. The cursor's logical size stays constant across scales. The cursor-size choice goes if redundant or stays as an accessibility option (builder's call, documented).
+     5. Every other setting that depends on scale (corner radii, bar thickness, Xwayland DPI, the lock screen, the tablet presentation's touch targets) stays consistent after one scale change.
+   - Tests for the migration and the single control; on-tablet screenshots at two scale steps in `eb19-check.sh`.
 
 Delivery as before: package `denial 0.6.8-1+eb19`. Build, install and verify on the tablet autonomously, under the same permissions and limits (no partitions, no reboots, battery ≥ 40 %, Stay awake only during tests). Merge into the forks' `eb/main` once verified on the tablet. End state as for eb18.
