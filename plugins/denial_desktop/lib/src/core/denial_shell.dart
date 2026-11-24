@@ -140,7 +140,7 @@ class DenialShell extends ConsumerWidget {
       screenshotSelectionProvider.select(
         (session) => session?.hidesCursor ?? false,
       ),
-    )
+    );
     // Nor does the frame a presentation switch freezes as its cover.
     final hideCursor = screenshotHidesCursor || presentationSwitch.waiting;
     final scene = effectivePresentation == ReferenceShellProfile.mobile
