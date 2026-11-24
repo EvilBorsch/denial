@@ -284,4 +284,13 @@ The owner used eb18 and said "all great, but" listed six points (quoted, transla
      5. Every other setting that depends on scale (corner radii, bar thickness, Xwayland DPI, the lock screen, the tablet presentation's touch targets) stays consistent after one scale change.
    - Tests for the migration and the single control; on-tablet screenshots at two scale steps in `eb19-check.sh`.
 
+## The tablet presentation first (owner's priority, 2026-11-25)
+
+Owner, translated: "the tablet presentation is my main mode, so the most important thing is to get it right with the new features: no bugs, ease of use, and so on. Don't neglect it. One of the goals was to improve the tablet mode based on the new desktop work."
+
+- A dedicated track (T) owns the tablet presentation, finger only; the final verification starts with it.
+- Every eb19 feature that applies to the tablet works and feels right there, verified on the device with fingers: «Закрыть все», the one search (drawer and pull-down), the one scale (Android text against GTK, touch targets), 120 fps for the tablet's own animations (home, drawer, Recents, the bottom pill's gestures, back, the shade, Split View enter, resize and exit, app open and close), the switch in both directions, and Split View with the eb19 split improvements. The glass stays.
+- A finger-only usability and bug pass as a demanding iPad user would make it: unlock and home; opening apps from home, the drawer and search; switching with the pill and Recents; Split View; notifications and quick settings in the shade; the on-screen keyboard in GTK, Firefox and Android apps; rotation; the lock screen; closing apps. Bugs and rough edges are fixed properly; what is left is listed with its reason.
+- When a tablet item and a desktop item compete for the tablet or for build time, the tablet item goes first. The tablet presentation is the bar for "done".
+
 Delivery as before: package `denial 0.6.8-1+eb19`. Build, install and verify on the tablet autonomously, under the same permissions and limits (no partitions, no reboots, battery ≥ 40 %, Stay awake only during tests). Merge into the forks' `eb/main` once verified on the tablet. End state as for eb18.
