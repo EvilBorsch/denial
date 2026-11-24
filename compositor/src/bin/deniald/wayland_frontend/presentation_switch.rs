@@ -227,6 +227,45 @@ impl WaylandFrontend {
         windows.len()
     }
 
+    /// Tablet to desktop: the dialogs of the windows on screen come back
+    /// centred over their parents and inside the output, as when a parent
+    /// moves. The phone laid them out over the panel or their parent's half,
+    /// and the desktop rectangle a dialog had before can be off the screen
+    /// now: a wide dialog kept its tablet half's place, partly off the
+    /// output (seen with a file chooser of the right tile of a split
+    /// screen). Dialogs of screens beside the output follow when their
+    /// screen comes in.
+    pub(super) fn place_dialogs_over_parents(&mut self) {
+        let windows = self.space.elements().cloned().collect::<Vec<_>>();
+        let mut roots = Vec::new();
+        for window in &windows {
+            if !self.window_has_transient_parent(window) {
+                continue;
+            }
+            let mut root = window.clone();
+            // A malformed transient cycle must not loop.
+            for _ in 0..16 {
+                match self.transient_parent_window(&root) {
+                    Some(parent) if parent != root => root = parent,
+                    _ => break,
+                }
+            }
+            if self
+                .output_for_geometry(self.window_geometry_target(&root))
+                .is_none()
+            {
+                continue;
+            }
+            self.forget_xdg_transient_window_placement(window);
+            if !roots.contains(&root) {
+                roots.push(root);
+            }
+        }
+        for root in roots {
+            self.reconcile_xdg_transient_descendant_placements(&root);
+        }
+    }
+
     /// The window that has the keyboard becomes the current one of its
     /// strip. Returns whether the strip moved.
     pub(super) fn activate_focused_layout_window(&mut self) -> bool {

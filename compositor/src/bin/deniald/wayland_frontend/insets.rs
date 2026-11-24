@@ -405,6 +405,7 @@ impl WaylandFrontend {
             self.show_split_views_as_screens();
             self.activate_focused_layout_window();
             self.arrange_layout_windows();
+            self.place_dialogs_over_parents();
         }
         self.send_keyboard_insets(0);
         self.client_input_route_cache = None;
