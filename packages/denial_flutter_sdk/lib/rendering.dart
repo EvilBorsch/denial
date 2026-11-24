@@ -43,8 +43,10 @@ export 'src/widgets/window_plane.dart'
     show
         RenderWindowPlane,
         WindowPlane,
+        WindowPlanePiece,
         WindowPlaneTexture,
         WindowPlaneTextureGeometry,
+        windowPlaneMaterialPieces,
         windowPlaneTextureGeometry;
 export 'src/widgets/window_surface.dart' show WindowSurface;
 export 'src/widgets/window_surface_tree.dart'

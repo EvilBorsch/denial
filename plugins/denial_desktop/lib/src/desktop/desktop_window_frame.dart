@@ -918,6 +918,8 @@ class _DesktopSurfaceTexture extends StatefulWidget {
     required this.frameWidth,
     required this.frameColor,
     required this.backdrop,
+    required this.translucentCorners,
+    required this.materialReach,
   });
 
   final DenialWindow window;
@@ -930,6 +932,8 @@ class _DesktopSurfaceTexture extends StatefulWidget {
   final double frameWidth;
   final Color frameColor;
   final ImageFilterConfig? backdrop;
+  final Size? translucentCorners;
+  final double materialReach;
 
   @override
   State<_DesktopSurfaceTexture> createState() => _DesktopSurfaceTextureState();
@@ -1003,6 +1007,19 @@ class _DesktopWindowContent extends ConsumerWidget {
         child: _buildContent(context),
       );
     }
+    // A client translucent only at its rounded corners shows the material
+    // only there, unless the shell makes the whole window translucent.
+    final translucentCorners =
+        windowOpacity >= 1 &&
+            window.opacityClass == DenialWindowOpacityClass.borderAlphaOnly &&
+            window.translucentCorner > 0 &&
+            window.contentWidth > 0 &&
+            window.contentHeight > 0
+        ? Size(
+            window.translucentCorner / window.contentWidth,
+            window.translucentCorner / window.contentHeight,
+          )
+        : null;
     return _DesktopSurfaceTexture(
       window: window,
       allowDirectLayers: allowDirectLayers,
@@ -1014,6 +1031,8 @@ class _DesktopWindowContent extends ConsumerWidget {
       frameWidth: frameWidth,
       frameColor: frameColor,
       backdrop: backdrop,
+      translucentCorners: translucentCorners,
+      materialReach: theme.windowMaterialReach,
     );
   }
 
@@ -1088,6 +1107,8 @@ class _DesktopSurfaceTextureState extends State<_DesktopSurfaceTexture> {
         frameWidth: widget.frameWidth,
         frameColor: widget.frameColor,
         backdrop: widget.backdrop,
+        translucentCorners: widget.translucentCorners,
+        materialReach: widget.materialReach,
         filterQuality: filterQuality,
         presentationScale: widget.presentationScale,
         pixelGridOrigin: widget.pixelGridOrigin,

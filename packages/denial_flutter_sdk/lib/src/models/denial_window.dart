@@ -247,6 +247,7 @@ class DenialWindow {
     this.layoutScreenFloating = false,
     this.splitViewPartnerObjectId,
     this.splitViewRatio = 0.0,
+    this.translucentCorner = 0.0,
   });
 
   final int objectId;
@@ -323,6 +324,12 @@ class DenialWindow {
   /// Split View: the left window's share of the width; 0 outside Split
   /// View.
   final double splitViewRatio;
+
+  /// The client is opaque everywhere but in a square of this side, in
+  /// logical pixels of its content, at each corner: rounded corners as its
+  /// Wayland opaque region declares them. 0 when no such bound is known.
+  /// Meaningful for [DenialWindowOpacityClass.borderAlphaOnly] windows.
+  final double translucentCorner;
 
   /// The window shares the phone's screen in Split View.
   bool get inSplitView => splitViewPartnerObjectId != null;
@@ -593,6 +600,7 @@ class DenialWindow {
         other.layoutScreenFloating == layoutScreenFloating &&
         other.splitViewPartnerObjectId == splitViewPartnerObjectId &&
         other.splitViewRatio == splitViewRatio &&
+        other.translucentCorner == translucentCorner &&
         listEquals(other.surfaceLayers, surfaceLayers);
   }
 
@@ -654,6 +662,7 @@ class DenialWindow {
     layoutScreenFloating,
     splitViewPartnerObjectId,
     splitViewRatio,
+    translucentCorner,
     ...surfaceLayers,
   ]);
 }

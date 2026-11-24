@@ -65,6 +65,8 @@ class WindowPlane extends SingleChildRenderObjectWidget {
     this.frameColor = const Color(0x00000000),
     this.backdrop,
     this.materialRegion,
+    this.translucentCorners,
+    this.materialReach = 0,
     this.filterQuality = FilterQuality.none,
     this.presentationScale = 1,
     this.pixelGridOrigin = Offset.zero,
@@ -79,6 +81,8 @@ class WindowPlane extends SingleChildRenderObjectWidget {
     this.backdrop,
   }) : texture = null,
        materialRegion = null,
+       translucentCorners = null,
+       materialReach = 0,
        filterQuality = FilterQuality.none,
        presentationScale = 1,
        pixelGridOrigin = Offset.zero;
@@ -93,6 +97,18 @@ class WindowPlane extends SingleChildRenderObjectWidget {
   /// its size, such as a popup's window geometry inside its client-drawn
   /// shadow. The material takes its shape from it and is only evaluated there.
   final Rect? materialRegion;
+
+  /// The client is opaque everywhere but in a rectangle of this size, in
+  /// fractions of the client area, at each corner of it: rounded corners,
+  /// as its Wayland opaque region declares them. The window shader adds
+  /// [backdrop] only under translucent client pixels, so the material can
+  /// show only there, and the plane evaluates it only within
+  /// [materialReach] of those corners ([windowPlaneMaterialPieces]).
+  final Size? translucentCorners;
+
+  /// How far, in logical pixels, [backdrop] reads the scene around a pixel
+  /// it produces (ShellThemeData.windowMaterialReach).
+  final double materialReach;
   final FilterQuality filterQuality;
   final double presentationScale;
   final Offset pixelGridOrigin;
@@ -124,6 +140,8 @@ class RenderWindowPlane extends RenderShiftedBox {
         value.frameColor != previous.frameColor ||
         value.backdrop != previous.backdrop ||
         value.materialRegion != previous.materialRegion ||
+        value.translucentCorners != previous.translucentCorners ||
+        value.materialReach != previous.materialReach ||
         value.filterQuality != previous.filterQuality ||
         value.presentationScale != previous.presentationScale ||
         value.pixelGridOrigin != previous.pixelGridOrigin) {
@@ -166,7 +184,6 @@ class RenderWindowPlane extends RenderShiftedBox {
     if (size.isEmpty) return;
     final config = _configuration;
     final content = _content.shift(offset);
-    final layer = _windowLayer.layer ??= _WindowPlaneLayer();
     final region = config.materialRegion;
     final material = region == null
         ? null
@@ -176,17 +193,12 @@ class RenderWindowPlane extends RenderShiftedBox {
             content.left + region.right * content.width,
             content.top + region.bottom * content.height,
           );
-    layer
-      ..bounds = offset & size
-      ..content = content
-      ..material = material
-      ..radius = config.radius
-      ..frameColor = config.frameColor
-      ..backdrop = config.backdrop?.resolve(
-        ImageFilterContext(bounds: material ?? content),
-      )
-      ..texture = config.texture;
+    final backdrop = config.backdrop?.resolve(
+      ImageFilterContext(bounds: material ?? content),
+    );
     final texture = config.texture;
+    final toGlobal = getTransformTo(null);
+    WindowPlaneTextureGeometry? geometry;
     if (texture != null) {
       final target = Rect.fromLTWH(
         content.left + texture.destination.left * content.width,
@@ -194,7 +206,7 @@ class RenderWindowPlane extends RenderShiftedBox {
         texture.destination.width * content.width,
         texture.destination.height * content.height,
       );
-      final geometry = windowPlaneTextureGeometry(
+      geometry = windowPlaneTextureGeometry(
         texture: texture,
         target: target,
         requested: config.filterQuality,
@@ -202,24 +214,223 @@ class RenderWindowPlane extends RenderShiftedBox {
         // RenderView-relative coordinates are logical, just like the existing
         // external texture viewport. Align only when the buffer still covers
         // the entire fractional viewport after the correction.
-        globalOrigin: MatrixUtils.getAsTranslation(getTransformTo(null)),
+        globalOrigin: MatrixUtils.getAsTranslation(toGlobal),
         localTargetOrigin: target.topLeft - offset,
         pixelGridOrigin: config.pixelGridOrigin,
       );
-      layer
-        ..textureBounds = geometry.bounds
-        ..textureTransform = geometry.transform
-        ..filterQuality = geometry.filterQuality;
     }
-    layer.invalidateScene();
-    context.pushLayer(layer, super.paint, offset);
+    void configure(_WindowPlaneLayer layer, {required bool withMaterial}) {
+      layer
+        ..bounds = offset & size
+        ..content = content
+        ..material = material
+        ..radius = config.radius
+        ..frameColor = config.frameColor
+        ..backdrop = withMaterial ? backdrop : null
+        ..texture = texture;
+      if (geometry != null) {
+        layer
+          ..textureBounds = geometry.bounds
+          ..textureTransform = geometry.transform
+          ..filterQuality = geometry.filterQuality;
+      }
+      layer.invalidateScene();
+    }
+
+    final corners = config.translucentCorners;
+    final view = owner?.rootNode;
+    final pieces =
+        texture != null &&
+            backdrop != null &&
+            material == null &&
+            corners != null &&
+            view is RenderView
+        ? windowPlaneMaterialPieces(
+            bounds: Offset.zero & size,
+            content: _content,
+            corner: Size(
+              corners.width * _content.width,
+              corners.height * _content.height,
+            ),
+            reach: config.materialReach,
+            toDevice: Matrix4.diagonal3Values(
+              view.configuration.devicePixelRatio,
+              view.configuration.devicePixelRatio,
+              1,
+            )..multiply(toGlobal),
+            viewport:
+                Offset.zero &
+                view.size * view.configuration.devicePixelRatio,
+          )
+        : null;
+    if (pieces == null) {
+      _clearPieces(0);
+      final layer = _windowLayer.layer ??= _WindowPlaneLayer();
+      configure(layer, withMaterial: true);
+      context.pushLayer(layer, super.paint, offset);
+      return;
+    }
+    // One window surface per piece, each clipped to it: the corner pieces
+    // carry the material, the rest of the window draws the client alone.
+    _windowLayer.layer = null;
+    _clearPieces(pieces.length);
+    for (var index = 0; index < pieces.length; index++) {
+      if (index == _pieceLayers.length) {
+        _pieceLayers.add(LayerHandle<_WindowPlaneLayer>());
+        _pieceClips.add(LayerHandle<ClipRectLayer>());
+      }
+      final layer = _pieceLayers[index].layer ??= _WindowPlaneLayer();
+      configure(layer, withMaterial: pieces[index].material);
+      _pieceClips[index].layer = context.pushClipRect(
+        true,
+        offset,
+        pieces[index].clip,
+        (context, offset) => context.pushLayer(layer, super.paint, offset),
+        oldLayer: _pieceClips[index].layer,
+      );
+    }
+  }
+
+  final List<LayerHandle<_WindowPlaneLayer>> _pieceLayers = [];
+  final List<LayerHandle<ClipRectLayer>> _pieceClips = [];
+
+  void _clearPieces(int keep) {
+    while (_pieceLayers.length > keep) {
+      _pieceLayers.removeLast().layer = null;
+      _pieceClips.removeLast().layer = null;
+    }
   }
 
   @override
   void dispose() {
     _windowLayer.layer = null;
+    _clearPieces(0);
     super.dispose();
   }
+}
+
+/// One part of a window drawn as a window surface of its own: [clip], in the
+/// plane's coordinates, and whether that part evaluates the material.
+typedef WindowPlanePiece = ({Rect clip, bool material});
+
+// Device pixels beyond the material's own reach that its value at a pixel
+// still depends on in Denial's engine: the rounding of the blur's padding,
+// its downsample (texels of at most 16 pixels, read up to three apart), the
+// bilinear upsample, and the filtering of the client's edges.
+const double _materialDeviceMargin = 66;
+
+// Denial's engine downsamples a window's blur on a grid of 1, 2, 4, 8 or 16
+// device pixels laid from the pixel-rounded rectangle it evaluates. A corner
+// piece the size of that rectangle modulo 16, and lying a multiple of 16
+// from its far edges, is sampled on the very same grid.
+const double _materialGrid = 16;
+
+// Each interior edge moves this far into both of its pieces, so the scissors
+// of neighbours meet at one pixel boundary and no pixel is drawn twice.
+const double _pieceSeam = 1 / 64;
+
+/// Splits a window whose client is opaque except in rectangles of [corner]
+/// at its corners into the window surfaces that draw it, or returns null to
+/// draw it as one.
+///
+/// The window shader adds the material only under translucent client
+/// pixels, and a pixel of the material depends on the scene no farther than
+/// [reach] (plus [_materialDeviceMargin]) from it. Four corner pieces that
+/// hold every translucent pixel with that reach around it carry the
+/// material; three pieces cover the rest of the window with the client
+/// alone. Each corner piece evaluates exactly the pixels the whole window
+/// would: the same rounded rectangle shapes the glass, its edges on the
+/// window's are the same clamping edges, its inner edges are farther than
+/// the reach from any pixel that can show, and its size keeps the blur's
+/// sampling grid (see [_materialGrid]). The pieces are laid out in device
+/// pixels ([toDevice], an axis-aligned transform from the plane's
+/// coordinates) and limited to [viewport], the device rectangle the engine
+/// clips every material to. Null for any other transform, and when the
+/// corner pieces would cover half of the window or more.
+List<WindowPlanePiece>? windowPlaneMaterialPieces({
+  required Rect bounds,
+  required Rect content,
+  required Size corner,
+  required double reach,
+  required Matrix4 toDevice,
+  required Rect viewport,
+}) {
+  final m = toDevice.storage;
+  if (m[1] != 0 ||
+      m[3] != 0 ||
+      m[4] != 0 ||
+      m[7] != 0 ||
+      m[15] != 1 ||
+      m[0] <= 0 ||
+      m[5] <= 0) {
+    return null;
+  }
+  final (sx, sy, tx, ty) = (m[0], m[5], m[12], m[13]);
+  Rect device(Rect rect) => Rect.fromLTRB(
+    rect.left * sx + tx,
+    rect.top * sy + ty,
+    rect.right * sx + tx,
+    rect.bottom * sy + ty,
+  );
+  final visible = device(content).intersect(viewport);
+  if (visible.width <= 0 || visible.height <= 0) return null;
+  // The rectangle the engine rounds the whole window's material to.
+  final left = visible.left.floorToDouble();
+  final top = visible.top.floorToDouble();
+  final right = visible.right.ceilToDouble();
+  final bottom = visible.bottom.ceilToDouble();
+  final width = right - left;
+  final height = bottom - top;
+  double side(double needed, double extent) =>
+      extent -
+      _materialGrid * ((extent - needed) / _materialGrid).floorToDouble();
+  final pieceWidth = side(
+    (corner.width + reach) * sx + _materialDeviceMargin,
+    width,
+  );
+  final pieceHeight = side(
+    (corner.height + reach) * sy + _materialDeviceMargin,
+    height,
+  );
+  if (2 * pieceWidth > width ||
+      2 * pieceHeight > height ||
+      4 * pieceWidth * pieceHeight >= width * height / 2) {
+    return null;
+  }
+  final outer = device(bounds).inflate(2);
+  final xs = [
+    math.min(outer.left, left),
+    left + pieceWidth,
+    right - pieceWidth,
+    math.max(outer.right, right),
+  ];
+  final ys = [
+    math.min(outer.top, top),
+    top + pieceHeight,
+    bottom - pieceHeight,
+    math.max(outer.bottom, bottom),
+  ];
+  // Columns from..to and rows from..to of the 3x3 grid xs by ys.
+  Rect cell(int fromX, int toX, int fromY, int toY) {
+    double edge(List<double> edges, int index, double inward) =>
+        index == 1 || index == 2 ? edges[index] + inward : edges[index];
+    return Rect.fromLTRB(
+      (edge(xs, fromX, _pieceSeam) - tx) / sx,
+      (edge(ys, fromY, _pieceSeam) - ty) / sy,
+      (edge(xs, toX, -_pieceSeam) - tx) / sx,
+      (edge(ys, toY, -_pieceSeam) - ty) / sy,
+    );
+  }
+
+  return [
+    (clip: cell(0, 1, 0, 1), material: true),
+    (clip: cell(2, 3, 0, 1), material: true),
+    (clip: cell(0, 1, 2, 3), material: true),
+    (clip: cell(2, 3, 2, 3), material: true),
+    if (xs[1] < xs[2]) (clip: cell(1, 2, 0, 1), material: false),
+    if (ys[1] < ys[2]) (clip: cell(0, 3, 1, 2), material: false),
+    if (xs[1] < xs[2]) (clip: cell(1, 2, 2, 3), material: false),
+  ];
 }
 
 typedef WindowPlaneTextureGeometry = ({

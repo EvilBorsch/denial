@@ -1739,6 +1739,11 @@ class DenialWireCodec {
                 window.splitViewRatio < 1
             ? window.splitViewRatio
             : 0.0,
+        // Any other value is no bound: the whole window keeps its material.
+        translucentCorner: switch (window.translucentCorner) {
+          final corner when corner.isFinite && corner > 0 => corner,
+          _ => 0.0,
+        },
       );
       // FlatBuffers getters parse their field on each access. Validate the
       // materialized snapshot so geometry and layer fields are read only once.
