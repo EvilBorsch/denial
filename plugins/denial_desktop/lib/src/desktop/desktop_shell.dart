@@ -694,24 +694,28 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     return ref.read(desktopWorkspaceProvider).overviewActive;
   }
 
-  /// The search key: the search over the desktop, opened on [monitorId]'s
-  /// output, or closed again. In the hub of the full-screen apps layout it
-  /// puts the keyboard into the overview's own search field instead.
+  /// The search key (Super+S, Alt+F in the Mac preset), and a bare Super and
+  /// four fingers up when no launcher plugin replaces it: the one search
+  /// over the desktop, opened on [monitorId]'s output, or closed again. Over
+  /// the overview, whose own search finds only open windows, it opens too.
   void _toggleSearch(int? monitorId) {
+    if (ref.read(desktopSearchOverlayProvider) != null) {
+      ref.read(desktopSearchOverlayProvider.notifier).close();
+      return;
+    }
+    _openSearch(monitorId);
+  }
+
+  void _openSearch(int? monitorId) {
     final shell = ref.read(referenceShellProvider);
     if (shell.locked) {
       return;
     }
-    final workspace = ref.read(desktopWorkspaceProvider);
-    if (desktopOverviewIsHub(workspace.overview)) {
-      ref.read(desktopOverviewSearchFocusProvider.notifier).request();
-      return;
-    }
     final search = ref.read(desktopSearchOverlayProvider.notifier);
     if (ref.read(desktopSearchOverlayProvider) != null) {
-      search.close();
       return;
     }
+    final workspace = ref.read(desktopWorkspaceProvider);
     _cancelWindowSwitcher();
     _overviewGestures.interrupt();
     if (workspace.overviewActive) {
@@ -845,8 +849,16 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   /// Opens the launcher. [byHover]: the pointer entered its hot edge, so it
   /// closes again when the pointer leaves it; opened any other way (Super,
   /// four fingers up, a finger's edge swipe) it stays until dismissed.
+  ///
+  /// Without a launcher plugin (the shipped shell since eb19) the one search
+  /// is the launcher.
   void _openLauncher({bool byHover = false}) {
-    if (ref.read(desktopLauncherProvider) == null) return;
+    if (ref.read(desktopLauncherProvider) == null) {
+      if (!byHover) {
+        _openSearch(null);
+      }
+      return;
+    }
     ref.read(clipboardTrayProvider.notifier).close();
     ref.read(desktopSearchOverlayProvider.notifier).close();
     final workspace = ref.read(desktopWorkspaceProvider);
@@ -870,6 +882,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   void _hoverOpenDashboard() => _openDashboard(byHover: true);
 
   void _toggleLauncher() {
+    if (ref.read(desktopLauncherProvider) == null) {
+      _toggleSearch(null);
+      return;
+    }
     if (ref.read(desktopWorkspaceProvider).launcherOpen) {
       _closePanels();
       return;

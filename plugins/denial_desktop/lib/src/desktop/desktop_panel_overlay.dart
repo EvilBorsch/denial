@@ -125,11 +125,13 @@ class _DesktopPanelOverlayState extends ConsumerState<DesktopPanelOverlay> {
       placement: overlaySettings.launcher,
     );
     final hasLauncher = ref.watch(desktopLauncherProvider) != null;
+    // A finger's swipe in at the launcher's edge opens the launcher plugin
+    // or, without one, the one search, which stands in for it.
     final swipes = DesktopMetrics.panelSwipes(
       widget.viewSize,
       outputRect: widget.shellOutputRect,
       overlays: overlaySettings,
-      hasLauncher: hasLauncher,
+      hasLauncher: true,
     );
     final dashboardTriggerRect = DesktopMetrics.dashboardTriggerRect(
       widget.viewSize,
