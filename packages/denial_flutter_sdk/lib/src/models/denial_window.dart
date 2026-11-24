@@ -247,6 +247,7 @@ class DenialWindow {
     this.layoutScreenFloating = false,
     this.splitViewPartnerObjectId,
     this.splitViewRatio = 0.0,
+    this.onPhone = false,
     this.translucentCorner = 0.0,
   });
 
@@ -325,6 +326,11 @@ class DenialWindow {
   /// View.
   final double splitViewRatio;
 
+  /// deniald lays the window out by the tablet (mobile) presentation's
+  /// policy: it fills the phone's panel below the status bar, or its
+  /// Split View half. A presentation switch is laid out once the windows
+  /// it shows say so.
+  final bool onPhone;
   /// The client is opaque everywhere but in a square of this side, in
   /// logical pixels of its content, at each corner: rounded corners as its
   /// Wayland opaque region declares them. 0 when no such bound is known.
@@ -600,6 +606,7 @@ class DenialWindow {
         other.layoutScreenFloating == layoutScreenFloating &&
         other.splitViewPartnerObjectId == splitViewPartnerObjectId &&
         other.splitViewRatio == splitViewRatio &&
+        other.onPhone == onPhone &&
         other.translucentCorner == translucentCorner &&
         listEquals(other.surfaceLayers, surfaceLayers);
   }
@@ -662,6 +669,7 @@ class DenialWindow {
     layoutScreenFloating,
     splitViewPartnerObjectId,
     splitViewRatio,
+    onPhone,
     translucentCorner,
     ...surfaceLayers,
   ]);

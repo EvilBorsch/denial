@@ -2964,6 +2964,69 @@ fn joining_a_screen_splits_it_in_halves_on_the_dropped_side() {
 }
 
 #[test]
+fn a_screen_of_two_tiles_side_by_side_reads_as_a_pair_with_its_share() {
+    let mut layout = screens_layout(&[1, 2, 3]);
+    assert_eq!(layout.side_by_side(&1, screen_area()), None);
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Right));
+    // Either tile names the screen; the left one comes first.
+    assert_eq!(layout.side_by_side(&1, screen_area()), Some((1, 2, 0.5)));
+    assert_eq!(layout.side_by_side(&2, screen_area()), Some((1, 2, 0.5)));
+    assert_eq!(layout.side_by_side(&3, screen_area()), None);
+
+    assert!(layout.set_side_by_side_share(&2, 2.0 / 3.0, screen_area()));
+    assert!(!layout.set_side_by_side_share(&1, 2.0 / 3.0, screen_area()));
+    let placements = settle(layout.as_mut());
+    let available = screen_area().size.w - SCREEN_GAP;
+    assert_eq!(
+        geometry_of(&placements, 1).size.w,
+        (f64::from(available) * 2.0 / 3.0).round() as i32
+    );
+    let (_, _, share) = layout.side_by_side(&1, screen_area()).unwrap();
+    assert!((share - 2.0 / 3.0).abs() < 1e-9);
+    // The split's limits hold.
+    assert!(layout.set_side_by_side_share(&1, 0.02, screen_area()));
+    let (_, _, share) = layout.side_by_side(&1, screen_area()).unwrap();
+    assert!((share - 0.1).abs() < 1e-9);
+    assert!(!layout.set_side_by_side_share(&3, 0.5, screen_area()));
+
+    // A window dropped on the left side is the left one.
+    let mut layout = screens_layout(&[1, 2]);
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Left));
+    assert_eq!(layout.side_by_side(&1, screen_area()), Some((2, 1, 0.5)));
+}
+
+#[test]
+fn stacked_or_crowded_screens_and_other_layouts_have_no_side_by_side_pair() {
+    let mut layout = screens_layout(&[1, 2, 3]);
+    assert!(layout.move_beside(&2, &1, LayoutDirection::Down));
+    assert_eq!(layout.side_by_side(&1, screen_area()), None);
+    assert!(!layout.set_side_by_side_share(&1, 0.3, screen_area()));
+    assert!(layout.move_beside(&3, &1, LayoutDirection::Right));
+    assert_eq!(layout.side_by_side(&3, screen_area()), None);
+
+    for kind in [
+        WindowLayoutKind::Dwindle,
+        WindowLayoutKind::Scrolling,
+        WindowLayoutKind::Stacking,
+    ] {
+        let mut layout = create_window_layout::<u64>(kind);
+        for (window, anchor) in [(1, None), (2, Some(1))] {
+            layout.insert(LayoutInsertion {
+                window,
+                space: OUTPUT,
+                anchor,
+            });
+        }
+        layout.move_beside(&2, &1, LayoutDirection::Right);
+        assert_eq!(layout.side_by_side(&1, screen_area()), None, "{kind:?}");
+        assert!(
+            !layout.set_side_by_side_share(&1, 0.3, screen_area()),
+            "{kind:?}"
+        );
+    }
+}
+
+#[test]
 fn third_and_fourth_tiles_split_the_tile_they_land_on_and_a_fifth_is_refused() {
     let mut layout = screens_layout(&[1, 2, 3, 4, 5]);
     assert!(layout.move_beside(&2, &1, LayoutDirection::Right));

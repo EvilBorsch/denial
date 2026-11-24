@@ -391,6 +391,12 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
   @override
   void initState() {
     super.initState();
+    // The windows open before this scene, such as the tablet's when the
+    // presentation switches to the desktop, are not new: the scene is.
+    // Only windows that open from now on play the entrance.
+    for (final window in widget.windows) {
+      _windowRevealRegistry.registerMount(window.objectId);
+    }
     _minimizeLayerHandoff = DesktopMinimizeLayerHandoffController(
       handoffDelay: Motion.desktopWindowLayerHandoff,
       desktopEntryDuration: Motion.desktopWindowWidgetEnter,

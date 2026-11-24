@@ -844,6 +844,7 @@ fn create_window_snapshot<'a>(
                 layout_screen_floating: description.layout_screen_floating,
                 split_view_partner_id: description.split_view_partner_id,
                 split_view_ratio: description.split_view_ratio,
+                on_phone: description.on_phone,
                 translucent_corner: description.translucent_corner,
                 ..Default::default()
             },

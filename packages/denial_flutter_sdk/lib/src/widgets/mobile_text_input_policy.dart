@@ -8,15 +8,22 @@ import 'package:flutter/widgets.dart';
 /// next shell gesture reopen the keyboard. Field-to-field taps remain inside
 /// the shared [TextFieldTapRegion] group and therefore never invoke this
 /// action.
+///
+/// With [enabled] false (the desktop) the default stays. The widget keeps
+/// its place in the tree either way, so switching between the tablet and
+/// desktop presentations keeps the state of everything below it.
 class MobileTextInputPolicy extends StatelessWidget {
-  const MobileTextInputPolicy({required this.child, super.key});
+  const MobileTextInputPolicy({
+    required this.child,
+    this.enabled = true,
+    super.key,
+  });
 
   final Widget child;
+  final bool enabled;
 
-  @override
-  Widget build(BuildContext context) {
-    return Actions(
-      actions: <Type, Action<Intent>>{
+  static final Map<Type, Action<Intent>> _mobileActions =
+      <Type, Action<Intent>>{
         EditableTextTapOutsideIntent:
             CallbackAction<EditableTextTapOutsideIntent>(
               onInvoke: (intent) {
@@ -24,7 +31,12 @@ class MobileTextInputPolicy extends StatelessWidget {
                 return null;
               },
             ),
-      },
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    return Actions(
+      actions: enabled ? _mobileActions : const <Type, Action<Intent>>{},
       child: child,
     );
   }

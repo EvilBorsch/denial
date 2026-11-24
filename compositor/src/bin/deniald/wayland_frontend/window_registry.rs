@@ -54,6 +54,10 @@ pub(super) struct WindowRecord {
     pub(super) vertical_restore_geometry: Option<(f64, f64)>,
     #[cfg(feature = "flutter")]
     pub(super) minimized: bool,
+    /// Minimized while the tablet presentation held the panel: the phone
+    /// pauses an app the user left. The desktop shows it again.
+    #[cfg(feature = "flutter")]
+    pub(super) minimized_in_tablet: bool,
     #[cfg(feature = "flutter")]
     pub(super) pinned: bool,
     #[cfg(feature = "flutter")]

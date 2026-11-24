@@ -118,6 +118,11 @@ impl WaylandFrontend {
         if self.window_layout.kind() != WindowLayoutKind::Screens {
             return Vec::new();
         }
+        // The tablet shows no screens: the strip waits for the desktop.
+        #[cfg(feature = "flutter")]
+        if self.desktop_layout_dormant() {
+            return Vec::new();
+        }
         let gap = self.layout_gap();
         self.outputs
             .iter()

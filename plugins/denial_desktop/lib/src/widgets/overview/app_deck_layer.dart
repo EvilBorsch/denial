@@ -324,8 +324,7 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
   void _sendAway(Iterable<int> ids) {
     final drawn = _drawn.toSet();
     final cards = [
-      for (final id in [...ids])
-        if (_windows[id] case final card?) card,
+      for (final id in [...ids]) ?_windows[id],
     ];
     for (final card in cards) {
       widget.onLeaveWindow(card);

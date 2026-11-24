@@ -4980,7 +4980,8 @@ impl<'a> Window<'a> {
   pub const VT_LAYOUT_SCREEN_FLOATING: flatbuffers::VOffsetT = 114;
   pub const VT_SPLIT_VIEW_PARTNER_ID: flatbuffers::VOffsetT = 116;
   pub const VT_SPLIT_VIEW_RATIO: flatbuffers::VOffsetT = 118;
-  pub const VT_TRANSLUCENT_CORNER: flatbuffers::VOffsetT = 120;
+  pub const VT_ON_PHONE: flatbuffers::VOffsetT = 120;
+  pub const VT_TRANSLUCENT_CORNER: flatbuffers::VOffsetT = 122;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -5036,6 +5037,7 @@ impl<'a> Window<'a> {
     builder.add_width(args.width);
     if let Some(x) = args.app_id { builder.add_app_id(x); }
     if let Some(x) = args.title { builder.add_title(x); }
+    builder.add_on_phone(args.on_phone);
     builder.add_layout_screen_floating(args.layout_screen_floating);
     builder.add_keyboard_inset(args.keyboard_inset);
     builder.add_pet_dragged(args.pet_dragged);
@@ -5462,6 +5464,13 @@ impl<'a> Window<'a> {
     unsafe { self._tab.get::<f64>(Window::VT_SPLIT_VIEW_RATIO, Some(0.0)).unwrap()}
   }
   #[inline]
+  pub fn on_phone(&self) -> bool {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<bool>(Window::VT_ON_PHONE, Some(false)).unwrap()}
+  }
+  #[inline]
   pub fn translucent_corner(&self) -> f64 {
     // Safety:
     // Created from valid Table for this object
@@ -5535,6 +5544,7 @@ impl flatbuffers::Verifiable for Window<'_> {
      .visit_field::<bool>("layout_screen_floating", Self::VT_LAYOUT_SCREEN_FLOATING, false)?
      .visit_field::<u64>("split_view_partner_id", Self::VT_SPLIT_VIEW_PARTNER_ID, false)?
      .visit_field::<f64>("split_view_ratio", Self::VT_SPLIT_VIEW_RATIO, false)?
+     .visit_field::<bool>("on_phone", Self::VT_ON_PHONE, false)?
      .visit_field::<f64>("translucent_corner", Self::VT_TRANSLUCENT_CORNER, false)?
      .finish();
     Ok(())
@@ -5599,6 +5609,7 @@ pub struct WindowArgs<'a> {
     pub layout_screen_floating: bool,
     pub split_view_partner_id: u64,
     pub split_view_ratio: f64,
+    pub on_phone: bool,
     pub translucent_corner: f64,
 }
 impl<'a> Default for WindowArgs<'a> {
@@ -5663,6 +5674,7 @@ impl<'a> Default for WindowArgs<'a> {
       layout_screen_floating: false,
       split_view_partner_id: 0,
       split_view_ratio: 0.0,
+      on_phone: false,
       translucent_corner: 0.0,
     }
   }
@@ -5906,6 +5918,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> WindowBuilder<'a, 'b, A> {
     self.fbb_.push_slot::<f64>(Window::VT_SPLIT_VIEW_RATIO, split_view_ratio, 0.0);
   }
   #[inline]
+  pub fn add_on_phone(&mut self, on_phone: bool) {
+    self.fbb_.push_slot::<bool>(Window::VT_ON_PHONE, on_phone, false);
+  }
+  #[inline]
   pub fn add_translucent_corner(&mut self, translucent_corner: f64) {
     self.fbb_.push_slot::<f64>(Window::VT_TRANSLUCENT_CORNER, translucent_corner, 0.0);
   }
@@ -5985,6 +6001,7 @@ impl core::fmt::Debug for Window<'_> {
       ds.field("layout_screen_floating", &self.layout_screen_floating());
       ds.field("split_view_partner_id", &self.split_view_partner_id());
       ds.field("split_view_ratio", &self.split_view_ratio());
+      ds.field("on_phone", &self.on_phone());
       ds.field("translucent_corner", &self.translucent_corner());
       ds.finish()
   }

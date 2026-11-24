@@ -1357,6 +1357,7 @@ fn scene_window(id: u64) -> WindowDescription {
         layout_screen_floating: false,
         split_view_partner_id: 0,
         split_view_ratio: 0.0,
+        on_phone: false,
         translucent_corner: 0.0,
     }
 }
@@ -2445,6 +2446,31 @@ fn windows_in_split_view_carry_their_partner_and_share() {
     assert!((windows.get(0).split_view_ratio() - 1.0 / 3.0).abs() < 1e-12);
     assert_eq!(windows.get(2).split_view_partner_id(), 0);
     assert_eq!(windows.get(2).split_view_ratio(), 0.0);
+}
+
+#[test]
+fn windows_say_whether_the_phone_lays_them_out() {
+    let mut bridge = bridge();
+    let mut phone = scene_window(1);
+    phone.on_phone = true;
+    let (bytes, _) = bridge
+        .update_windows(1, vec![phone, scene_window(2)], &BTreeSet::new())
+        .unwrap();
+    let snapshot = fb::root_as_envelope(bytes.unwrap())
+        .unwrap()
+        .payload_as_window_snapshot()
+        .unwrap();
+    let windows = snapshot.windows().unwrap();
+    assert!(windows.get(0).on_phone());
+    assert!(!windows.get(1).on_phone());
+
+    // The flag alone changing reaches the shell in a delta: a switch that
+    // leaves a window's size as it was still says it is laid out anew.
+    let mut desktop = scene_window(1);
+    desktop.on_phone = false;
+    let mut phone = scene_window(1);
+    phone.on_phone = true;
+    assert_ne!(desktop, phone);
 }
 
 #[test]
