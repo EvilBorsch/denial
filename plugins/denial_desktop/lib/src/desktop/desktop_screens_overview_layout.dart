@@ -74,6 +74,15 @@ class DesktopScreenCard {
 
   int get id => geometry.workspaceId;
   bool get stacked => screens.length > 1;
+
+  /// What the card shows, independent of its place: its tiles, or the
+  /// windows of a stack. A card keeps it while other screens come and go
+  /// beside it, so it glides to its new place; a card whose screen changed
+  /// is a new card.
+  String get identity {
+    final windows = List<int>.of(stacked ? objectIds : tiles)..sort();
+    return windows.join(',');
+  }
 }
 
 /// A gap before, between or after the cards. A window dropped there gets a
@@ -99,6 +108,36 @@ class DesktopScreenGap {
   final int position;
 }
 
+/// Where a tile dragged out of its split card goes as a screen of its own:
+/// right after its former screen. It shows as soon as the window leaves its
+/// card, as a "new screen" marker in the gap right after that card; no card
+/// moves for it, so none slides under the pointer. Dropping the window
+/// anywhere that is not another card or a gap puts it there.
+@immutable
+class DesktopScreenNewSlot {
+  const DesktopScreenNewSlot({
+    required this.rect,
+    required this.labelRect,
+    required this.objectId,
+    required this.targetObjectId,
+  });
+
+  /// The marker: the gap's drop zone right after the split's card, a
+  /// card's height, in overview coordinates.
+  final Rect rect;
+
+  /// Its "new screen" label: centred on the marker, kept inside the
+  /// overview.
+  final Rect labelRect;
+
+  /// The window leaving its split.
+  final int objectId;
+
+  /// Another tile of its former screen: the new screen goes right after
+  /// that screen.
+  final int targetObjectId;
+}
+
 @immutable
 class DesktopScreensOverviewArrangement {
   const DesktopScreensOverviewArrangement({
@@ -107,6 +146,7 @@ class DesktopScreensOverviewArrangement {
     required this.shelf,
     required this.frames,
     required this.currentCardId,
+    this.newScreen,
   });
 
   static const empty = DesktopScreensOverviewArrangement(
@@ -124,6 +164,10 @@ class DesktopScreensOverviewArrangement {
 
   /// The card of the screen on the output now.
   final int? currentCardId;
+
+  /// The slot of the new screen a window dragged out of its split takes,
+  /// while one is.
+  final DesktopScreenNewSlot? newScreen;
 
   DesktopScreenCard? cardFor(int id) {
     for (final card in cards) {
@@ -240,17 +284,24 @@ abstract final class DesktopScreensOverviewLayout {
   /// The narrowest a gap's drop zone gets, however close the cards are.
   static const double minimumGapZone = 32.0;
 
+  /// The "new screen" label of a tile leaving its split.
+  static const Size newScreenLabelSize = Size(200.0, 44.0);
+
   /// How far each window behind a stack's front window peeks out.
   static const double stackStep = 10.0;
 
   /// The stacks drawn behind the front window, at most.
   static const int stackDepth = 2;
 
+  /// [leavingObjectId] is a split's tile dragged out of its card: the
+  /// arrangement then marks where its new screen goes
+  /// ([DesktopScreensOverviewArrangement.newScreen]). No card moves for it.
   static DesktopScreensOverviewArrangement arrange({
     required Rect bounds,
     required List<DesktopScreensOverviewItem> items,
     Set<String> expandedApps = const <String>{},
     int? currentScreen,
+    int? leavingObjectId,
   }) {
     if (bounds.isEmpty) {
       return DesktopScreensOverviewArrangement.empty;
@@ -472,6 +523,68 @@ abstract final class DesktopScreensOverviewLayout {
       shelf: shelf,
       frames: frames,
       currentCardId: currentCardId,
+      newScreen: leavingObjectId == null
+          ? null
+          : _newScreen(
+              cards,
+              ordered,
+              leavingObjectId,
+              gap: gap,
+              bounds: bounds,
+            ),
+    );
+  }
+
+  /// The marker of the new screen of [objectId], a tile of a split: the gap
+  /// zone right after its split's card. None for a window that is no tile
+  /// of a split.
+  static DesktopScreenNewSlot? _newScreen(
+    List<DesktopScreenCard> cards,
+    List<_Screen> screens,
+    int objectId, {
+    required double gap,
+    required Rect bounds,
+  }) {
+    for (final screen in screens) {
+      if (screen.tiles.length < 2 ||
+          !screen.tiles.any((tile) => tile.objectId == objectId)) {
+        continue;
+      }
+      for (final card in cards) {
+        if (card.screens.contains(screen.index)) {
+          final rect = _zoneRightOf(card.geometry.rect, gap);
+          final labelWidth = math.min(newScreenLabelSize.width, bounds.width);
+          final labelLeft = (rect.center.dx - labelWidth / 2.0)
+              .clamp(bounds.left, bounds.right - labelWidth)
+              .toDouble();
+          return DesktopScreenNewSlot(
+            rect: rect,
+            labelRect: Rect.fromLTWH(
+              labelLeft,
+              rect.center.dy - newScreenLabelSize.height / 2.0,
+              labelWidth,
+              newScreenLabelSize.height,
+            ),
+            objectId: objectId,
+            targetObjectId: screen.tiles
+                .firstWhere((tile) => tile.objectId != objectId)
+                .objectId,
+          );
+        }
+      }
+    }
+    return null;
+  }
+
+  /// A gap's drop zone right of [card]: at least [minimumGapZone] wide,
+  /// centred on the gap.
+  static Rect _zoneRightOf(Rect card, double gap) {
+    final zone = math.max(gap, minimumGapZone);
+    return Rect.fromLTRB(
+      card.right + gap / 2.0 - zone / 2.0,
+      card.top,
+      card.right + gap / 2.0 + zone / 2.0,
+      card.bottom,
     );
   }
 
@@ -488,12 +601,7 @@ abstract final class DesktopScreensOverviewLayout {
       card.left - gap / 2.0 + zone / 2.0,
       card.bottom,
     );
-    Rect zoneRightOf(Rect card) => Rect.fromLTRB(
-      card.right + gap / 2.0 - zone / 2.0,
-      card.top,
-      card.right + gap / 2.0 + zone / 2.0,
-      card.bottom,
-    );
+    Rect zoneRightOf(Rect card) => _zoneRightOf(card, gap);
     int tileOf(int screen) {
       final found = screens.firstWhere(
         (candidate) => candidate.index == screen,
@@ -542,9 +650,14 @@ abstract final class DesktopScreensOverviewLayout {
 
   /// What dropping [objectId] at [point] does: join the tile under it on
   /// its nearest side, or take a screen of its own in the gap under it.
-  /// Null cancels: outside the cards and gaps, back on its own lone screen,
-  /// onto itself, onto a screen with four tiles, or for a window that is no
-  /// screen's tile.
+  /// A tile of a split dropped anywhere that is no card and no gap (empty
+  /// space, the margins, above or below the cards, the new screen's slot)
+  /// takes a screen of its own right after its former screen.
+  ///
+  /// Null cancels: a lone screen's window outside the cards and gaps or back
+  /// on its own screen, a split's tile back on its own card after it left
+  /// it (within its card, before leaving, it moves to another side of the
+  /// split), a screen with four tiles, or a window that is no screen's tile.
   static DesktopScreensDrop? dropAt({
     required DesktopScreensOverviewArrangement arrangement,
     required Map<int, Rect> frames,
@@ -570,6 +683,9 @@ abstract final class DesktopScreensOverviewLayout {
           item.objectId,
     ];
     final alone = ownTiles.length == 1;
+    final slot = arrangement.newScreen?.objectId == objectId
+        ? arrangement.newScreen
+        : null;
 
     for (final gap in arrangement.gaps) {
       if (!gap.rect.contains(point)) {
@@ -579,6 +695,15 @@ abstract final class DesktopScreensOverviewLayout {
           (gap.position == dragged.screen ||
               gap.position == dragged.screen + 1)) {
         return null;
+      }
+      if (slot != null && gap.position == dragged.screen + 1) {
+        // The gap right after its split is where the new screen's slot
+        // stands: show that.
+        return DesktopScreensMove(
+          targetObjectId: slot.targetObjectId,
+          before: false,
+          highlight: slot.rect,
+        );
       }
       var target = gap.targetObjectId;
       if (target == objectId) {
@@ -607,7 +732,19 @@ abstract final class DesktopScreensOverviewLayout {
       }
     }
     if (card == null) {
-      return null;
+      if (alone) {
+        return null;
+      }
+      // Out of its split, anywhere but a card or a gap: a screen of its
+      // own right after the split's.
+      return DesktopScreensMove(
+        targetObjectId:
+            slot?.targetObjectId ??
+            ownTiles.firstWhere((tile) => tile != objectId),
+        before: false,
+        highlight:
+            slot?.rect ?? _ownCardRect(arrangement, objectId) ?? Rect.zero,
+      );
     }
     if (card.stacked) {
       if (card.objectIds.contains(objectId)) {
@@ -624,6 +761,10 @@ abstract final class DesktopScreensOverviewLayout {
     final tiles = card.tiles;
     final ownScreen = tiles.contains(objectId);
     if (ownScreen && alone) {
+      return null;
+    }
+    // Back on its own card after it left it: it stays where it was.
+    if (ownScreen && slot != null) {
       return null;
     }
     if (!ownScreen && tiles.length >= 4) {
@@ -654,6 +795,54 @@ abstract final class DesktopScreensOverviewLayout {
       side: side,
       highlight: _half(frame, side),
     );
+  }
+
+  static Rect? _ownCardRect(
+    DesktopScreensOverviewArrangement arrangement,
+    int objectId,
+  ) => arrangement.cardOfWindow(objectId)?.geometry.rect;
+
+  /// Whether [objectId] is a tile of a split screen: dragging it may give
+  /// it a screen of its own ([arrange]'s `leavingObjectId`).
+  static bool isSplitTile({
+    required List<DesktopScreensOverviewItem> items,
+    required int objectId,
+  }) {
+    DesktopScreensOverviewItem? dragged;
+    for (final item in items) {
+      if (item.objectId == objectId) {
+        dragged = item;
+      }
+    }
+    if (dragged == null ||
+        dragged.floating ||
+        dragged.minimized ||
+        dragged.screen <= 0) {
+      return false;
+    }
+    final screen = dragged.screen;
+    return items
+            .where(
+              (item) =>
+                  item.screen == screen && !item.floating && !item.minimized,
+            )
+            .length >
+        1;
+  }
+
+  /// Whether a tile of a split dragged to [point] has left its own card,
+  /// so the placeholder of its new screen shows.
+  static bool leavesSplitCard({
+    required DesktopScreensOverviewArrangement arrangement,
+    required List<DesktopScreensOverviewItem> items,
+    required int objectId,
+    required Offset point,
+  }) {
+    if (!isSplitTile(items: items, objectId: objectId)) {
+      return false;
+    }
+    final own = _ownCardRect(arrangement, objectId);
+    return own != null && !own.contains(point);
   }
 
   static DenialScreenSide _nearestSide(Rect rect, Offset point) {

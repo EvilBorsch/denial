@@ -5679,4 +5679,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String screensOverviewStackExpand(String app) {
     return 'Show each window of $app';
   }
+
+  @override
+  String get screensOverviewNewScreen => 'New screen';
 }

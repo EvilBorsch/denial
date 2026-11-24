@@ -194,9 +194,15 @@ class _DesktopWorkspaceOverviewDeckState
                     // them instead of jumping under their tiles.
                     for (final card in workspaces.cards)
                       _ArrangedRect(
-                        key: ValueKey<String>(
-                          'workspace-overview-card-${card.workspaceId}',
-                        ),
+                        // A screen card follows its screen, not its place:
+                        // a screen taken out or put in moves the others.
+                        key: ValueKey<String>(switch (screens?.cardFor(
+                          card.workspaceId,
+                        )) {
+                          final screen? =>
+                            'screens-overview-card-${screen.identity}',
+                          null => 'workspace-overview-card-${card.workspaceId}',
+                        }),
                         frames: _CardFrames(card.rect, card.viewportRect),
                         builder: (context, frames) => _buildCard(
                           context,
@@ -245,6 +251,12 @@ class _DesktopWorkspaceOverviewDeckState
                           : context.shellTheme.windowRadius *
                                 workspaces.cards.first.scale,
                     ),
+                    if (screens != null)
+                      _NewScreenMarker(
+                        slot: interactive ? screens.newScreen : null,
+                        zoom: _zoom,
+                        place: place,
+                      ),
                   ],
                 ),
               ),
@@ -556,11 +568,14 @@ class _RenderPlaced extends RenderShiftedBox {
       const BoxConstraints().tighten(width: rect.width, height: rect.height),
     );
     (child.parentData! as BoxParentData).offset = rect.topLeft;
+    // The child is tight at the rect: its size is the rect's (and reading
+    // the child's own size here would need it laid out with
+    // parentUsesSize, relayouting this box whenever the child's changes).
     _overflows =
         rect.left < 0.0 ||
-        rect.left + child.size.width > size.width ||
+        rect.right > size.width ||
         rect.top < 0.0 ||
-        rect.top + child.size.height > size.height;
+        rect.bottom > size.height;
   }
 
   @override
@@ -818,6 +833,129 @@ class _DropSlotState extends State<_DropSlot> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Where a window dragged out of its split goes as a screen of its own
+/// (`DesktopScreenNewSlot`): an accent bar in the gap right after its former
+/// screen's card, and a "+ New screen" label on it. It fades in as soon as
+/// the window leaves its card and fades out when the drag ends; the drop
+/// highlight lights the gap while a drop would land there. Nothing in it
+/// changes while it shows: it is built once, then only faded.
+class _NewScreenMarker extends StatefulWidget {
+  const _NewScreenMarker({
+    required this.slot,
+    required this.zoom,
+    required this.place,
+  });
+
+  final DesktopScreenNewSlot? slot;
+  final Animation<double> zoom;
+  final Rect Function(Rect rect) place;
+
+  @override
+  State<_NewScreenMarker> createState() => _NewScreenMarkerState();
+}
+
+class _NewScreenMarkerState extends State<_NewScreenMarker> {
+  DesktopScreenNewSlot? _last;
+
+  @override
+  Widget build(BuildContext context) {
+    final slot = widget.slot ?? _last;
+    _last = slot;
+    if (slot == null) {
+      return const SizedBox.shrink();
+    }
+    final theme = context.shellTheme;
+    final accent = theme.accent;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final bar = Rect.fromCenter(
+      center: slot.rect.center,
+      width: 6.0,
+      height: slot.rect.height,
+    );
+    final label = context.l10n.screensOverviewNewScreen;
+    return IgnorePointer(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(begin: 0.0, end: widget.slot == null ? 0.0 : 1.0),
+        duration: reduceMotion ? Duration.zero : Motion.tile,
+        curve: Motion.standard,
+        // Faded out: gone until a window leaves its split again.
+        onEnd: () {
+          if (widget.slot == null && _last != null && mounted) {
+            setState(() => _last = null);
+          }
+        },
+        builder: (context, opacity, child) =>
+            Opacity(opacity: opacity, child: child),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _Placed(
+              motion: widget.zoom,
+              rect: () => widget.place(bar),
+              child: RepaintBoundary(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: accent,
+                    borderRadius: BorderRadius.circular(3.0),
+                  ),
+                ),
+              ),
+            ),
+            _Placed(
+              motion: widget.zoom,
+              rect: () => widget.place(slot.labelRect),
+              child: RepaintBoundary(
+                child: Semantics(
+                  label: label,
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: accent,
+                          borderRadius: BorderRadius.circular(22.0),
+                          boxShadow: const [
+                            BoxShadow(color: Color(0x59000000), blurRadius: 8),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 16, 8),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.add_rounded,
+                                size: 22,
+                                color: theme.accentPalette.onPrimary,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                label,
+                                maxLines: 1,
+                                style: theme.text.base.copyWith(
+                                  fontSize: 15,
+                                  height: 1.2,
+                                  fontWeight: FontWeight.w600,
+                                  color: theme.accentPalette.onPrimary,
+                                  decoration: TextDecoration.none,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

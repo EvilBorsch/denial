@@ -1699,5 +1699,6 @@
   "monthShortDecember": "十二月",
   "settingsWindowLayoutScreens": "全屏应用",
   "screensOverviewStackCount": "{count, plural, other{{count} 个窗口}}",
-  "screensOverviewStackExpand": "分别显示 {app} 的窗口"
+  "screensOverviewStackExpand": "分别显示 {app} 的窗口",
+  "screensOverviewNewScreen": "新屏幕"
 }
