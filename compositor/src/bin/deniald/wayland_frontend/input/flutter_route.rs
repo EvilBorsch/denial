@@ -657,11 +657,7 @@ pub(in super::super) fn route_pointer_motion(
         .get_pointer()
         .expect("seat has no pointer");
     if !pointer.is_grabbed() {
-        let frontend = state.frontend_mut();
-        let shape = frontend
-            .layout_divider_at(position, super::super::DividerPress::Pointer)
-            .map(|hit| hit.cursor());
-        if frontend.set_divider_cursor(shape) {
+        if state.frontend_mut().hover_divider_cursor(position) {
             state.scene_sync.mark_dirty();
         }
     }
