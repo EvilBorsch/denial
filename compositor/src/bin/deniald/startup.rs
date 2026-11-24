@@ -422,6 +422,16 @@ pub(super) fn run(options: Options) -> Result<(), Box<dyn Error>> {
         }
     }
     let outputs = configured.outputs;
+    if let Some(settings) = settings.as_mut() {
+        scale_fold::fold_apps_scale(
+            settings,
+            &mut output_configuration.scales_120,
+            outputs
+                .iter()
+                .map(|output| (output.name.as_str(), output.default_scale_120)),
+            options.output_config.as_deref(),
+        );
+    }
 
     let mut topology = topology_for_outputs(&outputs, &output_configuration)?;
     let snapshot = topology.snapshot();

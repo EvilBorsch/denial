@@ -800,7 +800,7 @@ impl SettingsManager {
         Ok(manager)
     }
 
-    fn load_path(path: PathBuf) -> Result<Self, SettingsError> {
+    pub(super) fn load_path(path: PathBuf) -> Result<Self, SettingsError> {
         let existing = read_settings_file(&path)?;
         if let Some(bytes) = existing.as_deref() {
             match parse_document(bytes) {
@@ -886,9 +886,53 @@ impl SettingsManager {
 
     /// How much larger than the screen's scale apps are drawn: Wayland apps
     /// but Droidloom, from their next start, and X11 apps through their DPI.
-    /// The shell keeps the screen's scale.
+    /// The shell keeps the screen's scale. Since one scale sizes the shell
+    /// and apps together, startup folds it into the displays' scales
+    /// (`scale_fold`) and it stays 1 unless that could not be saved.
     pub(super) fn apps_scale(&self) -> f64 {
         parse_apps_scale(&self.document).unwrap_or(1.0)
+    }
+
+    /// Sets `apps.scale`, or with None drops it, and saves the document;
+    /// memory keeps the old value when the save fails.
+    pub(super) fn set_apps_scale(&mut self, scale: Option<f64>) -> Result<(), SettingsError> {
+        let before = self.document.clone();
+        let apps = self
+            .document
+            .entry("apps")
+            .or_insert_with(|| Value::Object(Map::new()));
+        if !apps.is_object() {
+            *apps = Value::Object(Map::new());
+        }
+        let section = apps.as_object_mut().expect("apps was just made an object");
+        match scale {
+            Some(scale) => {
+                section.insert("scale".to_owned(), Value::from(scale));
+            }
+            None => {
+                section.remove("scale");
+                if section.is_empty() {
+                    self.document.remove("apps");
+                }
+            }
+        }
+        let saved = parse_apps_scale(&self.document).and_then(|_| self.persist_current());
+        if saved.is_err() {
+            self.document = before;
+        }
+        saved
+    }
+
+    /// A document may keep the apps scale it has or drop it, but takes no
+    /// new one: the display's scale sizes apps.
+    fn check_apps_scale(&self, incoming: &Map<String, Value>) -> Result<(), SettingsError> {
+        let scale = parse_apps_scale(incoming)?;
+        if scale != 1.0 && scale != self.apps_scale() {
+            return Err(SettingsError::Document(
+                "apps.scale is no longer set apart from the display's scale".to_owned(),
+            ));
+        }
+        Ok(())
     }
 
     /// Whether and how apps follow the shell's tablet or desktop
@@ -1098,7 +1142,7 @@ impl SettingsManager {
         let color_scheme_preference = parse_color_scheme_preference(&incoming)?;
         let allow_client_cursor_surfaces = parse_allow_client_cursor_surfaces(&incoming)?;
         parse_cursor_size(&incoming)?;
-        parse_apps_scale(&incoming)?;
+        self.check_apps_scale(&incoming)?;
         parse_apps_follow(&incoming)?;
         validate_presentation(&incoming)?;
         parse_window_layout_kind(&incoming)?;
@@ -1245,6 +1289,7 @@ impl SettingsManager {
         let (mut document, typed) = match observed.as_deref() {
             Some(bytes) => {
                 let parsed = parse_document(bytes)?;
+                self.check_apps_scale(&parsed.document)?;
                 (parsed.document, parsed.typed)
             }
             None => {
@@ -1789,7 +1834,6 @@ fn default_document(mobile: bool) -> (Map<String, Value>, u64, TypedSettings) {
     if mobile {
         seed_mobile_appearance(&mut document);
         seed_mobile_power(&mut document);
-        seed_mobile_apps(&mut document);
     }
     let typed = TypedSettings {
         keyboard,
@@ -1831,12 +1875,6 @@ fn seed_mobile_power(document: &mut Map<String, Value>) {
         "power".to_owned(),
         serde_json::json!({"idleDpmsTimeoutSeconds": 30}),
     );
-}
-
-/// Apps on a phone open a quarter larger than the shell draws: at the
-/// shell's own size their text and controls are small for a hand-held screen.
-fn seed_mobile_apps(document: &mut Map<String, Value>) {
-    document.insert("apps".to_owned(), serde_json::json!({"scale": 1.25}));
 }
 
 fn parse_color_scheme_preference(
