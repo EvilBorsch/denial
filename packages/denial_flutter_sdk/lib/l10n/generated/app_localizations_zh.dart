@@ -603,6 +603,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get desktopControlCenter => '控制中心';
+
+  @override
   String get desktopDashboardTitle => '仪表板';
 
   @override

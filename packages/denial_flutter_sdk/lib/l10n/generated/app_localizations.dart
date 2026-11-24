@@ -1168,6 +1168,12 @@ abstract class AppLocalizations {
   /// **'Connect {deviceName}'**
   String desktopConnectDevice(String deviceName);
 
+  /// Name and spoken label of the control in the desktop system bar that opens and closes the dashboard (notifications, quick settings), as macOS's Control Center.
+  ///
+  /// In en, this message translates to:
+  /// **'Control Center'**
+  String get desktopControlCenter;
+
   /// English UI text for desktopDashboardTitle.
   ///
   /// In en, this message translates to:
