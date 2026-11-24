@@ -530,75 +530,86 @@ class ShellSearchField extends StatelessWidget {
     letterSpacing: 0,
   );
 
+  /// A tap on the pill around the text, its icon included, is a tap on the
+  /// field: the line of text alone is too thin a target for a finger.
+  void _tapField() => focusNode.context
+      ?.findAncestorStateOfType<EditableTextState>()
+      ?.requestKeyboard();
+
   Widget _touch(BuildContext context) {
     const metrics = ShellSearchMetrics.touch;
     final l10n = context.l10n;
     return ConstrainedBox(
       constraints: BoxConstraints(maxWidth: metrics.fieldMaxWidth),
-      child: SizedBox(
-        height: metrics.fieldHeight,
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: const Color(0x2effffff),
-            border: Border.all(color: ShellMediaColors.lightOutline),
-            borderRadius: BorderRadius.circular(metrics.fieldHeight / 2),
-          ),
-          child: Row(
-            children: [
-              const SizedBox(width: 18),
-              const Icon(
-                Icons.search_rounded,
-                size: 26,
-                color: ShellMediaColors.lightForegroundSecondary,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Material(
-                  type: MaterialType.transparency,
-                  child: TextField(
-                    controller: controller,
-                    focusNode: focusNode,
-                    maxLines: 1,
-                    style: _touchStyle,
-                    cursorColor: ShellMediaColors.lightForeground,
-                    keyboardType: TextInputType.text,
-                    textInputAction: TextInputAction.search,
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    inputFormatters: _inputFormatters,
-                    onSubmitted: (_) => onSubmitted(),
-                    decoration: InputDecoration.collapsed(
-                      hintText: hint,
-                      hintStyle: _touchStyle.copyWith(
-                        color: ShellMediaColors.lightForegroundTertiary,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _tapField,
+        child: SizedBox(
+          height: metrics.fieldHeight,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: const Color(0x2effffff),
+              border: Border.all(color: ShellMediaColors.lightOutline),
+              borderRadius: BorderRadius.circular(metrics.fieldHeight / 2),
+            ),
+            child: Row(
+              children: [
+                const SizedBox(width: 18),
+                const Icon(
+                  Icons.search_rounded,
+                  size: 26,
+                  color: ShellMediaColors.lightForegroundSecondary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Material(
+                    type: MaterialType.transparency,
+                    child: TextField(
+                      controller: controller,
+                      focusNode: focusNode,
+                      maxLines: 1,
+                      style: _touchStyle,
+                      cursorColor: ShellMediaColors.lightForeground,
+                      keyboardType: TextInputType.text,
+                      textInputAction: TextInputAction.search,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      inputFormatters: _inputFormatters,
+                      onSubmitted: (_) => onSubmitted(),
+                      decoration: InputDecoration.collapsed(
+                        hintText: hint,
+                        hintStyle: _touchStyle.copyWith(
+                          color: ShellMediaColors.lightForegroundTertiary,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              ValueListenableBuilder<TextEditingValue>(
-                valueListenable: controller,
-                builder: (context, value, _) => value.text.isEmpty
-                    ? const SizedBox(width: 18)
-                    : Semantics(
-                        button: true,
-                        label: l10n.homeSearchClear,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _clear,
-                          child: SizedBox(
-                            width: metrics.fieldHeight,
-                            height: metrics.fieldHeight,
-                            child: const Icon(
-                              Icons.cancel_rounded,
-                              size: 24,
-                              color: ShellMediaColors.lightForegroundSecondary,
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: controller,
+                  builder: (context, value, _) => value.text.isEmpty
+                      ? const SizedBox(width: 18)
+                      : Semantics(
+                          button: true,
+                          label: l10n.homeSearchClear,
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: _clear,
+                            child: SizedBox(
+                              width: metrics.fieldHeight,
+                              height: metrics.fieldHeight,
+                              child: const Icon(
+                                Icons.cancel_rounded,
+                                size: 24,
+                                color:
+                                    ShellMediaColors.lightForegroundSecondary,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
       ),

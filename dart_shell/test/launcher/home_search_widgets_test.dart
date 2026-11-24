@@ -170,6 +170,29 @@ void main() {
       expect(find.byType(ShellSearchWindowRow), findsNothing);
     });
 
+    testWidgets('a finger anywhere on the field types in it', (tester) async {
+      _tablet(tester);
+      await tester.pumpWidget(_host(child: _drawer(_Calls())));
+      await tester.pump();
+      FocusNode focus() =>
+          tester.widget<TextField>(find.byType(TextField)).focusNode!;
+      final pill = tester.getRect(find.byType(ShellSearchField));
+
+      // The magnifier, then the pill's lower rim beside the text line.
+      await tester.tap(find.byIcon(Icons.search_rounded));
+      await tester.pump();
+      expect(focus().hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      focus().unfocus();
+      await tester.pump();
+      expect(tester.testTextInput.isVisible, isFalse);
+      await tester.tapAt(Offset(pill.center.dx, pill.bottom - 4));
+      await tester.pump();
+      expect(focus().hasFocus, isTrue);
+      expect(tester.testTextInput.isVisible, isTrue);
+    });
+
     testWidgets('typing finds apps first, then windows', (tester) async {
       _tablet(tester);
       final calls = _Calls();
