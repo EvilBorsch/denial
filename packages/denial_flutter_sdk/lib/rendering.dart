@@ -2,7 +2,7 @@
 library;
 
 export 'src/widgets/app_icon.dart'
-    show AppIconImage, DeferredAppIcon, DesktopAppSvgLoader;
+    show AppIconImage, DeferredAppIcon, DesktopAppSvgLoader, warmAppIcons;
 export 'src/widgets/desktop_window_snapshot.dart'
     show DesktopWindowSnapshotScope;
 export 'src/widgets/mobile_text_input_policy.dart' show MobileTextInputPolicy;
