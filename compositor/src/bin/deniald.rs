@@ -128,6 +128,8 @@ mod portal_ipc;
 mod presentation_clock;
 #[path = "deniald/runtime_state.rs"]
 mod runtime_state;
+#[path = "deniald/scale_fold.rs"]
+mod scale_fold;
 #[path = "deniald/scene_sync.rs"]
 mod scene_sync;
 #[cfg(feature = "flutter")]

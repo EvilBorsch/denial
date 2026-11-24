@@ -1101,6 +1101,26 @@ pub(super) fn prepare_output_config_persistence(
     outputs: &[PersistedOutput],
     primary_output: Option<&str>,
 ) -> Result<PreparedOutputConfig, String> {
+    prepare_output_config_rewrite(path, |original| {
+        render_persisted_output_config(original, outputs, primary_output)
+    })
+}
+
+/// Prepares the output config with each named output's scale set to the
+/// given one, in 120ths, and every other line as it is: the scale lines are
+/// replaced where the file has them and added under the managed header where
+/// it does not.
+pub(super) fn prepare_output_scales_persistence(
+    path: &Path,
+    scales_120: &BTreeMap<String, u32>,
+) -> Result<PreparedOutputConfig, String> {
+    prepare_output_config_rewrite(path, |original| render_output_scales(original, scales_120))
+}
+
+fn prepare_output_config_rewrite(
+    path: &Path,
+    render: impl FnOnce(&str) -> Result<String, String>,
+) -> Result<PreparedOutputConfig, String> {
     let path_metadata = fs::symlink_metadata(path).map_err(|error| {
         format!(
             "could not inspect output config {}: {error}",
@@ -1140,7 +1160,7 @@ pub(super) fn prepare_output_config_persistence(
     parse_output_config(&original)
         .map_err(|error| format!("invalid output config {}: {error}", path.display()))?;
 
-    let rendered = render_persisted_output_config(&original, outputs, primary_output)?;
+    let rendered = render(&original)?;
     if rendered.len() > MAX_OUTPUT_CONFIG_BYTES {
         return Err(format!(
             "updated output config exceeds the {MAX_OUTPUT_CONFIG_BYTES}-byte limit"
@@ -1317,6 +1337,64 @@ fn render_persisted_output_config(
     Ok(rendered)
 }
 
+fn render_output_scales(
+    original: &str,
+    scales_120: &BTreeMap<String, u32>,
+) -> Result<String, String> {
+    let min_scale_120 = (MIN_OUTPUT_SCALE * f64::from(SCALE_BASE)).round() as u32;
+    let max_scale_120 = (MAX_OUTPUT_SCALE * f64::from(SCALE_BASE)).round() as u32;
+    for (name, scale_120) in scales_120 {
+        validate_output_config_name(name)?;
+        if !(min_scale_120..=max_scale_120).contains(scale_120) {
+            return Err(format!("{name} has an invalid persistent output scale"));
+        }
+    }
+    let scale_line =
+        |name: &str, scale_120: u32| format!("scale={name},{}", format_output_scale(scale_120));
+    let mut missing = scales_120.clone();
+    let mut lines = original
+        .lines()
+        .map(|raw_line| {
+            let line = raw_line
+                .split_once('#')
+                .map_or(raw_line, |(value, _)| value)
+                .trim();
+            let scaled = line
+                .split_once('=')
+                .filter(|(key, _)| key.trim() == "scale")
+                .and_then(|(_, value)| value.split(',').next())
+                .map(str::trim)
+                .and_then(|name| missing.remove_entry(name));
+            scaled.map_or_else(
+                || raw_line.to_owned(),
+                |(name, scale_120)| scale_line(&name, scale_120),
+            )
+        })
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        while lines.last().is_some_and(|line| line.trim().is_empty()) {
+            lines.pop();
+        }
+        if !lines
+            .iter()
+            .any(|line| line.trim() == MANAGED_OUTPUT_CONFIG_HEADER)
+        {
+            if !lines.is_empty() {
+                lines.push(String::new());
+            }
+            lines.push(MANAGED_OUTPUT_CONFIG_HEADER.to_owned());
+        }
+        lines.extend(
+            missing
+                .iter()
+                .map(|(name, scale_120)| scale_line(name, *scale_120)),
+        );
+    }
+    let mut rendered = lines.join("\n");
+    rendered.push('\n');
+    Ok(rendered)
+}
+
 fn validate_persisted_output(output: &PersistedOutput) -> Result<(), String> {
     validate_output_config_name(&output.name)?;
     if output.width == 0 || output.height == 0 || output.refresh_millihz == 0 {
@@ -1389,7 +1467,12 @@ fn format_output_scale(scale_120: u32) -> String {
 mod tests {
     use denial_core::topology::OutputTransform;
 
-    use super::{Options, PersistedOutput, parse_output_config, render_persisted_output_config};
+    use std::collections::BTreeMap;
+
+    use super::{
+        Options, PersistedOutput, parse_output_config, render_output_scales,
+        render_persisted_output_config,
+    };
     use crate::output_topology::ScrollingLayoutAxis;
 
     #[test]
@@ -1478,5 +1561,52 @@ mod tests {
         assert!(rendered.contains("scrolling_axis=DP-1,horizontal"));
         assert!(!rendered.contains("scrolling_axis=DP-2"));
         assert!(rendered.contains("scrolling_axis=UNPLUGGED,vertical"));
+    }
+
+    #[test]
+    fn scales_replace_their_own_lines_and_keep_every_other() {
+        let original = "# The tablet's file.\nmode=DSI-1,3392,2400,120000\n\n\
+            # Output settings managed by Denial output control.\n\
+            DP-1=0,0\nscale=DP-1,1.5 # the monitor\nscale=HDMI-A-1,1\n";
+        let scales = BTreeMap::from([("DP-1".to_owned(), 225), ("DSI-1".to_owned(), 375)]);
+
+        let rendered = render_output_scales(original, &scales).unwrap();
+
+        assert_eq!(
+            rendered,
+            "# The tablet's file.\nmode=DSI-1,3392,2400,120000\n\n\
+             # Output settings managed by Denial output control.\n\
+             DP-1=0,0\nscale=DP-1,1.875\nscale=HDMI-A-1,1\nscale=DSI-1,3.125\n"
+        );
+        let parsed = parse_output_config(&rendered).unwrap();
+        assert_eq!(
+            parsed.scales_120,
+            BTreeMap::from([
+                ("DP-1".to_owned(), 225),
+                ("DSI-1".to_owned(), 375),
+                ("HDMI-A-1".to_owned(), 120),
+            ])
+        );
+        assert_eq!(parsed.mode_sizes["DSI-1"], (3392, 2400));
+    }
+
+    #[test]
+    fn a_file_without_managed_lines_gets_the_header_with_the_scales() {
+        let scales = BTreeMap::from([("DSI-1".to_owned(), 300)]);
+
+        let rendered = render_output_scales("mode=DSI-1,3392,2400,120000\n\n", &scales).unwrap();
+
+        assert_eq!(
+            rendered,
+            "mode=DSI-1,3392,2400,120000\n\n\
+             # Output settings managed by Denial output control.\nscale=DSI-1,2.5\n"
+        );
+        assert_eq!(
+            render_output_scales("", &scales).unwrap(),
+            "# Output settings managed by Denial output control.\nscale=DSI-1,2.5\n"
+        );
+        assert!(
+            render_output_scales("", &BTreeMap::from([("DSI-1".to_owned(), 1000)])).is_err()
+        );
     }
 }

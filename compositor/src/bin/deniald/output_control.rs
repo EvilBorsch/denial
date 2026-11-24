@@ -136,6 +136,9 @@ pub(super) struct OutputControlOutput {
     pub(super) physical_width_mm: Option<u32>,
     pub(super) physical_height_mm: Option<u32>,
     pub(super) scale: f64,
+    /// The scale the output has while the configuration names none, which
+    /// Settings marks as the default.
+    pub(super) default_scale: f64,
     pub(super) transform: OutputTransformName,
     pub(super) scrolling_layout_axis: ScrollingLayoutAxis,
     pub(super) adaptive_sync_supported: bool,
