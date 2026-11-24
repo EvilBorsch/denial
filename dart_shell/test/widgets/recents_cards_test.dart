@@ -168,6 +168,8 @@ void main() {
     // Big enough for a finger, in the middle under the cards.
     expect(rect.height, greaterThanOrEqualTo(48));
     expect(rect.width, greaterThanOrEqualTo(RecentsCloseAllButton.minWidth));
+    // A pill around its label, not a bar across the screen.
+    expect(rect.width, lessThan(tabletView.width / 4));
     expect(rect.center.dx, closeTo(tabletView.width / 2, 0.5));
     expect(rect.top, greaterThan(shown.deck.geometry.card.bottom));
     expect(

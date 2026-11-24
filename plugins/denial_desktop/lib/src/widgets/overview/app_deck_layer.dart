@@ -1267,13 +1267,14 @@ class _RecentsCloseAllButtonState extends State<RecentsCloseAllButton> {
           child: AnimatedOpacity(
             opacity: _pressed ? 0.6 : 1,
             duration: const Duration(milliseconds: 90),
+            // Sized by its label: an alignment here would stretch the pill
+            // across the free width the layer gives it.
             child: Container(
               height: RecentsCloseAllButton.height,
               constraints: const BoxConstraints(
                 minWidth: RecentsCloseAllButton.minWidth,
               ),
               padding: const EdgeInsets.symmetric(horizontal: 28),
-              alignment: Alignment.center,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(
                   RecentsCloseAllButton.height / 2,
@@ -1285,15 +1286,18 @@ class _RecentsCloseAllButtonState extends State<RecentsCloseAllButton> {
                       : const Color(0x1F000000),
                 ),
               ),
-              child: Text(
-                label,
-                maxLines: 1,
-                style: TextStyle(
-                  color: ink,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0,
-                  decoration: TextDecoration.none,
+              child: Center(
+                widthFactor: 1,
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  style: TextStyle(
+                    color: ink,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0,
+                    decoration: TextDecoration.none,
+                  ),
                 ),
               ),
             ),
