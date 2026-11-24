@@ -52,6 +52,11 @@ enum DenialShellAction {
   /// A gesture that follows the fingers or the pointer; see
   /// [DenialShellActionEvent.gesture].
   shellGesture,
+
+  /// deniald's answer to [DenialBridge.requestPresentationCover]: the frame on
+  /// screen frozen in the texture [DenialShellActionEvent.textureId], or
+  /// none (null) when it has no frozen frame to give.
+  presentationCover,
 }
 
 /// The direction of a [DenialShellAction.shellGesture]: three fingers (or a

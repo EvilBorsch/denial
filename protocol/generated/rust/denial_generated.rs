@@ -813,10 +813,10 @@ impl flatbuffers::SimpleToVerifyInSlice for WindowActionKind {}
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 pub const ENUM_MIN_SHELL_ACTION_KIND: u8 = 0;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
-pub const ENUM_MAX_SHELL_ACTION_KIND: u8 = 28;
+pub const ENUM_MAX_SHELL_ACTION_KIND: u8 = 29;
 #[deprecated(since = "2.0.0", note = "Use associated constants instead. This will no longer be generated in 2021.")]
 #[allow(non_camel_case_types)]
-pub const ENUM_VALUES_SHELL_ACTION_KIND: [ShellActionKind; 29] = [
+pub const ENUM_VALUES_SHELL_ACTION_KIND: [ShellActionKind; 30] = [
   ShellActionKind::Applications,
   ShellActionKind::Overview,
   ShellActionKind::WindowSwitcherNext,
@@ -846,6 +846,7 @@ pub const ENUM_VALUES_SHELL_ACTION_KIND: [ShellActionKind; 29] = [
   ShellActionKind::AppSwitcherCancel,
   ShellActionKind::Search,
   ShellActionKind::ShellGesture,
+  ShellActionKind::PresentationCover,
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
@@ -882,9 +883,10 @@ impl ShellActionKind {
   pub const AppSwitcherCancel: Self = Self(26);
   pub const Search: Self = Self(27);
   pub const ShellGesture: Self = Self(28);
+  pub const PresentationCover: Self = Self(29);
 
   pub const ENUM_MIN: u8 = 0;
-  pub const ENUM_MAX: u8 = 28;
+  pub const ENUM_MAX: u8 = 29;
   pub const ENUM_VALUES: &'static [Self] = &[
     Self::Applications,
     Self::Overview,
@@ -915,6 +917,7 @@ impl ShellActionKind {
     Self::AppSwitcherCancel,
     Self::Search,
     Self::ShellGesture,
+    Self::PresentationCover,
   ];
   /// Returns the variant's name or "" if unknown.
   pub fn variant_name(self) -> Option<&'static str> {
@@ -948,6 +951,7 @@ impl ShellActionKind {
       Self::AppSwitcherCancel => Some("AppSwitcherCancel"),
       Self::Search => Some("Search"),
       Self::ShellGesture => Some("ShellGesture"),
+      Self::PresentationCover => Some("PresentationCover"),
       _ => None,
     }
   }

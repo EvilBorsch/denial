@@ -37,6 +37,9 @@ struct ScreenshotSelection {
     buffer: ScreenshotBuffer,
     prepared: bool,
     texture_id: Option<i64>,
+    /// A presentation cover: the frame on screen, frozen for the shell to show
+    /// over a switch between its presentations. Never written to a file.
+    cover: bool,
 }
 
 pub(super) struct ScreenshotManager {
@@ -101,8 +104,61 @@ impl ScreenshotManager {
             buffer,
             prepared: false,
             texture_id: None,
+            cover: false,
         });
         Ok(Some(request_id))
+    }
+
+    /// Starts a presentation cover under the shell's `request_id`: the next
+    /// frame of `target_output` is frozen as soon as it is on screen, with no
+    /// preparation (the shell hid its cursor before asking). Returns false
+    /// while a screenshot selection or another cover holds the buffer.
+    pub(super) fn begin_cover(
+        &mut self,
+        allocator: &mut GbmAllocator<DrmDeviceFd>,
+        target_output: OutputId,
+        atlas: AtlasPlan,
+        modifier: Modifier,
+        request_id: u64,
+    ) -> Result<bool, Box<dyn Error>> {
+        if self.selection.is_some() || request_id == 0 {
+            return Ok(false);
+        }
+        let buffer = ScreenshotBuffer::allocate(allocator, atlas.pixel_size, modifier)?;
+        self.selection = Some(ScreenshotSelection {
+            request_id,
+            target_output,
+            atlas,
+            buffer,
+            prepared: true,
+            texture_id: None,
+            cover: true,
+        });
+        Ok(true)
+    }
+
+    /// Whether the selection is a presentation cover.
+    pub(super) fn is_cover(&self) -> bool {
+        self.selection.as_ref().is_some_and(|selection| selection.cover)
+    }
+
+    /// The shell is done with its presentation cover `request_id`. Returns
+    /// whether it was the cover held.
+    pub(super) fn release_cover(
+        &mut self,
+        runtime: &mut FlutterRuntime,
+        request_id: u64,
+    ) -> Result<bool, Box<dyn Error>> {
+        if !self
+            .selection
+            .as_ref()
+            .is_some_and(|selection| selection.cover && selection.request_id == request_id)
+        {
+            return Ok(false);
+        }
+        let selection = self.selection.take().expect("checked presentation cover");
+        teardown_selection(runtime, &selection)?;
+        Ok(true)
     }
 
     pub(super) fn prepared(&mut self, request_id: u64) -> bool {
@@ -202,7 +258,7 @@ impl ScreenshotManager {
         let Some(selection) = self.selection.as_ref() else {
             return Ok(false);
         };
-        if selection.request_id != request_id || selection.texture_id.is_none() {
+        if selection.cover || selection.request_id != request_id || selection.texture_id.is_none() {
             return Ok(false);
         }
 
@@ -240,7 +296,7 @@ impl ScreenshotManager {
         let Some(selection) = self.selection.as_ref() else {
             return Ok(None);
         };
-        if request_id.is_some_and(|request_id| request_id != selection.request_id) {
+        if request_id.is_some_and(|request_id| request_id != selection.request_id || selection.cover) {
             return Ok(None);
         }
         let selection = self

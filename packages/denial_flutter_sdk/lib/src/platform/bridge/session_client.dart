@@ -41,6 +41,8 @@ final class BridgeSessionClient {
   static const int _screenshotPreparedCommand = 4;
   static const int _cancelScreenshotCommand = 5;
   static const int _restartCommand = 6;
+  static const int _presentationCoverCommand = 7;
+  static const int _releasePresentationCoverCommand = 8;
   static const int _systemCommandHeaderBytes = 1 + 8 + 4;
   static const int _maxSystemCommandBytes = 64 * 1024;
   static const int _maxSystemCommandArguments = 64;
@@ -352,6 +354,19 @@ final class BridgeSessionClient {
 
   bool cancelScreenshot(int requestId) =>
       _sendSystemCommand(_cancelScreenshotCommand, requestId: requestId);
+
+  /// Asks deniald for the frame on screen, frozen in a texture, to cover a
+  /// switch between the tablet and desktop presentations. deniald answers
+  /// with [DenialShellAction.presentationCover]; a deniald before eb19
+  /// ignores the request.
+  bool requestPresentationCover(int requestId) =>
+      _sendSystemCommand(_presentationCoverCommand, requestId: requestId);
+
+  /// The switch is over: deniald drops the cover's texture.
+  bool releasePresentationCover(int requestId) => _sendSystemCommand(
+    _releasePresentationCoverCommand,
+    requestId: requestId,
+  );
 
   /// Asks the native compositor to end this graphical session cleanly.
   ///

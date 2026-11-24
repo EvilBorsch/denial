@@ -141,6 +141,8 @@ final class BridgeEventsClient {
             DenialShellAction.appSwitcherCancel,
           wire.ShellActionKind.Search => DenialShellAction.search,
           wire.ShellActionKind.ShellGesture => DenialShellAction.shellGesture,
+          wire.ShellActionKind.PresentationCover =>
+            DenialShellAction.presentationCover,
         };
         if (!_shellActions.isClosed) {
           _shellActions.add(

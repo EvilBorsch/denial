@@ -121,13 +121,21 @@ pub(super) fn cancel_active_screenshot(
     let Some(manager) = manager.as_mut() else {
         return Ok(());
     };
+    let cover = manager.is_cover();
     let Some(request_id) = manager.cancel_selection(runtime, None)? else {
         return Ok(());
     };
     if notify_flutter {
-        runtime.send_screenshot_action(wire::ShellAction::ScreenshotDone, request_id, None)?;
+        // A presentation cover the shell still waits for, or shows, is gone:
+        // it switches, or ends its switch, without it.
+        let action = if cover {
+            wire::ShellAction::PresentationCover
+        } else {
+            wire::ShellAction::ScreenshotDone
+        };
+        runtime.send_screenshot_action(action, request_id, None)?;
     }
-    info!(request_id, reason, "cancelled screenshot selection");
+    info!(request_id, reason, cover, "cancelled screenshot selection");
     Ok(())
 }
 
