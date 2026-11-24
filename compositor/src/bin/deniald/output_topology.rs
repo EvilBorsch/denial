@@ -353,14 +353,13 @@ pub(super) fn output_control_state(
                 .and_then(|mode| output_control_mode(&connector.info, mode))
                 .or_else(|| modes.first().copied())
         });
+        let default_120 = fallback_mode.map_or(SCALE_BASE, |mode| {
+            default_scale_120(&connector.info, (mode.width, mode.height))
+        });
         let scale_120 = spec
             .map(|output| output.scale_120)
             .or_else(|| configuration.scales_120.get(&name).copied())
-            .unwrap_or_else(|| {
-                fallback_mode.map_or(SCALE_BASE, |mode| {
-                    default_scale_120(&connector.info, (mode.width, mode.height))
-                })
-            });
+            .unwrap_or(default_120);
         let (logical_width, logical_height) = fallback_mode.map_or((0, 0), |mode| {
             logical_size_for_control(mode, scale_120, transform)
         });
@@ -411,6 +410,7 @@ pub(super) fn output_control_state(
             physical_width_mm,
             physical_height_mm,
             scale: f64::from(scale_120) / f64::from(SCALE_BASE),
+            default_scale: f64::from(default_120) / f64::from(SCALE_BASE),
             transform: output_transform_name(transform),
             scrolling_layout_axis: configuration.scrolling_layout_axis(&name),
             adaptive_sync_supported,
