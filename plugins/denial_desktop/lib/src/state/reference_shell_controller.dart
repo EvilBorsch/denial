@@ -137,7 +137,11 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
   /// runs on until the dialog is no longer in front. A phone or tablet shown
   /// as a desktop keeps its windows side by side, so nothing is minimized
   /// there.
+  /// DIAGNOSTIC BUILD ONLY.
+  static bool debugNoMinimize = false;
+
   void _minimizeLeftApp(int? previous, ReferenceShellState next) {
+    if (debugNoMinimize) return;
     if (ref.read(referenceShellPresentationProvider) !=
         ReferenceShellProfile.mobile) {
       return;

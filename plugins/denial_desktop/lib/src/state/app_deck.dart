@@ -207,8 +207,13 @@ class AppDeck extends ChangeNotifier {
   /// The card of [objectId] was thrown out of recents: the row closes its
   /// gap now, while the card, drawn where it was, goes on leaving. [left]
   /// ends it.
+  /// DIAGNOSTIC BUILD ONLY: leaving cards follow the row as in eb18.
+  static bool debugNoFreeze = false;
+  final Map<int, double> _debugAlong = {};
+
   void leave(int objectId, motor.Motion motion) {
     if (!_order.contains(objectId)) return;
+    if (debugNoFreeze) _debugAlong[objectId] = slotOf(objectId) - row.value;
     _leaving[objectId] = poseOf(objectId);
     reorder([
       for (final id in _order)
@@ -218,6 +223,7 @@ class AppDeck extends ChangeNotifier {
 
   /// The card of [objectId] is gone: the deck stops drawing it.
   void left(int objectId) {
+    _debugAlong.remove(objectId);
     if (_leaving.remove(objectId) != null) _changed();
   }
 
@@ -265,9 +271,11 @@ class AppDeck extends ChangeNotifier {
 
   /// Where the deck draws [objectId] now.
   WindowPose poseOf(int objectId) =>
-      _leaving[objectId] ??
+      (_debugAlong.containsKey(objectId) ? null : _leaving[objectId]) ??
       geometry.pose(
-        slotOf(objectId),
+        _debugAlong.containsKey(objectId)
+            ? row.value + _debugAlong[objectId]!
+            : slotOf(objectId),
         open: open.value,
         row: row.value,
         homeward: homeward.value,

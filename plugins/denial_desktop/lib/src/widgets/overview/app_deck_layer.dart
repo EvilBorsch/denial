@@ -1,6 +1,8 @@
 import 'package:denial_desktop/src/state/app_deck.dart';
+import 'package:denial_desktop/src/state/reference_shell_controller.dart';
 import 'package:denial_desktop/src/state/reference_shell_metrics.dart';
 
+import 'dart:io' as io;
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -134,6 +136,7 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
   /// «Close all» was tapped: every card is leaving and recents goes home.
   /// The button fades out with recents and takes no second tap.
   bool _closingAll = false;
+  Set<String> _diag = const <String>{};
 
   /// A card lifted to share the screen: its window, the app it would share
   /// it with, and where the finger is, in this layer's coordinates.
@@ -308,9 +311,23 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
   void _closeAll() {
     final deck = widget.deck;
     if (_closingAll || !widget.recents || deck.length == 0) return;
+    // DIAGNOSTIC BUILD ONLY (never merged): toggles from /tmp/eb19r-diag.
+    var diag = const <String>{};
+    try {
+      diag = io.File(
+        '/tmp/eb19r-diag',
+      ).readAsStringSync().split(RegExp(r'\s+')).toSet();
+    } catch (_) {}
+    _diag = diag;
+    debugPrint("eb19r-diag close-all flags=$diag");
+    AppDeck.debugNoFreeze = diag.contains('no-freeze');
     _sendAway(deck.order);
+    AppDeck.debugNoFreeze = false;
     setState(() => _closingAll = true);
+    if (diag.contains('late-home')) return;
+    ReferenceShellController.debugNoMinimize = diag.contains('no-minimize');
     widget.onCloseRecents();
+    ReferenceShellController.debugNoMinimize = false;
   }
 
   /// The close-all of [window]'s card: every card of its app leaves, as a
@@ -516,7 +533,7 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
                             ? _poses[_drawn[index + 1]]
                             : null,
                         labelWidth: geometry.card.width,
-                        labelOpacity: _labelOpacity,
+                        labelOpacity: _closingAll && _diag.contains("no-labels") ? null : _labelOpacity,
                         appWindowCount: _appWindows[id]?.length ?? 1,
                         closing: _closing.contains(id),
                         onLiftMove:
