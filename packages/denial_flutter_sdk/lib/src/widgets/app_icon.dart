@@ -118,7 +118,7 @@ class _DeferredAppIconState extends State<DeferredAppIcon> {
   @override
   void initState() {
     super.initState();
-    _deferLoad();
+    _startLoad();
   }
 
   @override
@@ -129,6 +129,17 @@ class _DeferredAppIconState extends State<DeferredAppIcon> {
     }
     _ready = false;
     _failed = false;
+    _startLoad();
+  }
+
+  /// An icon [warmAppIcons] or an earlier tile already decoded draws on its
+  /// first frame; any other loads after it.
+  void _startLoad() {
+    if (_warmedAppIcons.contains(widget.iconPath)) {
+      _loadGeneration += 1;
+      _ready = true;
+      return;
+    }
     _deferLoad();
   }
 
@@ -168,6 +179,9 @@ class _DeferredAppIconState extends State<DeferredAppIcon> {
     if (!mounted || generation != _loadGeneration) {
       return;
     }
+    if (!failed) {
+      _warmedAppIcons.add(widget.iconPath);
+    }
     setState(() {
       _ready = !failed || fallbackReady;
       _failed = failed;
@@ -182,6 +196,34 @@ class _DeferredAppIconState extends State<DeferredAppIcon> {
     return _failed
         ? const _FallbackAppIcon()
         : AppIconImage(iconPath: widget.iconPath);
+  }
+}
+
+/// The icon paths whose bytes are decoded: their [DeferredAppIcon]s draw at
+/// once. A path stays here when its cache entry is later evicted; the icon
+/// then loads as an [AppIconImage] does, without a placeholder frame first.
+final Set<String?> _warmedAppIcons = <String?>{};
+
+/// Decodes the icons of [iconPaths] ahead of their tiles, two at a time as
+/// [DeferredAppIcon] does, so that a grid of them (the shell's search) draws
+/// every icon on its first frame instead of popping them in. Paths already
+/// decoded are skipped; [context] gives the pixel ratio and theme.
+void warmAppIcons(BuildContext context, Iterable<String?> iconPaths) {
+  for (final path in iconPaths.toSet()) {
+    if (_warmedAppIcons.contains(path)) {
+      continue;
+    }
+    _DeferredIconLoadScheduler.instance.schedule(() async {
+      if (!context.mounted || _warmedAppIcons.contains(path)) {
+        return;
+      }
+      try {
+        await _precacheAppIcon(context, path);
+        _warmedAppIcons.add(path);
+      } on Object {
+        // The tile's own load shows the fallback.
+      }
+    });
   }
 }
 

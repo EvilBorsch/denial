@@ -32,16 +32,18 @@ const _dashboardBluetoothMaxHeight = 240.0;
 
 enum _DashboardDetail { power, notifications }
 
+/// The desktop's control center: notifications, quick settings, the mobile
+/// view button. It takes the keyboard while it is open, so Escape closes it
+/// (or first the card expanded in it) and Tab walks its controls.
 class DesktopDashboard extends ConsumerStatefulWidget {
   const DesktopDashboard({
     super.key,
-    required this.onEnter,
-    required this.onExit,
+    required this.onDismiss,
     required this.onOpenSettings,
   });
 
-  final VoidCallback onEnter;
-  final VoidCallback onExit;
+  /// Closes the dashboard: Escape with no card expanded.
+  final VoidCallback onDismiss;
   final VoidCallback onOpenSettings;
 
   @override
@@ -58,6 +60,11 @@ class _DesktopDashboardState extends ConsumerState<DesktopDashboard>
     debugLabel: 'Dashboard notifications button',
   );
   final _detailFocus = FocusNode(debugLabel: 'Dashboard expanded card');
+  final _panelFocus = FocusNode(
+    debugLabel: 'desktop-dashboard',
+    skipTraversal: true,
+  );
+  bool _focusRequestScheduled = false;
   late final AnimationController _expansion = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 250),
@@ -74,12 +81,40 @@ class _DesktopDashboardState extends ConsumerState<DesktopDashboard>
   double _originRight = 0;
 
   @override
+  void initState() {
+    super.initState();
+    // Built in the frame the dashboard first opens, unless it was built
+    // ahead offstage: then the listener below takes the keyboard.
+    if (ref.read(desktopWorkspaceProvider).dashboardOpen) {
+      _takeKeyboardAfterFrame();
+    }
+  }
+
+  @override
   void dispose() {
     _expansion.dispose();
     _powerButtonFocus.dispose();
     _notificationButtonFocus.dispose();
     _detailFocus.dispose();
+    _panelFocus.dispose();
     super.dispose();
+  }
+
+  /// Opened by a click on the bar, the dashboard would otherwise leave the
+  /// keyboard where it was, and Escape would not reach it.
+  void _takeKeyboardAfterFrame() {
+    if (_focusRequestScheduled) {
+      return;
+    }
+    _focusRequestScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _focusRequestScheduled = false;
+      if (mounted &&
+          ref.read(desktopWorkspaceProvider).dashboardOpen &&
+          !_panelFocus.hasFocus) {
+        _panelFocus.requestFocus();
+      }
+    });
   }
 
   void _closeDetail({bool restoreFocus = true, bool animate = true}) {
@@ -115,7 +150,6 @@ class _DesktopDashboardState extends ConsumerState<DesktopDashboard>
     if (detail == _DashboardDetail.power) {
       unawaited(ref.read(sessionPowerProvider.notifier).refresh());
     }
-    widget.onEnter();
     setState(() {
       _detail = detail;
       _displayedDetail = detail;
@@ -142,7 +176,7 @@ class _DesktopDashboardState extends ConsumerState<DesktopDashboard>
       } else if (_detailOpen) {
         _closeDetail();
       } else {
-        ref.read(desktopWorkspaceProvider.notifier).closePanels();
+        widget.onDismiss();
       }
     }
     return KeyEventResult.handled;
@@ -161,149 +195,149 @@ class _DesktopDashboardState extends ConsumerState<DesktopDashboard>
       _,
       open,
     ) {
-      if (!open && _detailOpen) {
+      if (open) {
+        _takeKeyboardAfterFrame();
+        return;
+      }
+      if (_detailOpen) {
         _closeDetail(restoreFocus: false, animate: false);
       }
+      if (_panelFocus.hasFocus) {
+        _panelFocus.unfocus();
+      }
     });
-    return MouseRegion(
-      onEnter: (_) => widget.onEnter(),
-      onExit: (_) => widget.onExit(),
-      child: Focus(
-        onKeyEvent: _onKey,
-        child: FocusTraversalGroup(
-          child: Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: theme.panelColor(context.shellColors.panelBackground),
-              borderRadius: BorderRadius.circular(theme.panelRadius),
-              border: Border.all(color: context.shellColors.hairline),
-            ),
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _DashboardHeader(
-                  onOpenSettings: widget.onOpenSettings,
-                  onTogglePower: () => _toggleDetail(_DashboardDetail.power),
-                  powerOpen: _detail == _DashboardDetail.power,
-                  onToggleNotifications: () =>
-                      _toggleDetail(_DashboardDetail.notifications),
-                  notificationsOpen: _detail == _DashboardDetail.notifications,
-                  notificationButtonKey: _notificationButtonKey,
-                  notificationFocusNode: _notificationButtonFocus,
-                  powerButtonKey: _powerButtonKey,
-                  powerFocusNode: _powerButtonFocus,
-                ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: LayoutBuilder(
-                    key: _bodyKey,
-                    builder: (context, constraints) => AnimatedBuilder(
-                      animation: _expansion,
-                      builder: (context, child) {
-                        final t = Motion.md3EmphasizedDecelerate.transform(
-                          _expansion.value,
-                        );
-                        final target = Offset.zero & constraints.biggest;
-                        final origin = Rect.fromLTWH(
-                          target.width - _originRight - _origin.width,
-                          _origin.top,
-                          _origin.width,
-                          _origin.height,
-                        );
-                        final rect = Rect.lerp(origin, target, t)!;
-                        final radius = 12 + (theme.panelRadius - 12) * t;
-                        return Stack(
-                          clipBehavior: Clip.none,
-                          fit: StackFit.expand,
-                          children: [
-                            IgnorePointer(
-                              ignoring: _detailOpen || _expansion.value > 0,
-                              child: ExcludeFocus(
+    return Focus(
+      focusNode: _panelFocus,
+      onKeyEvent: _onKey,
+      child: FocusTraversalGroup(
+        child: Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: theme.panelColor(context.shellColors.panelBackground),
+            borderRadius: BorderRadius.circular(theme.panelRadius),
+            border: Border.all(color: context.shellColors.hairline),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _DashboardHeader(
+                onOpenSettings: widget.onOpenSettings,
+                onTogglePower: () => _toggleDetail(_DashboardDetail.power),
+                powerOpen: _detail == _DashboardDetail.power,
+                onToggleNotifications: () =>
+                    _toggleDetail(_DashboardDetail.notifications),
+                notificationsOpen: _detail == _DashboardDetail.notifications,
+                notificationButtonKey: _notificationButtonKey,
+                notificationFocusNode: _notificationButtonFocus,
+                powerButtonKey: _powerButtonKey,
+                powerFocusNode: _powerButtonFocus,
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: LayoutBuilder(
+                  key: _bodyKey,
+                  builder: (context, constraints) => AnimatedBuilder(
+                    animation: _expansion,
+                    builder: (context, child) {
+                      final t = Motion.md3EmphasizedDecelerate.transform(
+                        _expansion.value,
+                      );
+                      final target = Offset.zero & constraints.biggest;
+                      final origin = Rect.fromLTWH(
+                        target.width - _originRight - _origin.width,
+                        _origin.top,
+                        _origin.width,
+                        _origin.height,
+                      );
+                      final rect = Rect.lerp(origin, target, t)!;
+                      final radius = 12 + (theme.panelRadius - 12) * t;
+                      return Stack(
+                        clipBehavior: Clip.none,
+                        fit: StackFit.expand,
+                        children: [
+                          IgnorePointer(
+                            ignoring: _detailOpen || _expansion.value > 0,
+                            child: ExcludeFocus(
+                              excluding: _detailOpen || _expansion.value > 0,
+                              child: ExcludeSemantics(
                                 excluding: _detailOpen || _expansion.value > 0,
-                                child: ExcludeSemantics(
-                                  excluding:
-                                      _detailOpen || _expansion.value > 0,
-                                  child: Opacity(opacity: 1 - t, child: child),
+                                child: Opacity(opacity: 1 - t, child: child),
+                              ),
+                            ),
+                          ),
+                          if (_expansion.value > 0 || _detailOpen) ...[
+                            Positioned.fromRect(
+                              rect: rect,
+                              child: IgnorePointer(
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Color.lerp(
+                                      theme.accentPalette.container,
+                                      context.shellColors.surfaceContainer,
+                                      t,
+                                    ),
+                                    borderRadius: BorderRadius.circular(radius),
+                                    border: Border.all(
+                                      color: context.shellColors.hairlineSoft,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                            if (_expansion.value > 0 || _detailOpen) ...[
-                              Positioned.fromRect(
-                                rect: rect,
-                                child: IgnorePointer(
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      color: Color.lerp(
-                                        theme.accentPalette.container,
-                                        context.shellColors.surfaceContainer,
-                                        t,
-                                      ),
-                                      borderRadius: BorderRadius.circular(
-                                        radius,
-                                      ),
-                                      border: Border.all(
-                                        color: context.shellColors.hairlineSoft,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              IgnorePointer(
-                                ignoring: !_detailOpen || _expansion.value < 1,
-                                child: ExcludeFocus(
+                            IgnorePointer(
+                              ignoring: !_detailOpen || _expansion.value < 1,
+                              child: ExcludeFocus(
+                                excluding: !_detailOpen || _expansion.value < 1,
+                                child: ExcludeSemantics(
                                   excluding:
                                       !_detailOpen || _expansion.value < 1,
-                                  child: ExcludeSemantics(
-                                    excluding:
-                                        !_detailOpen || _expansion.value < 1,
-                                    child: ClipRRect(
-                                      clipper: _DashboardDetailClipper(
-                                        rect,
-                                        radius,
-                                      ),
-                                      child: Opacity(
-                                        opacity: const Interval(
-                                          .35,
-                                          1,
-                                        ).transform(_expansion.value),
-                                        child: Focus(
-                                          focusNode: _detailFocus,
-                                          child:
-                                              _displayedDetail ==
-                                                  _DashboardDetail.power
-                                              ? PowerSessionContent(
-                                                  embedded: true,
-                                                  onClose: _closeDetail,
-                                                )
-                                              : _DashboardNotificationCard(
-                                                  active:
-                                                      _detail ==
-                                                          _DashboardDetail
-                                                              .notifications &&
-                                                      _expansion.value == 1,
-                                                  onClose: _closeDetail,
-                                                ),
-                                        ),
+                                  child: ClipRRect(
+                                    clipper: _DashboardDetailClipper(
+                                      rect,
+                                      radius,
+                                    ),
+                                    child: Opacity(
+                                      opacity: const Interval(
+                                        .35,
+                                        1,
+                                      ).transform(_expansion.value),
+                                      child: Focus(
+                                        focusNode: _detailFocus,
+                                        child:
+                                            _displayedDetail ==
+                                                _DashboardDetail.power
+                                            ? PowerSessionContent(
+                                                embedded: true,
+                                                onClose: _closeDetail,
+                                              )
+                                            : _DashboardNotificationCard(
+                                                active:
+                                                    _detail ==
+                                                        _DashboardDetail
+                                                            .notifications &&
+                                                    _expansion.value == 1,
+                                                onClose: _closeDetail,
+                                              ),
                                       ),
                                     ),
                                   ),
                                 ),
                               ),
-                            ],
+                            ),
                           ],
-                        );
-                      },
-                      child: DesktopDashboardCardLayout(
-                        volume: const _DashboardVolumeCard(),
-                        powerModes: const DesktopPowerModesSection(),
-                        bluetooth: const _DashboardBluetoothCard(),
-                      ),
+                        ],
+                      );
+                    },
+                    child: DesktopDashboardCardLayout(
+                      volume: const _DashboardVolumeCard(),
+                      powerModes: const DesktopPowerModesSection(),
+                      bluetooth: const _DashboardBluetoothCard(),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
@@ -497,6 +531,13 @@ class _DashboardVolumeCard extends ConsumerWidget {
             slider: true,
             label: context.l10n.commonVolume,
             value: context.l10n.settingsPercent((volume * 100).round()),
+            // A slider with a value says what a step up or down leads to.
+            increasedValue: context.l10n.settingsPercent(
+              ((volume + .05).clamp(0.0, 1.0) * 100).round(),
+            ),
+            decreasedValue: context.l10n.settingsPercent(
+              ((volume - .05).clamp(0.0, 1.0) * 100).round(),
+            ),
             onIncrease: () => controller.commitDashboardVolume(
               (volume + .05).clamp(0.0, 1.0),
             ),

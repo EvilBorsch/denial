@@ -1,6 +1,5 @@
 import 'dart:math' as math;
 
-import 'package:denial_flutter_sdk/applications.dart';
 import 'package:denial_flutter_sdk/effects.dart';
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/models.dart';
@@ -11,10 +10,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/shell_plugin_services.dart' show DesktopApplicationIcon;
+import '../search/shell_search_backend.dart';
+import '../search/shell_search_view.dart';
 import 'desktop_overview_layout.dart';
 import 'desktop_overview_motion.dart';
 import 'desktop_screens_overview_layout.dart';
-import 'desktop_shell_search.dart';
 import 'desktop_workspace.dart';
 
 /// The overview of the full-screen apps layout as the desktop's hub: a
@@ -43,17 +43,17 @@ abstract final class DesktopOverviewHubMetrics {
     contentBounds.top,
   );
 
+  /// The search field's widest.
+  static const double fieldMaxWidth = 600.0;
+
   /// The search field, centred in the band.
   static Rect searchFieldOf(Rect contentBounds) {
     final band = bandOf(contentBounds);
-    final width = math.min(
-      DesktopSearchMetrics.fieldMaxWidth,
-      math.max(0.0, band.width - 48.0),
-    );
+    final width = math.min(fieldMaxWidth, math.max(0.0, band.width - 48.0));
     return Rect.fromCenter(
       center: band.center + const Offset(0.0, 6.0),
       width: width,
-      height: DesktopSearchMetrics.fieldHeight,
+      height: ShellSearchMetrics.desktop.fieldHeight,
     );
   }
 
@@ -171,20 +171,20 @@ class _DesktopOverviewBackdropState
 /// The hub's chrome over the overview's windows: the search field, its
 /// results and the dimming of what it does not find; and the app windows'
 /// name and titles.
+///
+/// The overview searches only what is open: the apps that run and their
+/// windows ([ShellSearchScope.openWindows]). Starting apps is the one
+/// search's job (Super, Super+S, Alt+F, four fingers up).
 class DesktopOverviewHub extends ConsumerStatefulWidget {
   const DesktopOverviewHub({
     super.key,
     required this.onActivateWindow,
-    required this.onLaunchApplication,
-    required this.onLaunchLocalApplication,
     required this.onDismiss,
     required this.onNavigate,
     required this.onActivateSelection,
   });
 
   final ValueChanged<DenialWindow> onActivateWindow;
-  final ValueChanged<DesktopApp> onLaunchApplication;
-  final ValueChanged<LocalFlutterApplication> onLaunchLocalApplication;
   final VoidCallback onDismiss;
   final ValueChanged<DesktopOverviewDirection> onNavigate;
   final VoidCallback onActivateSelection;
@@ -194,43 +194,53 @@ class DesktopOverviewHub extends ConsumerStatefulWidget {
 }
 
 class _DesktopOverviewHubState extends ConsumerState<DesktopOverviewHub>
-    with
-        _RetainedOverview<DesktopOverviewHub>,
-        DesktopSearchHost<DesktopOverviewHub> {
+    with _RetainedOverview<DesktopOverviewHub> {
+  late final ShellSearchSession _session =
+      ShellSearchSession(debugLabel: 'desktop-search')
+        ..onDismiss = _dismiss
+        ..onActivate = _activate
+        ..onKeyWithoutQuery = _keyWithoutQuery
+        ..onSubmitWithoutQuery = _submitWithoutQuery;
+  final ShellSearchIndexCache _indexCache = ShellSearchIndexCache();
   DesktopOverviewState? _open;
+
+  @override
+  void initState() {
+    super.initState();
+    _session.addListener(_searchChanged);
+  }
+
+  @override
+  void dispose() {
+    _session
+      ..removeListener(_searchChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  /// The hub dims what a new query does not find, and selects on its card
+  /// the window the arrows choose.
+  void _searchChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
 
   @override
   bool keeps(DesktopOverviewState? overview) =>
       desktopOverviewHasBackdrop(overview);
 
-  @override
-  void activateSearchWindow(int objectId) {
-    final window = searchWindowOf(objectId);
-    if (window == null) {
-      return;
-    }
-    searchFocusNode.unfocus();
-    widget.onActivateWindow(window);
-  }
+  void _dismiss() => widget.onDismiss();
 
-  @override
-  void launchSearchApplication(String id) {
-    searchFocusNode.unfocus();
-    final desktopApp = searchCatalog.desktopApps[id];
-    final localApp = searchCatalog.localApps[id];
-    widget.onDismiss();
-    if (desktopApp != null) {
-      widget.onLaunchApplication(desktopApp);
-    } else if (localApp != null) {
-      widget.onLaunchLocalApplication(localApp);
+  void _activate(ShellSearchTarget target, Rect _) {
+    if (target case ShellSearchWindowTarget(:final window)) {
+      _session.focus.unfocus();
+      widget.onActivateWindow(window.window);
     }
   }
 
-  @override
-  void dismissSearch() => widget.onDismiss();
-
-  @override
-  bool handleKeyWithoutQuery(LogicalKeyboardKey key) {
+  /// With nothing typed the arrows move between the overview's windows.
+  bool _keyWithoutQuery(LogicalKeyboardKey key) {
     final direction = switch (key) {
       LogicalKeyboardKey.arrowLeft => DesktopOverviewDirection.left,
       LogicalKeyboardKey.arrowRight => DesktopOverviewDirection.right,
@@ -238,17 +248,14 @@ class _DesktopOverviewHubState extends ConsumerState<DesktopOverviewHub>
       LogicalKeyboardKey.arrowDown => DesktopOverviewDirection.down,
       _ => null,
     };
-    if (direction != null) {
-      widget.onNavigate(direction);
-      return true;
+    if (direction == null) {
+      return false;
     }
-    if (key == LogicalKeyboardKey.enter ||
-        key == LogicalKeyboardKey.numpadEnter) {
-      widget.onActivateSelection();
-      return true;
-    }
-    return false;
+    widget.onNavigate(direction);
+    return true;
   }
+
+  void _submitWithoutQuery() => widget.onActivateSelection();
 
   void _overviewChanged(DesktopOverviewState? overview) {
     final hub = desktopOverviewIsHub(overview) ? overview : null;
@@ -256,9 +263,9 @@ class _DesktopOverviewHubState extends ConsumerState<DesktopOverviewHub>
     final closed = hub == null && _open != null;
     _open = hub;
     if (opened) {
-      startSearch();
+      _session.start();
     } else if (closed) {
-      searchFocusNode.unfocus();
+      _session.focus.unfocus();
     }
   }
 
@@ -271,11 +278,6 @@ class _DesktopOverviewHubState extends ConsumerState<DesktopOverviewHub>
       desktopWorkspaceProvider.select((state) => state.overview),
       (_, next) => _overviewChanged(next),
     );
-    ref.listen<int>(desktopOverviewSearchFocusProvider, (_, _) {
-      if (desktopOverviewIsHub(ref.read(desktopWorkspaceProvider).overview)) {
-        focusSearch();
-      }
-    });
     final overview = retainOverview(live);
     if (overview == null) {
       return const SizedBox.shrink();
@@ -283,32 +285,48 @@ class _DesktopOverviewHubState extends ConsumerState<DesktopOverviewHub>
     final interactive = identical(overview, live);
     final motion = ref.watch(desktopOverviewMotionProvider).presence;
     final content = overview.bounds;
-    // The search's catalog also names the app windows' app.
-    final listing = resolveSearch(context);
+    final index = _indexCache.resolve(context, ref);
     if (overview.appWindows case final appId?) {
       return IgnorePointer(
         child: _AppWindowsChrome(
           overview: overview,
           appId: appId,
-          appName: searchCatalog.nameForWindow(appId) ?? appId,
+          appName: index.appOfWindow(appId)?.name ?? appId,
           motion: motion,
         ),
       );
     }
+    final outcome = ref
+        .watch(shellSearchBackendProvider)
+        .search(
+          _session.query.text,
+          scope: ShellSearchScope.openWindows,
+          index: index,
+          windows: watchShellSearchWindows(
+            context,
+            ref,
+            ShellSearchWindows.desk,
+            index,
+          ),
+        );
     final field = DesktopOverviewHubMetrics.searchFieldOf(content);
-    final listHeight = DesktopSearchResultList.heightFor(
-      listing,
+    final listHeight = ShellSearchWindowResults.heightFor(
+      outcome,
       math.max(
-        DesktopSearchMetrics.rowHeight * 2,
+        ShellSearchMetrics.desktop.rowHeight * 2,
         (overview.backgroundBounds.bottom - field.bottom) * 0.62,
       ),
     );
     // The window chosen among the results is the overview's selection too,
     // so the arrows visibly move between the windows they choose.
-    if (interactive && listing.searching) {
-      final entries = listing.entries;
-      final selected = entries.isEmpty ? null : entries[searchSelected];
-      if (selected case DesktopSearchWindowEntry(:final window)
+    if (interactive && outcome.searching) {
+      final key = _session.chosen;
+      final chosen =
+          outcome.windows
+              .where((window) => 'w:${window.id}' == key)
+              .firstOrNull ??
+          outcome.windows.firstOrNull;
+      if (chosen case final window?
           when overview.selectedObjectId != window.id) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
@@ -338,7 +356,7 @@ class _DesktopOverviewHubState extends ConsumerState<DesktopOverviewHub>
             overview: overview,
             desktop: ref.read(desktopWorkspaceProvider),
             dragged: dragged,
-            listing: listing,
+            outcome: outcome,
             motion: motion,
             // A closing overview may zoom into another screen than the one
             // it opened on; the dimming fades instead of following it.
@@ -351,11 +369,13 @@ class _DesktopOverviewHubState extends ConsumerState<DesktopOverviewHub>
             motion: motion,
             child: IgnorePointer(
               ignoring: !interactive,
-              child: DesktopSearchField(
-                controller: searchController,
-                focusNode: searchFocusNode,
-                onSubmitted: submitSearch,
-                onClear: clearSearch,
+              child: ShellSearchField(
+                style: ShellSearchStyle.desktop,
+                controller: _session.query,
+                focusNode: _session.focus,
+                hint: context.l10n.shellSearchOpenWindowsHint,
+                onSubmitted: _session.submit,
+                onClear: _session.clear,
                 elevated: true,
               ),
             ),
@@ -367,15 +387,14 @@ class _DesktopOverviewHubState extends ConsumerState<DesktopOverviewHub>
           width: field.width,
           height: listHeight,
           child: IgnorePointer(
-            ignoring: !interactive || !listing.searching,
+            ignoring: !interactive || !outcome.searching,
             child: _Dropdown(
-              visible: interactive && listing.searching,
-              child: DesktopSearchResultList(
-                listing: listing,
-                selected: searchSelected,
-                catalog: searchCatalog,
-                onSelect: selectSearchEntry,
-                onActivate: activateSearchEntry,
+              visible: interactive && outcome.searching,
+              child: ShellSearchWindowResults(
+                session: _session,
+                outcome: outcome.searching ? outcome : ShellSearchOutcome.empty,
+                onOpenWindow: (window, rect) =>
+                    _activate(ShellSearchWindowTarget(window), rect),
               ),
             ),
           ),
@@ -453,7 +472,7 @@ class _SearchVeils extends StatelessWidget {
     required this.overview,
     required this.desktop,
     required this.dragged,
-    required this.listing,
+    required this.outcome,
     required this.motion,
     required this.shown,
   });
@@ -461,7 +480,7 @@ class _SearchVeils extends StatelessWidget {
   final DesktopOverviewState overview;
   final DesktopWorkspaceState desktop;
   final int? dragged;
-  final DesktopSearchListing listing;
+  final ShellSearchOutcome outcome;
   final Animation<double> motion;
   final bool shown;
 
@@ -471,7 +490,7 @@ class _SearchVeils extends StatelessWidget {
       overview: overview,
       desktop: desktop,
       dragged: dragged,
-      listing: listing,
+      outcome: outcome,
       windowRadius: context.shellTheme.windowRadius,
       cardRadius: context.shellTheme.panelRadius,
     );
@@ -497,25 +516,26 @@ class _SearchVeils extends StatelessWidget {
 /// overview is open, at [home] when closed, between them as it moves.
 typedef DesktopOverviewVeil = ({Rect home, Rect rect, double radius});
 
-/// What the hub dims while [listing] searches: every screen card none of
+/// What the hub dims while [outcome] searches: every screen card none of
 /// whose windows is found (with its label), and in a found card that is not
 /// a stack every window that is not found. Nothing while nothing is typed.
 List<DesktopOverviewVeil> desktopOverviewSearchVeils({
   required DesktopOverviewState overview,
   required DesktopWorkspaceState desktop,
   required int? dragged,
-  required DesktopSearchListing listing,
+  required ShellSearchOutcome outcome,
   required double windowRadius,
   required double cardRadius,
 }) {
   final screens = overview.workspaces?.screens;
-  if (!listing.searching || screens == null) {
+  if (!outcome.searching || screens == null) {
     return const <DesktopOverviewVeil>[];
   }
+  final found = {for (final window in outcome.windows) window.id};
   final workspaces = overview.workspaces!;
   final veils = <DesktopOverviewVeil>[];
   for (final card in screens.cards) {
-    if (!card.objectIds.any(listing.windowIds.contains)) {
+    if (!card.objectIds.any(found.contains)) {
       final rect = DesktopOverviewHubMetrics.cardVeil(card.geometry.rect);
       veils.add((
         home: workspaces.cameraRect(rect, screens.currentCardId ?? 1),
@@ -533,7 +553,7 @@ List<DesktopOverviewVeil> desktopOverviewSearchVeils({
       if (frame == null ||
           placement == null ||
           objectId == dragged ||
-          listing.windowIds.contains(objectId)) {
+          found.contains(objectId)) {
         continue;
       }
       veils.add((
@@ -617,7 +637,7 @@ class _AppWindowsChrome extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final windows = <int, DenialWindow>{
-      for (final window in ref.watch(desktopSearchWindowsProvider))
+      for (final window in ref.watch(shellSearchDeskWindowsProvider))
         window.objectId: window,
     };
     final theme = context.shellTheme;

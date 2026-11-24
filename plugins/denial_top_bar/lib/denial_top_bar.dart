@@ -11,7 +11,9 @@ export 'src/desktop_system_bar.dart'
     show
         DesktopSystemBar,
         DesktopSystemBarIndicatorSlot,
-        systemBarBatteryButtonKey;
+        systemBarBatteryButtonKey,
+        systemBarClockButtonKey,
+        systemBarControlCenterButtonKey;
 
 @Provides(ShellSurface)
 final class TopBarPlugin implements ShellSurface {

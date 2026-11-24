@@ -100,6 +100,66 @@ Baseline screenshots: `D:\androidlinux\device-logs\eb18-baseline\m*.png`.
   app, each card on screen leaving as a flung one does. Flinging one card
   closes that window, as now.
 
+### Recents: «Close all» (eb19)
+
+The owner: "in the tablet presentation, a button at the bottom to close the
+active windows instead of swiping each one away" (design, iteration 3,
+point 1).
+
+- **The button.** «Закрыть все» / "Close all" / «全部关闭», a pill 48 px tall
+  (about 10 mm at the 2.5 scale, Material's touch target) and at least
+  136 px wide, centred in the band between the cards and the bottom
+  gesture's area, at least 16 px clear of that area, so a tap on it is
+  never taken for the home swipe. It is glass like the shell's panels over
+  the wallpaper: a slice of the frost Recents already shares, under a light
+  tint, with no blur pass of its own (a solid tint with transparency off).
+  It fades in and out with the cards' labels, dims while pressed, and shows
+  only while Recents holds a card; with no apps Recents shows "No recent
+  apps" as before.
+- **What it closes.** Every card in Recents: each window of an app whose
+  windows are grouped (each its own card), both apps of a Split View pair
+  and the windows riding on a card (dialogs), Android (Droidloom) windows
+  alike. Each gets the close request a swiped card's app gets (the
+  compositor's `CloseWindow`: `xdg_toplevel.close`, `WM_DELETE_WINDOW` for
+  X11), once its card has left the screen. Nothing is killed.
+- **The motion.** Every card leaves the row where it is drawn and flies
+  straight up as a flung card does; Recents goes home at once behind them
+  (the scrim fades, home comes in), so the cards fly out over home. The
+  deck keeps drawing a leaving card where it left, whatever Recents does
+  meanwhile, until it is gone.
+- **An app that asks first.** An app may answer the close request with a
+  question, such as GNOME Text Editor's "Save changes?", and keep its
+  window open. Recents takes an app for one that asks when it opens a
+  window over its card (a dialog of its own: it counts at once) or still
+  has a window of the card open a second after the last app closed with it
+  (dialogs drawn inside the window, as libadwaita's). Such an app:
+  - is back in Recents at once, never hidden away as a closed app (before
+    eb19 a swiped app that kept its window vanished from Recents and the
+    app switcher until it closed);
+  - after «Close all», or whenever Recents has gone home meanwhile, comes
+    to the front with its question, opening as from its home icon, so the
+    question is neither hidden nor lost. With several, the one used last
+    comes first, and each next one once the one in front has closed;
+  - while Recents is still open (one card flung of several), only comes
+    back to the row: Recents does not pull the user out of it;
+  - and when the user turns elsewhere (home, another app), the rest stay in
+    Recents without coming forward.
+
+  A window of an app being closed from Recents never comes to the front
+  by the compositor's focus fallback as the others close.
+- **Open: one slow frame as Recents leaves with an empty row.** Measured on
+  the tablet (eb19~r1, kernel trace, the virtual input's own markers): the
+  first frame after the tap takes about 50 ms of raster (build 2 ms), then
+  the cards fly at 120 Hz. eb18 has the same 58 ms stall whenever the last
+  card is swiped away; «Close all» meets it at the tap because the row
+  empties there. Recents left with cards in the row (a tap beside them)
+  costs 12 to 15 ms, the per-app close-all (Recents stays) nothing extra,
+  and «Close all» without going home at once moves the stall to the moment
+  the last card is gone. Not the minimize of the app in front, the frozen
+  poses or the labels' fade (diagnostic toggles, eb19~rdiag1). The cause is
+  not found yet; the next toggles (eb19~rdiag2: the Recents layer hidden,
+  home's fade, the frost, the scrim, the pill, the cards) are built.
+
 ## Split View (iPadOS-like), two apps side by side
 
 ### Where the split lives: deniald

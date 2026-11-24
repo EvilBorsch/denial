@@ -370,6 +370,7 @@ pub(super) fn process_flutter_input_event(
                     );
                     let frontend = state.frontend_mut();
                     frontend.client_touch_routes.insert(slot, route);
+                    frontend.client_touch_downs.insert(slot, (serial, position));
                     frontend.client_touch_frame_pending = true;
                     let candidate = frontend.input_layout.as_ref().and_then(|layout| {
                         super::edge_swipe::EdgeSwipeCandidate::at(
@@ -1196,7 +1197,7 @@ fn begin_touch_divider(state: &mut RuntimeState, slot: i32, position: Point<f64,
     state
         .frontend_mut()
         .touch_dividers
-        .take(slot, position, hit, double);
+        .take(slot, position, vec![hit], double);
     true
 }
 
@@ -1225,10 +1226,18 @@ fn even_out_divider(
 
 #[cfg(feature = "flutter")]
 fn drag_touch_divider(state: &mut RuntimeState, slot: i32, position: Point<f64, Logical>) {
-    let Some((hit, Some(boundary))) = state.frontend().touch_dividers.motion(slot, position) else {
+    let Some(boundaries) = state.frontend().touch_dividers.motion(slot, position) else {
         return;
     };
-    let changed = state.frontend_mut().drag_layout_divider_to(&hit, boundary);
+    let mut changed: Vec<(smithay::desktop::Window, Rectangle<i32, Logical>)> = Vec::new();
+    for (hit, boundary) in boundaries {
+        for (window, geometry) in state.frontend_mut().drag_layout_divider_to(&hit, boundary) {
+            // A corner's second split can move a tile the first did: its
+            // final rectangle is the one to publish.
+            changed.retain(|(moved, _)| moved != &window);
+            changed.push((window, geometry));
+        }
+    }
     if changed.is_empty() {
         return;
     }
@@ -1253,8 +1262,31 @@ pub(in super::super) fn end_touch_divider(
     drag: super::super::TouchDivider,
 ) {
     if !drag.moved.is_empty() {
-        let boundary = state.frontend().refreshed_divider_hit(&drag.hit).boundary();
-        info!(boundary, "finger released a split divider");
+        let boundaries = drag
+            .handles
+            .iter()
+            .map(|handle| {
+                state
+                    .frontend()
+                    .refreshed_divider_hit(&handle.hit)
+                    .boundary()
+            })
+            .collect::<Vec<_>>();
+        // The tiles as the drag left them (x, y, width, height).
+        let tiles = drag
+            .moved
+            .iter()
+            .map(|window| {
+                let geometry = state.frontend().window_geometry_target(window);
+                (
+                    geometry.loc.x,
+                    geometry.loc.y,
+                    geometry.size.w,
+                    geometry.size.h,
+                )
+            })
+            .collect::<Vec<_>>();
+        info!(?boundaries, ?tiles, "finger released a split divider");
     }
     for window in drag.moved {
         let geometry = state.frontend().window_geometry_target(&window);
@@ -1370,9 +1402,97 @@ fn begin_divider_grab(state: &mut RuntimeState, button: u32, serial: Serial) -> 
     let pointer = frontend.seat.get_pointer().expect("seat has no pointer");
     pointer.set_grab(
         state,
-        super::super::super::window_grab::DividerGrab::new(start_data, hit, !double),
+        super::super::super::window_grab::DividerGrab::new(start_data, vec![hit], !double),
         serial,
         Focus::Clear,
+    );
+    state.scene_sync.mark_dirty();
+    true
+}
+
+/// The press a tiled client's resize request names: the pointer button it
+/// holds (with the serial the grab takes over), or a finger on it.
+#[cfg(feature = "flutter")]
+pub(in super::super) enum TiledResizePress {
+    Pointer(GrabStartData<RuntimeState>, Serial),
+    Touch {
+        slot: i32,
+        position: Point<f64, Logical>,
+    },
+}
+
+/// A tiled client asked to be resized from `edges` of its own frame
+/// (`xdg_toplevel.resize`, or an X11 client's `_NET_WM_MOVERESIZE`). Each
+/// edge a split neighbour shares drags that split, exactly as a press on its
+/// divider would, so both sides resize and keep filling the screen; a
+/// corner drags the split on each of its edges. An edge on the screen's
+/// outer border has nothing to give way: the window keeps filling the
+/// screen that way. Returns whether a drag began.
+#[cfg(feature = "flutter")]
+pub(in super::super) fn begin_tiled_edge_resize(
+    state: &mut RuntimeState,
+    window: &smithay::desktop::Window,
+    edges: crate::window_layout::LayoutResizeEdges,
+    press: TiledResizePress,
+) -> bool {
+    let Some(resize) = state.frontend().tiled_edge_resize(window, edges) else {
+        info!(
+            ?edges,
+            "tiled client resize ignored: no layout tiles the window here"
+        );
+        return false;
+    };
+    let by_touch = matches!(press, TiledResizePress::Touch { .. });
+    if resize.hits.is_empty() {
+        info!(
+            ?edges,
+            by_touch,
+            "tiled client resize ignored: the edge is the screen's outer border, the window keeps filling it"
+        );
+        return false;
+    }
+    let boundaries = resize
+        .hits
+        .iter()
+        .map(super::super::DividerHit::boundary)
+        .collect::<Vec<_>>();
+    match press {
+        TiledResizePress::Pointer(start_data, serial) => {
+            let frontend = state.frontend_mut();
+            frontend.set_compositor_pointer_grab_active(true);
+            frontend.set_divider_cursor(Some(resize.cursor));
+            let pointer = frontend.seat.get_pointer().expect("seat has no pointer");
+            pointer.set_grab(
+                state,
+                super::super::super::window_grab::DividerGrab::new(start_data, resize.hits, true),
+                serial,
+                Focus::Clear,
+            );
+        }
+        TiledResizePress::Touch { slot, position } => {
+            if !state.frontend().touch_dividers.may_take(false) {
+                info!(
+                    ?edges,
+                    "tiled client resize ignored: another finger holds a divider"
+                );
+                return false;
+            }
+            // The client let go of the contact by asking for the resize;
+            // its touch ends here and the finger drives the splits.
+            cancel_captured_touch_routes(state, &[slot]);
+            state
+                .frontend_mut()
+                .touch_dividers
+                .take(slot, position, resize.hits, false);
+        }
+    }
+    info!(
+        ?edges,
+        outer = ?resize.outer,
+        by_touch,
+        cursor = resize.cursor,
+        ?boundaries,
+        "tiled client resize took split dividers"
     );
     state.scene_sync.mark_dirty();
     true

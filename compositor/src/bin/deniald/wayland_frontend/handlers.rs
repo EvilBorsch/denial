@@ -1,6 +1,8 @@
 #[cfg(feature = "flutter")]
 use super::super::render_audit_enabled;
 use super::focus::request_keyboard_focus;
+#[cfg(feature = "flutter")]
+use super::input::flutter_route::{TiledResizePress, begin_tiled_edge_resize};
 use super::managed_window::ManagedWindow;
 use super::window_management::{
     ManagedClientStateRequest, activate_window, apply_managed_client_state_request,
@@ -10,6 +12,7 @@ use super::window_management::{
 use super::window_management::{
     activate_topmost_window, apply_managed_minimize, queue_client_window_placement_for_monitor,
     queue_restored_window_state, queue_window_placement, release_window_focus,
+    tiled_client_resize_allowed,
 };
 use super::*;
 use smithay::backend::renderer::utils::RendererSurfaceStateUserData;
@@ -2172,6 +2175,37 @@ impl XdgShellHandler for RuntimeState {
         let Some(window) = window else {
             return;
         };
+        // A tiled window resizes by dragging the splits beside the edge it
+        // names, so its split neighbours give way and the screen stays
+        // filled.
+        #[cfg(feature = "flutter")]
+        if tiled_client_resize_allowed(self, &window) {
+            let (Some(edges), Some(seat)) =
+                (ResizeEdges::from_xdg(edge), Seat::from_resource(&seat))
+            else {
+                return;
+            };
+            let press = self
+                .frontend_mut()
+                .take_client_pointer_press(surface.wl_surface(), serial)
+                .or_else(|| checked_pointer_grab(&seat, surface.wl_surface(), serial))
+                .map(|start_data| TiledResizePress::Pointer(start_data, serial))
+                .or_else(|| {
+                    self.frontend_mut()
+                        .take_client_touch_press(surface.wl_surface(), serial)
+                        .map(|(slot, position)| TiledResizePress::Touch { slot, position })
+                });
+            match press {
+                Some(press) => {
+                    begin_tiled_edge_resize(self, &window, edges.layout_edges(), press);
+                }
+                None => warn!(
+                    ?serial,
+                    "rejected tiled XDG resize without a matching implicit grab"
+                ),
+            }
+            return;
+        }
         if !managed_client_grab_allowed(self, &window) {
             warn!("ignored managed-window resize while its geometry is constrained");
             return;
