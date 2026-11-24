@@ -1627,9 +1627,13 @@ impl WaylandFrontend {
         let Some(window_id) = self.surface_ids.get(&surface).copied() else {
             return false;
         };
+        let in_tablet = minimized && self.desktop_layout_dormant();
         let record = self.window_registry.ensure(WindowId::new(window_id));
         let changed = record.minimized != minimized;
         record.minimized = minimized;
+        if changed || !minimized {
+            record.minimized_in_tablet = in_tablet;
+        }
         if changed {
             if minimized {
                 let fallback = self

@@ -3007,9 +3007,13 @@ pub(super) fn apply_managed_minimize(
         minimize_split_view_partner(state, window);
     }
     if minimized {
-        state
-            .frontend_mut()
-            .remove_window_from_layout(window, false);
+        // The phone alone keeps the desktop's layout as it is: the desktop
+        // shows the app on its screen again (`presentation_switch.rs`).
+        if !state.frontend().desktop_layout_dormant() {
+            state
+                .frontend_mut()
+                .remove_window_from_layout(window, false);
+        }
         release_window_focus(state, window);
         queue_window_action_for_window(state, window, WindowAction::Minimize);
     } else {

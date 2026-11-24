@@ -480,6 +480,31 @@ where
         Vec::new()
     }
 
+    /// The screen of `window` in the full-screen apps layout, when its only
+    /// tiles are two side by side: the left one, the right one and the left
+    /// one's share of the width. The tablet presentation shows such a screen
+    /// as a Split View pair. `work_area` resolves a split that follows the
+    /// screen's shape. None in other layouts and for other screens.
+    fn side_by_side(
+        &self,
+        _window: &WindowId,
+        _work_area: Rectangle<i32, Logical>,
+    ) -> Option<(WindowId, WindowId, f64)> {
+        None
+    }
+
+    /// Gives the left tile of `window`'s side-by-side screen (see
+    /// [`Self::side_by_side`]) `share` of the width, within the split limits
+    /// (10–90 %). Returns whether the split changed.
+    fn set_side_by_side_share(
+        &mut self,
+        _window: &WindowId,
+        _share: f64,
+        _work_area: Rectangle<i32, Logical>,
+    ) -> bool {
+        false
+    }
+
     /// Arrange one output. `gap` is the logical distance between siblings;
     /// outer insets are already reflected in `work_area`.
     fn arrange(
@@ -752,6 +777,45 @@ where
             Self::Window(_) => 1,
             Self::Split { first, second, .. } => first.leaf_count() + second.leaf_count(),
         }
+    }
+
+    /// Two tiles side by side in `geometry` and nothing else: the left one,
+    /// the right one and the left one's share.
+    fn side_by_side(&self, geometry: Rectangle<i32, Logical>) -> Option<(WindowId, WindowId, f64)> {
+        let Self::Split {
+            axis,
+            ratio,
+            first,
+            second,
+        } = self
+        else {
+            return None;
+        };
+        match (first.as_ref(), second.as_ref()) {
+            (Self::Window(left), Self::Window(right))
+                if resolved_split_axis(*axis, geometry) == LayoutAxis::Horizontal =>
+            {
+                Some((left.clone(), right.clone(), *ratio))
+            }
+            _ => None,
+        }
+    }
+
+    /// Gives the left tile of a [`Self::side_by_side`] tree `share` of the
+    /// width, within the split limits.
+    fn set_side_by_side_share(&mut self, share: f64, geometry: Rectangle<i32, Logical>) -> bool {
+        if self.side_by_side(geometry).is_none() || !share.is_finite() {
+            return false;
+        }
+        let Self::Split { ratio, .. } = self else {
+            return false;
+        };
+        let share = share.clamp(0.1, 0.9);
+        if (*ratio - share).abs() < 1e-9 {
+            return false;
+        }
+        *ratio = share;
+        true
     }
 
     fn retained(self, keep: &impl Fn(&WindowId) -> bool) -> Option<Self> {
@@ -3262,6 +3326,43 @@ where
         self.rows.get(&space).map_or_else(Vec::new, |row| {
             row.screens(work_area, gap, &self.minimum_sizes)
         })
+    }
+
+    fn side_by_side(
+        &self,
+        window: &WindowId,
+        work_area: Rectangle<i32, Logical>,
+    ) -> Option<(WindowId, WindowId, f64)> {
+        if !self.mode.screens() {
+            return None;
+        }
+        // A screen fills the work area, so its split follows that shape.
+        self.rows.values().find_map(|row| {
+            let index = row.position(window)?;
+            row.columns[index].root.side_by_side(work_area)
+        })
+    }
+
+    fn set_side_by_side_share(
+        &mut self,
+        window: &WindowId,
+        share: f64,
+        work_area: Rectangle<i32, Logical>,
+    ) -> bool {
+        if !self.mode.screens() {
+            return false;
+        }
+        self.rows
+            .values_mut()
+            .find_map(|row| {
+                let index = row.position(window)?;
+                Some(
+                    row.columns[index]
+                        .root
+                        .set_side_by_side_share(share, work_area),
+                )
+            })
+            .unwrap_or(false)
     }
 
     fn arrange(
