@@ -18,9 +18,23 @@ const ShellThemeData owner = ShellThemeData(
 );
 
 // A libadwaita app on one screen of the screens layout: full width under the
-// 55 px top bar, translucent only at its 12 px rounded corners.
+// 55 px top bar.
 const Size screenWindow = Size(1696, 1145);
-const double libadwaitaCorner = 12;
+
+// What its opaque region leaves out. GTK 4.16 and later declare the largest
+// rectangle the window rounded by 15 px covers: the bands above and below
+// it. Older GTK declares the four rounded corners.
+List<Rect> gtk4Bands(Size window) => [
+  Rect.fromLTWH(0, 0, window.width, 15),
+  Rect.fromLTWH(0, window.height - 15, window.width, 15),
+];
+
+List<Rect> olderGtkCorners(Size window) => [
+  const Rect.fromLTWH(0, 0, 12, 12),
+  Rect.fromLTWH(window.width - 12, 0, 12, 12),
+  Rect.fromLTWH(0, window.height - 12, 12, 12),
+  Rect.fromLTWH(window.width - 12, window.height - 12, 12, 12),
+];
 
 Matrix4 placedAt(Offset origin, {double cardScale = 1}) =>
     Matrix4.diagonal3Values(scale, scale, 1)
@@ -40,28 +54,28 @@ Rect roundOut(Rect rect) => Rect.fromLTRB(
 );
 
 List<WindowPlanePiece>? piecesFor(
-  Size window, {
+  Size window,
+  List<Rect> translucent, {
   required Matrix4 toDevice,
-  double corner = libadwaitaCorner,
 }) => windowPlaneMaterialPieces(
   bounds: Offset.zero & window,
   content: Offset.zero & window,
-  corner: Size(corner, corner),
+  translucent: translucent,
   reach: owner.windowMaterialReach,
   toDevice: toDevice,
   viewport: pad,
 );
 
-/// Every property that makes the corner glass look exactly as the whole
-/// window's: the pieces cover the window once, every translucent pixel and
-/// all it reads lie in a corner piece, and each corner piece rounds to a
-/// rectangle on the whole window's blur grid.
+/// Every property that makes the pieces' glass look exactly as the whole
+/// window's: the pieces cover the window once, every translucent part and
+/// all its material reads lie in one material piece, and each material piece
+/// rounds to a rectangle on the whole window's blur grid.
 void expectSameGlass(
   List<WindowPlanePiece> pieces,
   Size window,
-  Matrix4 toDevice, {
-  double corner = libadwaitaCorner,
-}) {
+  List<Rect> translucent,
+  Matrix4 toDevice,
+) {
   final content = device(toDevice, Offset.zero & window);
   final whole = roundOut(content.intersect(pad));
   final scissors = [
@@ -79,12 +93,11 @@ void expectSameGlass(
     }
   }
   // No pixel left out.
+  double area(Rect rect) =>
+      math.max(0, rect.width) * math.max(0, rect.height);
   final covered = scissors.fold<double>(
     0,
-    (sum, rect) =>
-        sum +
-        math.max(0, rect.intersect(whole).width) *
-            math.max(0, rect.intersect(whole).height),
+    (sum, rect) => sum + area(rect.intersect(whole)),
   );
   expect(covered, whole.width * whole.height);
 
@@ -93,33 +106,10 @@ void expectSameGlass(
     for (final piece in pieces.where((piece) => piece.material))
       roundOut(device(toDevice, piece.clip).intersect(content).intersect(pad)),
   ];
-  expect(sides, hasLength(4));
-  final cornerSize = corner * toDevice.storage[0];
-  final translucent = [
-    Rect.fromLTWH(content.left, content.top, cornerSize, cornerSize),
-    Rect.fromLTWH(
-      content.right - cornerSize,
-      content.top,
-      cornerSize,
-      cornerSize,
-    ),
-    Rect.fromLTWH(
-      content.left,
-      content.bottom - cornerSize,
-      cornerSize,
-      cornerSize,
-    ),
-    Rect.fromLTWH(
-      content.right - cornerSize,
-      content.bottom - cornerSize,
-      cornerSize,
-      cornerSize,
-    ),
-  ];
-  for (final square in translucent) {
-    final visible = square.intersect(pad);
+  expect(sides, isNotEmpty);
+  for (final part in translucent) {
+    final visible = device(toDevice, part).intersect(pad);
     if (visible.width <= 0 || visible.height <= 0) continue;
-    // Within one piece together with everything its material reads.
     final needs = visible.inflate(reach).intersect(whole);
     expect(
       sides.any(
@@ -128,15 +118,23 @@ void expectSameGlass(
             side.contains(needs.bottomRight - const Offset(0.01, 0.01)),
       ),
       isTrue,
-      reason: 'the corner $square and its reach lie in no material piece',
+      reason: 'the translucent part $part and its reach lie in no piece',
     );
   }
   for (final side in sides) {
-    expect((whole.width - side.width) % 16, 0);
-    expect((whole.height - side.height) % 16, 0);
     expect((side.left - whole.left) % 16, 0);
     expect((side.top - whole.top) % 16, 0);
+    expect((whole.right - side.right) % 16, 0);
+    expect((whole.bottom - side.bottom) % 16, 0);
   }
+}
+
+double materialShare(List<WindowPlanePiece> pieces, Matrix4 toDevice) {
+  final material = pieces
+      .where((piece) => piece.material)
+      .map((piece) => device(toDevice, piece.clip).intersect(pad))
+      .fold<double>(0, (sum, rect) => sum + rect.width * rect.height);
+  return material / (pad.width * 2290);
 }
 
 void main() {
@@ -155,49 +153,74 @@ void main() {
   });
 
   test(
-    'a full-screen app evaluates its glass only around its four corners',
+    'a full-screen GTK 4 app evaluates its glass only along top and bottom',
     () {
       final toDevice = placedAt(const Offset(0, 55));
-      final pieces = piecesFor(screenWindow, toDevice: toDevice)!;
-      expect(pieces.where((piece) => piece.material), hasLength(4));
-      expect(pieces.where((piece) => !piece.material), hasLength(3));
-      expectSameGlass(pieces, screenWindow, toDevice);
-      final material = pieces
-          .where((piece) => piece.material)
-          .map((piece) => device(toDevice, piece.clip).intersect(pad))
-          .fold<double>(0, (sum, rect) => sum + rect.width * rect.height);
-      // Under a fifteenth of the window instead of all of it.
-      expect(material, lessThan(pad.width * 2290 / 15));
+      final bands = gtk4Bands(screenWindow);
+      final pieces = piecesFor(screenWindow, bands, toDevice: toDevice)!;
+      expect(pieces.where((piece) => piece.material), hasLength(2));
+      expect(pieces.where((piece) => !piece.material), hasLength(1));
+      expectSameGlass(pieces, screenWindow, bands, toDevice);
+      // A third of the window instead of all of it.
+      expect(materialShare(pieces, toDevice), lessThan(0.36));
     },
   );
 
+  test('an app of older GTK evaluates its glass only around its corners', () {
+    final toDevice = placedAt(const Offset(0, 55));
+    final corners = olderGtkCorners(screenWindow);
+    final pieces = piecesFor(screenWindow, corners, toDevice: toDevice)!;
+    expect(pieces.where((piece) => piece.material), hasLength(4));
+    expectSameGlass(pieces, screenWindow, corners, toDevice);
+    expect(materialShare(pieces, toDevice), lessThan(1 / 15));
+  });
+
   test('an app sliding along the strip keeps the same glass at every frame', () {
-    for (final x in [-1033.37, -401.5, 0.25, 123.37, 840.81, 1500.06]) {
-      final toDevice = placedAt(Offset(x, 55));
-      final pieces = piecesFor(screenWindow, toDevice: toDevice);
-      if (pieces == null) {
-        // So far off screen that its corners' pieces would cover half of
-        // what is left: one material, as before.
-        expect(x.abs(), greaterThan(1000));
-        continue;
+    for (final parts in [gtk4Bands, olderGtkCorners]) {
+      for (final x in [-1033.37, -401.5, 0.25, 123.37, 840.81, 1500.06]) {
+        final toDevice = placedAt(Offset(x, 55));
+        final translucent = parts(screenWindow);
+        final pieces = piecesFor(
+          screenWindow,
+          translucent,
+          toDevice: toDevice,
+        );
+        if (pieces == null) {
+          // So far off screen that its material pieces would cover most of
+          // what is left: one material, as before.
+          expect(x.abs(), greaterThan(1000));
+          continue;
+        }
+        expectSameGlass(pieces, screenWindow, translucent, toDevice);
       }
-      expectSameGlass(pieces, screenWindow, toDevice);
     }
   });
 
-  test('cards too small for corner pieces keep one material', () {
+  test('one material where pieces would cover most of the window', () {
     // An overview card: the material's reach covers most of it.
+    const card = Size(520, 352);
     expect(
       piecesFor(
-        const Size(520, 352),
+        card,
+        gtk4Bands(card),
         toDevice: placedAt(const Offset(80, 300)),
       ),
+      isNull,
+    );
+    // Translucent along every edge.
+    expect(
+      piecesFor(screenWindow, [
+        ...gtk4Bands(screenWindow),
+        const Rect.fromLTWH(0, 0, 15, 1145),
+        const Rect.fromLTWH(1681, 0, 15, 1145),
+      ], toDevice: placedAt(const Offset(0, 55))),
       isNull,
     );
     // A rotated window: no axis-aligned pieces.
     expect(
       piecesFor(
         screenWindow,
+        gtk4Bands(screenWindow),
         toDevice: Matrix4.rotationZ(0.1)..scaleByDouble(scale, scale, 1, 1),
       ),
       isNull,

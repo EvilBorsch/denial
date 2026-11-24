@@ -248,7 +248,7 @@ class DenialWindow {
     this.splitViewPartnerObjectId,
     this.splitViewRatio = 0.0,
     this.onPhone = false,
-    this.translucentCorner = 0.0,
+    this.translucentRects = const <Rect>[],
   });
 
   final int objectId;
@@ -331,11 +331,11 @@ class DenialWindow {
   /// Split View half. A presentation switch is laid out once the windows
   /// it shows say so.
   final bool onPhone;
-  /// The client is opaque everywhere but in a square of this side, in
-  /// logical pixels of its content, at each corner: rounded corners as its
-  /// Wayland opaque region declares them. 0 when no such bound is known.
-  /// Meaningful for [DenialWindowOpacityClass.borderAlphaOnly] windows.
-  final double translucentCorner;
+  /// [DenialWindowOpacityClass.borderAlphaOnly]: the only parts of the
+  /// content where the client can be translucent, relative to its origin in
+  /// logical pixels, as its Wayland opaque region declares them (rounded
+  /// corners, or the bands above and below them). Empty when unknown.
+  final List<Rect> translucentRects;
 
   /// The window shares the phone's screen in Split View.
   bool get inSplitView => splitViewPartnerObjectId != null;
@@ -607,7 +607,7 @@ class DenialWindow {
         other.splitViewPartnerObjectId == splitViewPartnerObjectId &&
         other.splitViewRatio == splitViewRatio &&
         other.onPhone == onPhone &&
-        other.translucentCorner == translucentCorner &&
+        listEquals(other.translucentRects, translucentRects) &&
         listEquals(other.surfaceLayers, surfaceLayers);
   }
 
@@ -670,7 +670,7 @@ class DenialWindow {
     splitViewPartnerObjectId,
     splitViewRatio,
     onPhone,
-    translucentCorner,
+    ...translucentRects,
     ...surfaceLayers,
   ]);
 }

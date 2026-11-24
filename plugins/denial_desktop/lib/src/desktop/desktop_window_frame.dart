@@ -920,7 +920,7 @@ class _DesktopSurfaceTexture extends StatefulWidget {
     required this.frameWidth,
     required this.frameColor,
     required this.backdrop,
-    required this.translucentCorners,
+    required this.translucentRegion,
     required this.materialReach,
   });
 
@@ -934,7 +934,7 @@ class _DesktopSurfaceTexture extends StatefulWidget {
   final double frameWidth;
   final Color frameColor;
   final ImageFilterConfig? backdrop;
-  final Size? translucentCorners;
+  final List<Rect>? translucentRegion;
   final double materialReach;
 
   @override
@@ -1009,22 +1009,28 @@ class _DesktopWindowContent extends ConsumerWidget {
         child: _buildContent(context),
       );
     }
-    // A client translucent only at its rounded corners shows the material
-    // only there, unless the shell makes the whole window translucent.
-    // DENIAL_LEAN_GLASS=0 evaluates it over the whole window, as before.
-    final translucentCorners =
+    // A client translucent only in parts, such as its rounded corners, shows
+    // the material only there, unless the shell makes the whole window
+    // translucent. DENIAL_LEAN_GLASS=0 evaluates it over the whole window,
+    // as before.
+    final translucentRegion =
         ref
                 .watch(startupEnvironmentProvider)
                 .flag('DENIAL_LEAN_GLASS', defaultValue: true) &&
             windowOpacity >= 1 &&
             window.opacityClass == DenialWindowOpacityClass.borderAlphaOnly &&
-            window.translucentCorner > 0 &&
+            window.translucentRects.isNotEmpty &&
             window.contentWidth > 0 &&
             window.contentHeight > 0
-        ? Size(
-            window.translucentCorner / window.contentWidth,
-            window.translucentCorner / window.contentHeight,
-          )
+        ? [
+            for (final part in window.translucentRects)
+              Rect.fromLTRB(
+                part.left / window.contentWidth,
+                part.top / window.contentHeight,
+                part.right / window.contentWidth,
+                part.bottom / window.contentHeight,
+              ),
+          ]
         : null;
     return _DesktopSurfaceTexture(
       window: window,
@@ -1037,7 +1043,7 @@ class _DesktopWindowContent extends ConsumerWidget {
       frameWidth: frameWidth,
       frameColor: frameColor,
       backdrop: backdrop,
-      translucentCorners: translucentCorners,
+      translucentRegion: translucentRegion,
       materialReach: theme.windowMaterialReach,
     );
   }
@@ -1113,7 +1119,7 @@ class _DesktopSurfaceTextureState extends State<_DesktopSurfaceTexture> {
         frameWidth: widget.frameWidth,
         frameColor: widget.frameColor,
         backdrop: widget.backdrop,
-        translucentCorners: widget.translucentCorners,
+        translucentRegion: widget.translucentRegion,
         materialReach: widget.materialReach,
         filterQuality: filterQuality,
         presentationScale: widget.presentationScale,
