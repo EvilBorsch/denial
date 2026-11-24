@@ -215,3 +215,46 @@ The owner wants the useful parts of this work in the tablet presentation, for th
 - The agent installs it on the tablet and tests it there itself (owner's standing permission for this work: install packages, restart the Denial session, unlock with the owner's password from the T3 secret file, use Stay awake during tests). Then it iterates until the checks pass.
 - No partitions and no reboots.
 - At the end: if the checks pass, the owner's session is left in desktop mode with the screens layout and the Mac preset on, Stay awake off. The report says how to switch back.
+
+# Iteration 3: eb19 (2026-11-24)
+
+The owner used eb18 and said "all great, but" listed six points (quoted, translated). They still want autonomous work without questions; every interpretation below is the agent's call.
+
+1. **"In the tablet presentation, a button at the bottom to close the active windows instead of swiping each one away."**
+   - A "Close all" button («Закрыть все») at the bottom of Recents, as on Android and iPadOS app switchers.
+   - It closes every app in Recents. Windows get a normal close request; apps that ask to save (unsaved documents) are not killed and keep their dialog.
+   - Recents then goes home.
+2. **"Animations, at least in the desktop presentation, don't feel like 120 FPS. Animations must run at 120 fps with no lag or stutter."**
+   - Target: every shell animation and gesture-driven motion on the 120 Hz panel presents a new frame on every vblank. A missed frame is a bug.
+   - This covers: strip swipe and snap, overview and app windows following the fingers, the switcher, search, the launcher, Split View, and the presentation switch.
+   - Measure first, on the tablet, before and after each fix:
+     - prior work and tools are in `D:\androidlinux\research\smooth-frames.md`, `tools/tab/smooth-sample.sh` and `tools/smooth-analyze.py` (vblank, flips, GPU jobs, GPU/CPU frequencies);
+     - also use deniald's render audit (`docs/RENDER_AUDIT.md`) and Flutter frame timings.
+   - Find the real causes: blur cost, too many layers, shader compilation (jank on first use), CPU or GPU frequency ramp, scheduling, client buffers, allocation on the frame path, and so on. Fix them properly.
+   - Report per-animation numbers (frames presented / vblanks, worst gap) before and after.
+3. **"Window search in the multitasking menu must go over the active apps."**
+   - The overview (three fingers up) searches only what is open: running apps and their windows.
+   - It no longer lists apps to launch. Launching is the job of the one search in 4.
+4. **"Super and Alt+F: search must be one, not two different ones."**
+   - One search UI (Spotlight-like) for every entry point: a bare Super tap, Alt+F in the Mac preset, Super+S, and four fingers up.
+   - The separate small launcher strip goes away in the desktop presentation, replaced by this search.
+   - With an empty query it shows recent apps and the full app list (Launchpad-like, scrollable grid). Typing filters apps first and open windows second. Enter launches or switches.
+   - In the tablet presentation, the drawer search and the pull-down search use the same component.
+5. **"After opening windows 50/50 I must be able to resize them with the mouse, and resizing one window resizes the other so both fill the screen. With the mouse I must also be able to detach a window from this mode back to full screen, by dragging it out in the three-fingers-up view. Now that only works by dropping it into the narrow gap between two full-screen windows."**
+   - **Resize from the window's own edge.** Tiled clients send `xdg_toplevel.resize` (and X11 equivalents) when their client-side edge is dragged, and today those requests are refused. Turn such a request on a shared edge into a drag of that split, so both windows resize and together fill the screen.
+   - **The divider zone itself** must be easy to hit with the touchpad cursor: a resize cursor on hover, at least 16 logical px.
+   - **Verify with real clients** (GTK4 with CSD, Firefox, an X11 app) and a real pointer, not only the virtual mouse.
+   - **Detach in the overview.** Dragging a window out of a split card and dropping it anywhere that is not another card makes it its own full-screen screen, placed right after its former screen. That covers empty overview space, the margins, and below or above the cards.
+     - A clear drop hint shows while dragging, for example a "new screen" placeholder that appears as soon as the window leaves its card.
+     - The gap drop for exact placement stays.
+6. **"There are bugs with windows when switching from the tablet to the desktop presentation. This switch must be seamless."**
+   - Reproduce with several apps open, including a Split View pair in the tablet presentation and a split screen in the desktop one, in both directions, using `erhai-pogo-replug` and the tile.
+   - Requirements:
+     - no window lost, duplicated, off-screen, black or wrongly sized;
+     - focus and order kept: the tablet's current app becomes the current screen;
+     - Split View maps to a split screen and back;
+     - floating dialogs stay with their parents;
+     - the change is animated smoothly at 120 fps, without flashes of the wallpaper or a lock-screen flicker.
+   - Write down each bug found with its cause and fix.
+
+Delivery as before: package `denial 0.6.8-1+eb19`. Build, install and verify on the tablet autonomously, under the same permissions and limits (no partitions, no reboots, battery ≥ 40 %, Stay awake only during tests). Merge into the forks' `eb/main` once verified on the tablet. End state as for eb18.
