@@ -5423,4 +5423,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String screensOverviewStackExpand(String app) {
     return '分别显示 $app 的窗口';
   }
+
+  @override
+  String get screensOverviewNewScreen => '新屏幕';
 }

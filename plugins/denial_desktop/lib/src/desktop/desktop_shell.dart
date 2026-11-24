@@ -1229,8 +1229,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   }
 
   /// Ends a drag in the screens overview: joining a screen's split on the
-  /// side it landed on, or taking a screen of its own in a gap. The preview
-  /// returns to its card; the compositor's new arrangement moves it.
+  /// side it landed on, or taking a screen of its own in a gap or, out of
+  /// its split, anywhere else. The preview returns to its card; the
+  /// compositor's new arrangement moves it.
   void _dropOverviewWindowOnScreens(DenialWindow window) {
     final controller = ref.read(desktopWorkspaceProvider.notifier);
     final drop = controller.planScreensDrop(window.objectId);

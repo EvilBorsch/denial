@@ -10163,6 +10163,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Show each window of {app}'**
   String screensOverviewStackExpand(String app);
+
+  /// Placeholder card in the screens overview where a window dragged out of a split screen becomes a full-screen screen of its own.
+  ///
+  /// In en, this message translates to:
+  /// **'New screen'**
+  String get screensOverviewNewScreen;
 }
 
 class _AppLocalizationsDelegate

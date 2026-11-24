@@ -7634,5 +7634,6 @@
   },
   "settingsWindowLayoutScreens": "На весь экран",
   "screensOverviewStackCount": "{count, plural, one{{count} окно} few{{count} окна} many{{count} окон} other{{count} окна}}",
-  "screensOverviewStackExpand": "Показать каждое окно: {app}"
+  "screensOverviewStackExpand": "Показать каждое окно: {app}",
+  "screensOverviewNewScreen": "Новый экран"
 }

@@ -369,4 +369,177 @@ void main() {
       expect(drop(7, quarters.cards[0].geometry.contentRect.center), isNull);
     });
   });
+
+  group('a tile dragged out of its split', () {
+    final items = [
+      _window(1, 1, app: 'firefox'),
+      ..._split(2, 3, 2),
+      _window(4, 3, app: 'settings'),
+    ];
+    final plain = DesktopScreensOverviewLayout.arrange(
+      bounds: _bounds,
+      items: items,
+    );
+    final leaving = DesktopScreensOverviewLayout.arrange(
+      bounds: _bounds,
+      items: items,
+      leavingObjectId: 2,
+    );
+
+    DesktopScreensDrop? dropAt(
+      DesktopScreensOverviewArrangement arrangement,
+      int id,
+      Offset point,
+    ) => DesktopScreensOverviewLayout.dropAt(
+      arrangement: arrangement,
+      frames: arrangement.frames,
+      items: items,
+      objectId: id,
+      point: point,
+    );
+
+    test('is marked in the gap right after its card, and no card moves', () {
+      final slot = leaving.newScreen!;
+      expect(slot.objectId, 2);
+      expect(slot.targetObjectId, 3);
+      final split = leaving.cards[1].geometry.rect;
+      // On the gap right of the split's card, a card's height.
+      expect(slot.rect.left, lessThanOrEqualTo(split.right));
+      expect(slot.rect.right, greaterThan(split.right));
+      expect(slot.rect.top, split.top);
+      expect(slot.rect.bottom, split.bottom);
+      // The same zone as the gap's: a drop there is the same drop.
+      expect(leaving.gaps.where((gap) => gap.rect == slot.rect), isNotEmpty);
+      // Its label is centred on it, inside the overview.
+      expect(slot.labelRect.center.dx, closeTo(slot.rect.center.dx, 1e-6));
+      expect(slot.labelRect.center.dy, closeTo(slot.rect.center.dy, 1e-6));
+      expect(_bounds.contains(slot.labelRect.topLeft), isTrue);
+      expect(_bounds.contains(slot.labelRect.bottomRight), isTrue);
+      // The cards are those of the plain arrangement, where they were.
+      expect(
+        [for (final card in leaving.cards) card.geometry.rect],
+        [for (final card in plain.cards) card.geometry.rect],
+      );
+      expect(leaving.cards.map((card) => card.identity), ['1', '2,3', '4']);
+      expect(plain.newScreen, isNull);
+      // A lone screen's window has none, nor does a stranger.
+      for (final id in [1, 4, 99]) {
+        expect(
+          DesktopScreensOverviewLayout.arrange(
+            bounds: _bounds,
+            items: items,
+            leavingObjectId: id,
+          ).newScreen,
+          isNull,
+        );
+      }
+      expect(
+        DesktopScreensOverviewLayout.isSplitTile(items: items, objectId: 3),
+        isTrue,
+      );
+      expect(
+        DesktopScreensOverviewLayout.isSplitTile(items: items, objectId: 1),
+        isFalse,
+      );
+    });
+
+    test('a split ending a row is marked at the row end, its label kept '
+        'inside the overview', () {
+      final two = [_window(1, 1, app: 'firefox'), ..._split(2, 3, 2)];
+      final arrangement = DesktopScreensOverviewLayout.arrange(
+        bounds: _bounds,
+        items: two,
+        leavingObjectId: 3,
+      );
+      final split = arrangement.cards.last.geometry.rect;
+      final slot = arrangement.newScreen!;
+      expect(slot.targetObjectId, 2);
+      expect(slot.rect.left, greaterThan(split.right - 32));
+      expect(slot.labelRect.right, lessThanOrEqualTo(_bounds.right));
+      expect(slot.labelRect.left, greaterThanOrEqualTo(_bounds.left));
+    });
+
+    test('takes a screen of its own right after its split anywhere but a '
+        'card or a gap', () {
+      final slot = leaving.newScreen!;
+      final cards = leaving.cards.map((card) => card.geometry.rect);
+      final grid = cards.reduce((a, b) => a.expandToInclude(b));
+      for (final point in [
+        slot.rect.center,
+        const Offset(2, 2),
+        Offset(_bounds.width - 2, _bounds.height / 2),
+        Offset(grid.center.dx, grid.top - 2),
+        Offset(grid.center.dx, _bounds.height - 2),
+        // A card's label above it.
+        leaving.cards[2].geometry.rect.topCenter - const Offset(0, 10),
+      ]) {
+        expect(
+          dropAt(leaving, 2, point),
+          isA<DesktopScreensMove>()
+              .having((move) => move.targetObjectId, 'target', 3)
+              .having((move) => move.before, 'before', isFalse)
+              .having((move) => move.highlight, 'highlight', slot.rect),
+          reason: '$point',
+        );
+      }
+      // The gap before its split still places it exactly there.
+      final before = leaving.gaps.firstWhere((gap) => gap.position == 2);
+      expect(
+        dropAt(leaving, 2, before.rect.center),
+        isA<DesktopScreensMove>()
+            .having((move) => move.targetObjectId, 'target', 3)
+            .having((move) => move.before, 'before', isTrue)
+            .having((move) => move.highlight, 'highlight', before.rect),
+      );
+      // Another card: it joins that screen.
+      expect(
+        dropAt(
+          leaving,
+          2,
+          leaving.cards[2].geometry.contentRect.centerLeft + const Offset(4, 0),
+        ),
+        isA<DesktopScreensJoin>().having(
+          (join) => join.targetObjectId,
+          'target',
+          4,
+        ),
+      );
+    });
+
+    test('back on its own card after leaving it cancels, before that it '
+        'rearranges the split', () {
+      final own = leaving.cards[1].geometry.rect;
+      expect(dropAt(leaving, 2, own.center), isNull);
+      expect(dropAt(leaving, 2, own.topLeft + const Offset(4, 4)), isNull);
+      expect(dropAt(leaving, 2, leaving.frames[3]!.center), isNull);
+      expect(
+        dropAt(plain, 2, plain.frames[3]!.center),
+        isA<DesktopScreensJoin>().having(
+          (join) => join.targetObjectId,
+          'target',
+          3,
+        ),
+      );
+    });
+
+    test('a lone screen dropped anywhere but a card or a gap stays', () {
+      for (final point in [
+        const Offset(2, 2),
+        Offset(_bounds.width / 2, _bounds.height - 2),
+      ]) {
+        expect(dropAt(plain, 1, point), isNull);
+        expect(dropAt(plain, 4, point), isNull);
+      }
+    });
+
+    test('without the marker, out of its split it still detaches', () {
+      final drop = dropAt(plain, 3, const Offset(2, 2));
+      expect(
+        drop,
+        isA<DesktopScreensMove>()
+            .having((move) => move.targetObjectId, 'target', 2)
+            .having((move) => move.before, 'before', isFalse),
+      );
+    });
+  });
 }
