@@ -930,9 +930,9 @@ pub struct WindowDescription {
     /// Laid out by the tablet (mobile) presentation's policy: the window
     /// fills the phone's panel below the status bar, or its Split View half.
     pub on_phone: bool,
-    /// The content is opaque but for squares of this side (logical px) at
-    /// its corners; 0 when no such bound is known (`translucent_corner`).
-    pub translucent_corner: f64,
+    /// BorderAlphaOnly: the parts of the content its opaque region leaves
+    /// out, relative to the content (`translucent_rects`); empty when unknown.
+    pub translucent_rects: Vec<WindowGeometry>,
 }
 
 /// A desktop pet (denial-pet-v1) as the shell knows it. A held pet is drawn

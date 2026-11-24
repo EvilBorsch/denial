@@ -770,6 +770,14 @@ fn create_window_snapshot<'a>(
         let title = builder.create_string(&description.title);
         let app_id = builder.create_string(&description.app_id);
         let held = description.pet.and_then(|pet| pet.held);
+        let translucent_rects = (!description.translucent_rects.is_empty()).then(|| {
+            let rects: Vec<fb::WireRect> = description
+                .translucent_rects
+                .iter()
+                .map(|rect| fb::WireRect::new(rect.x, rect.y, rect.width, rect.height))
+                .collect();
+            builder.create_vector(&rects)
+        });
         let client_texture = description.client_texture.map(|texture| {
             fb::ClientTexture::create(
                 builder,
@@ -845,7 +853,7 @@ fn create_window_snapshot<'a>(
                 split_view_partner_id: description.split_view_partner_id,
                 split_view_ratio: description.split_view_ratio,
                 on_phone: description.on_phone,
-                translucent_corner: description.translucent_corner,
+                translucent_rects,
                 ..Default::default()
             },
         ));
