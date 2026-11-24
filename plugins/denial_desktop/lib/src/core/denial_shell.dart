@@ -1,6 +1,6 @@
 import 'package:denial_desktop/src/state/reference_shell_controller.dart';
 import 'package:denial_desktop/src/state/reference_shell_profile.dart';
-import 'package:denial_desktop/src/state/reference_shell_presentation.dart';
+import 'package:denial_desktop/src/state/presentation_switch.dart';
 
 import 'package:denial_flutter_sdk/popups.dart';
 import 'package:denial_flutter_sdk/surfaces.dart';
@@ -86,7 +86,9 @@ class DenialShell extends ConsumerWidget {
     final effectiveProfile = forceDesktop
         ? ReferenceShellProfile.desktop
         : profile;
-    final selectedPresentation = ref.watch(referenceShellPresentationProvider);
+    // The presentation drawn: a switch waits for its cover first.
+    final presentationSwitch = ref.watch(presentationSwitchProvider);
+    final selectedPresentation = presentationSwitch.shown;
     final effectivePresentation = forceDesktop
         ? ReferenceShellProfile.desktop
         : selectedPresentation;
@@ -134,11 +136,13 @@ class DenialShell extends ConsumerWidget {
       unfocusedWindowOpacity: appearance.unfocusedWindowOpacity,
     );
     final bridge = ref.watch(denialBridgeProvider);
-    final hideCursor = ref.watch(
+    final screenshotHidesCursor = ref.watch(
       screenshotSelectionProvider.select(
         (session) => session?.hidesCursor ?? false,
       ),
-    );
+    )
+    // Nor does the frame a presentation switch freezes as its cover.
+    final hideCursor = screenshotHidesCursor || presentationSwitch.waiting;
     final scene = effectivePresentation == ReferenceShellProfile.mobile
         ? _PhoneDeskScene(
             split: split,
@@ -180,6 +184,10 @@ class DenialShell extends ConsumerWidget {
         // into each other once the windows have their new sizes.
         child: PresentationSwitchCover(
           presentation: effectivePresentation,
+          coverTexture: presentationSwitch.coverTexture,
+          waiting: presentationSwitch.waiting,
+          onDrawn: ref.read(presentationSwitchProvider.notifier).drawn,
+          onReleased: ref.read(presentationSwitchProvider.notifier).release,
           enabled: split == null && !forceDesktop,
           child: ShellOverlayHost(child: scene),
         ),
