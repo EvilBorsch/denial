@@ -1502,18 +1502,25 @@ impl WaylandFrontend {
                     layer.opaque = false;
                 }
             }
-            let mut opacity_class = with_renderer_surface_state(&surface, |state| {
-                let Some(view) = state.view() else {
-                    return WindowOpacityClass::ContentTranslucent;
-                };
-                classify_window_opacity(
-                    Rectangle::from_size(view.dst),
-                    content,
-                    state.opaque_regions(),
-                    opacity * window_opacity,
-                )
-            })
-            .unwrap_or(WindowOpacityClass::ContentTranslucent);
+            let (mut opacity_class, translucent_corner) =
+                with_renderer_surface_state(&surface, |state| {
+                    let Some(view) = state.view() else {
+                        return (WindowOpacityClass::ContentTranslucent, 0.0);
+                    };
+                    let class = classify_window_opacity(
+                        Rectangle::from_size(view.dst),
+                        content,
+                        state.opaque_regions(),
+                        opacity * window_opacity,
+                    );
+                    let corner = if class == WindowOpacityClass::BorderAlphaOnly {
+                        translucent_corner_side(content, state.opaque_regions())
+                    } else {
+                        0.0
+                    };
+                    (class, corner)
+                })
+                .unwrap_or((WindowOpacityClass::ContentTranslucent, 0.0));
             // An invisible carrier root can have opaque child content. Prove
             // coverage from the complete tree so such windows do not request
             // backdrop work merely because the root itself is transparent.
@@ -1599,6 +1606,7 @@ impl WaylandFrontend {
                 layout_screen_floating: window_screen.is_some_and(|screen| screen.floating),
                 split_view_partner_id: split_view.map_or(0, |(partner, _)| partner),
                 split_view_ratio: split_view.map_or(0.0, |(_, ratio)| ratio),
+                translucent_corner,
             };
             if let Some(previous) = windows.get_mut(window_count) {
                 *previous = description;
@@ -1713,6 +1721,7 @@ impl WaylandFrontend {
                 layout_screen_floating: false,
                 split_view_partner_id: 0,
                 split_view_ratio: 0.0,
+                translucent_corner: 0.0,
             };
             if let Some(previous) = windows.get_mut(window_count) {
                 *previous = description;
@@ -1900,6 +1909,7 @@ impl WaylandFrontend {
                     layout_screen_floating: false,
                     split_view_partner_id: 0,
                     split_view_ratio: 0.0,
+                    translucent_corner: 0.0,
                 };
                 if let Some(previous) = windows.get_mut(window_count) {
                     *previous = description;
@@ -2057,6 +2067,7 @@ impl WaylandFrontend {
                     layout_screen_floating: false,
                     split_view_partner_id: 0,
                     split_view_ratio: 0.0,
+                    translucent_corner: 0.0,
                 };
                 if let Some(previous) = windows.get_mut(window_count) {
                     *previous = description;

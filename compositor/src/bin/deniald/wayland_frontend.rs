@@ -1170,6 +1170,99 @@ fn classify_window_opacity(
     }
 }
 
+/// The side, in logical pixels, of the smallest square at each corner of
+/// `content` that holds every part of it the opaque region leaves out: a
+/// client with rounded corners, as GTK and libadwaita windows are, is
+/// translucent only there, and the shell then evaluates the window's glass
+/// only around those corners. Zero when the region proves no such bound,
+/// including when the squares would meet.
+#[cfg(feature = "flutter")]
+fn translucent_corner_side(
+    content: Rectangle<i32, Logical>,
+    opaque_regions: Option<&[Rectangle<i32, Logical>]>,
+) -> f64 {
+    let Some(opaque_regions) = opaque_regions else {
+        return 0.0;
+    };
+    let (width, height) = (content.size.w, content.size.h);
+    let mut side = 0;
+    for missing in content.subtract_rects(opaque_regions.iter().copied()) {
+        let left = missing.loc.x - content.loc.x;
+        let top = missing.loc.y - content.loc.y;
+        let right = left + missing.size.w;
+        let bottom = top + missing.size.h;
+        let nearest_corner = [
+            right.max(bottom),
+            (width - left).max(bottom),
+            right.max(height - top),
+            (width - left).max(height - top),
+        ]
+        .into_iter()
+        .min()
+        .unwrap_or(0);
+        side = side.max(nearest_corner);
+    }
+    if side * 2 >= width.min(height) {
+        0.0
+    } else {
+        f64::from(side)
+    }
+}
+
+#[cfg(all(test, feature = "flutter"))]
+mod window_opacity_tests {
+    use super::*;
+
+    fn rect(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Logical> {
+        Rectangle::new((x, y).into(), (w, h).into())
+    }
+
+    // A libadwaita window: 24 px of client-side shadow around an 800x600
+    // geometry, opaque but for its four 12 px rounded corners.
+    fn libadwaita_window() -> (
+        Rectangle<i32, Logical>,
+        Rectangle<i32, Logical>,
+        Vec<Rectangle<i32, Logical>>,
+    ) {
+        (
+            rect(0, 0, 848, 648),
+            rect(24, 24, 800, 600),
+            vec![
+                rect(36, 24, 776, 12),
+                rect(24, 36, 800, 576),
+                rect(36, 612, 776, 12),
+            ],
+        )
+    }
+
+    #[test]
+    fn rounded_corners_bound_the_translucent_corners() {
+        let (surface, content, opaque) = libadwaita_window();
+        assert_eq!(
+            classify_window_opacity(surface, content, Some(&opaque), 1.0),
+            WindowOpacityClass::BorderAlphaOnly
+        );
+        assert_eq!(translucent_corner_side(content, Some(&opaque)), 12.0);
+
+        // GTK 3 rounds only the corners of its header bar.
+        let top_only = [rect(32, 24, 784, 8), rect(24, 32, 800, 592)];
+        assert_eq!(translucent_corner_side(content, Some(&top_only)), 8.0);
+    }
+
+    #[test]
+    fn translucency_along_an_edge_has_no_corner_bound() {
+        let (_, content, _) = libadwaita_window();
+        // An antialiased border down the whole left edge.
+        let opaque = [rect(25, 24, 799, 600)];
+        assert_eq!(translucent_corner_side(content, Some(&opaque)), 0.0);
+        // No opaque region: nothing is known.
+        assert_eq!(translucent_corner_side(content, None), 0.0);
+        // Corners so large that the squares would meet.
+        let opaque = [rect(24, 324, 800, 300)];
+        assert_eq!(translucent_corner_side(content, Some(&opaque)), 0.0);
+    }
+}
+
 #[cfg(feature = "flutter")]
 impl SurfaceCommitKind {
     const fn merge(self, next: Self) -> Self {

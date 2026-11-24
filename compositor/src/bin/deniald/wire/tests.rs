@@ -1357,6 +1357,7 @@ fn scene_window(id: u64) -> WindowDescription {
         layout_screen_floating: false,
         split_view_partner_id: 0,
         split_view_ratio: 0.0,
+        translucent_corner: 0.0,
     }
 }
 
@@ -2444,6 +2445,28 @@ fn windows_in_split_view_carry_their_partner_and_share() {
     assert!((windows.get(0).split_view_ratio() - 1.0 / 3.0).abs() < 1e-12);
     assert_eq!(windows.get(2).split_view_partner_id(), 0);
     assert_eq!(windows.get(2).split_view_ratio(), 0.0);
+}
+
+#[test]
+fn windows_translucent_at_their_rounded_corners_carry_the_corner() {
+    let mut bridge = bridge();
+    let mut rounded = scene_window(1);
+    rounded.opacity_class = WindowOpacityClass::BorderAlphaOnly;
+    rounded.translucent_corner = 12.0;
+    let (bytes, _) = bridge
+        .update_windows(1, vec![rounded, scene_window(2)], &BTreeSet::new())
+        .unwrap();
+    let snapshot = fb::root_as_envelope(bytes.unwrap())
+        .unwrap()
+        .payload_as_window_snapshot()
+        .unwrap();
+    let windows = snapshot.windows().unwrap();
+    assert_eq!(
+        windows.get(0).opacity_class(),
+        fb::WindowOpacityClass::BorderAlphaOnly
+    );
+    assert_eq!(windows.get(0).translucent_corner(), 12.0);
+    assert_eq!(windows.get(1).translucent_corner(), 0.0);
 }
 
 #[test]

@@ -927,6 +927,9 @@ pub struct WindowDescription {
     /// window's share of the width (0 when none).
     pub split_view_partner_id: u64,
     pub split_view_ratio: f64,
+    /// The content is opaque but for squares of this side (logical px) at
+    /// its corners; 0 when no such bound is known (`translucent_corner`).
+    pub translucent_corner: f64,
 }
 
 /// A desktop pet (denial-pet-v1) as the shell knows it. A held pet is drawn
