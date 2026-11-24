@@ -238,6 +238,7 @@ class ShellSearchOpenWindow {
     appId: window.appId,
     appName: appName,
     title: title,
+    appSearchableText: app?.searchableText ?? '',
   );
 
   @override

@@ -3686,7 +3686,7 @@ abstract class AppLocalizations {
   /// **'Connected displays'**
   String get settingsConnectedDisplaysTitle;
 
-  /// Label for the physical cursor-size slider.
+  /// Label for the cursor-size slider (logical pixels).
   ///
   /// In en, this message translates to:
   /// **'Cursor size'**
