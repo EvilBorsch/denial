@@ -64,6 +64,135 @@ void main() {
     await shell.finish(tester);
   });
 
+  /// «Close all», as Recents does it: every card leaves the row, Recents
+  /// goes home, and each app is closed as its card has gone.
+  void closeAll(MobileShellHarness shell) {
+    final controller = shell.controller;
+    final cards = [
+      for (final id in controller.deck.order)
+        controller.state.deckAppsByObjectId[id]!,
+    ];
+    for (final card in cards) {
+      controller.leaveRecents(card);
+    }
+    controller.closeOverview();
+    for (final card in cards) {
+      controller.dismissFromRecents(card);
+    }
+  }
+
+  /// Opens Recents and closes everything in it, letting the deck settle.
+  Future<MobileShellHarness> closedAll(WidgetTester tester) async {
+    final shell = await shellWith(tester);
+    shell.controller.openOverview();
+    await tester.pump();
+    await shell.settle(tester);
+    shell.bridge.requests.clear();
+    closeAll(shell);
+    await shell.settle(tester);
+    return shell;
+  }
+
+  /// The app brought to the front lands, as its flight from home would.
+  void land(MobileShellHarness shell) {
+    final state = shell.controller.state;
+    shell.controller.completeLaunchTransition(
+      state.launchRequest!.requestId,
+      state.launchingObjectId!,
+    );
+  }
+
+  testWidgets('apps that close in time do not come back', (tester) async {
+    final shell = await closedAll(tester);
+    expect(
+      shell.bridge.requests.where((request) => request.startsWith('close ')),
+      hasLength(4),
+    );
+    await shell.publish(tester, const []);
+    await tester.pump(const Duration(seconds: 2));
+    expect(shell.controller.state.foregroundObjectId, isNull);
+    expect(shell.controller.deck.order, isEmpty);
+    expect(
+      shell.bridge.requests.where((request) => request.startsWith('focus ')),
+      isEmpty,
+    );
+    await shell.finish(tester);
+  });
+
+  testWidgets('a dialog opening over a closing app brings it to the front', (
+    tester,
+  ) async {
+    final shell = await closedAll(tester);
+    // Files asks something in a dialog of its own; the others are gone.
+    final dialog = phoneWindow(9, 'org.gnome.Nautilus', transientParent: 4);
+    await shell.publish(tester, [files, dialog]);
+    // At once, not after the grace: the app is waiting for an answer.
+    expect(shell.controller.state.foregroundObjectId, 9);
+    expect(shell.bridge.requests, contains('focus 9'));
+    expect(shell.controller.deck.order, [4]);
+    await shell.finish(tester);
+  });
+
+  testWidgets('the next app with a question comes once the first closes', (
+    tester,
+  ) async {
+    final shell = await closedAll(tester);
+    // The terminal and Files both keep their windows open.
+    await shell.publish(tester, [term, files]);
+    await tester.pump(const Duration(seconds: 1));
+    // The one used last comes first.
+    expect(shell.controller.state.foregroundObjectId, 1);
+    land(shell);
+    expect(shell.bridge.requests, isNot(contains('focus 4')));
+    // Answered, the terminal closes: Files comes next.
+    await shell.publish(tester, [files]);
+    expect(shell.controller.state.foregroundObjectId, 4);
+    expect(shell.bridge.requests, contains('focus 4'));
+    await shell.finish(tester);
+  });
+
+  testWidgets('turning away from the question leaves the rest in Recents', (
+    tester,
+  ) async {
+    final shell = await closedAll(tester);
+    await shell.publish(tester, [term, files]);
+    await tester.pump(const Duration(seconds: 1));
+    expect(shell.controller.state.foregroundObjectId, 1);
+    land(shell);
+    // The user cancels the terminal's question and goes home.
+    shell.controller.goHome();
+    shell.controller.completeHomeTransition();
+    await shell.settle(tester);
+    await tester.pump(const Duration(seconds: 2));
+    expect(shell.controller.state.foregroundObjectId, isNull);
+    expect(shell.bridge.requests, isNot(contains('focus 4')));
+    // Both are in Recents again.
+    expect(shell.controller.deck.order, unorderedEquals([1, 4]));
+    await shell.finish(tester);
+  });
+
+  testWidgets('in open Recents an app that keeps its window comes back to '
+      'the row', (tester) async {
+    final shell = await shellWith(tester);
+    shell.controller.openOverview();
+    await tester.pump();
+    await shell.settle(tester);
+    shell.bridge.requests.clear();
+    shell.controller
+      ..leaveRecents(term)
+      ..dismissFromRecents(term);
+    expect(shell.controller.deck.order, isNot(contains(1)));
+    // The terminal asks before it closes; Recents is still open.
+    await tester.pump(const Duration(seconds: 1));
+    expect(shell.controller.state.overviewVisible, isTrue);
+    expect(shell.controller.deck.order, contains(1));
+    expect(
+      shell.bridge.requests.where((request) => request.startsWith('focus ')),
+      isEmpty,
+    );
+    await shell.finish(tester);
+  });
+
   testWidgets('closing a card of a grouped app closes only its window', (
     tester,
   ) async {

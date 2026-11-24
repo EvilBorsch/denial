@@ -11,7 +11,9 @@ import 'package:denial_flutter_sdk/motion.dart' show ShellSprings;
 import 'package:denial_flutter_sdk/platform.dart';
 import 'package:denial_flutter_sdk/state.dart';
 
-import '../launcher/home_icon_locator.dart' show launcherAppIdentity;
+import '../launcher/home_icon_locator.dart'
+    show homeIconLocatorProvider, launcherAppIdentity;
+import '../launcher/window_application.dart' show windowApplicationProvider;
 import 'app_deck.dart';
 import 'deck_order.dart';
 import 'reference_shell_state.dart';
@@ -24,6 +26,7 @@ import 'reference_shell_metrics.dart';
 import 'reference_shell_presentation.dart';
 import 'reference_shell_profile.dart';
 import 'reference_input_layout_coordinator.dart';
+import 'recents_closing.dart';
 import 'split_view.dart';
 
 final referenceShellProvider =
@@ -65,6 +68,7 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
     final previousForeground = previous?.foregroundObjectId;
     _noteRecent(value);
     super.state = value;
+    _checkAnswering(value);
     // However recents is left, its cards leave with it: whatever closes it
     // without moving the deck sends them home.
     if ((previous?.overviewVisible ?? false) &&
@@ -202,6 +206,7 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
       _appSwitchOrderTimer = null;
       _pendingSplitTimer?.cancel();
       _pendingSplitTimer = null;
+      _closingApps.clear();
       unawaited(_textInputStateSubscription?.cancel());
       _textInputStateSubscription = null;
     });
@@ -381,6 +386,9 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
     _hold = _DeckHold.none;
     _liftCaught = false;
     _dismissedIds.clear();
+    _closingApps.clear();
+    _toAnswer.clear();
+    _answering = null;
     _recent.clear();
     _heldBehind = const <int>{};
     _quickSettingsDragStartedOpen = false;
@@ -570,6 +578,7 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
       _deck.reorder(_presentedOrder(), ShellSprings.appStrip);
     }
     if (!_appSwitchOrderMatchesOpenApps()) _releaseAppSwitchOrder();
+    _recentsClosesChanged(open);
     final request = state.launchRequest;
     final launchWindow = request == null
         ? null
@@ -922,6 +931,10 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
   /// A card swiped away in recents has left the screen: the app closes with
   /// the windows riding on its card. Recents with no app left closes for
   /// home.
+  ///
+  /// Closing is a request the app answers, as for its own close button,
+  /// never a kill. An app that keeps a window open to ask something first,
+  /// such as whether to save, comes back ([_keptOpen]).
   void dismissFromRecents(DenialWindow window) {
     final riding = state.deckWindowsOver(window.objectId);
     _dismissedIds.add(window.objectId);
@@ -932,6 +945,130 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
       _platform.closeWindow(over);
     }
     _platform.closeWindow(window);
+    _closingApps.closing(window.objectId, [
+      for (final over in riding) over.objectId,
+    ]);
+  }
+
+  // Apps that ask before they close ---------------------------------------
+
+  /// How long an app closed from Recents has to close its windows before
+  /// Recents takes it for one that asks the user something first. GTK,
+  /// Firefox and Android apps close theirs within a few hundred
+  /// milliseconds on the tablet.
+  static const Duration _closeGrace = Duration(seconds: 1);
+
+  late final _closingApps = RecentsClosing(
+    grace: _closeGrace,
+    onKept: _keptOpen,
+  );
+
+  /// Apps that kept a window open when closed from Recents, waiting to come
+  /// to the front one after another, the most recently used first.
+  final List<int> _toAnswer = <int>[];
+
+  /// The kept app in front for the user to answer: once it closes, the next
+  /// one comes; once the user turns elsewhere, the rest stay in Recents.
+  int? _answering;
+
+  /// The windows changed: closed apps are done, a dialog over one closing
+  /// keeps it, and the app answered in front gives way to the next.
+  void _recentsClosesChanged(Map<int, DenialWindow> open) {
+    if (_answering case final id? when !open.containsKey(id)) {
+      _answering = null;
+    }
+    _closingApps.windowsChanged(open.keys, state.deckAppOf);
+    _offerAnswer();
+  }
+
+  /// The apps of the [kept] cards kept a window open after Recents closed
+  /// them: they ask the user something, such as whether to save. They are
+  /// back in Recents, and come to the front with their question one after
+  /// another when Recents has gone home meanwhile, as after «Close all», so
+  /// no question is hidden or lost. While Recents is still open their cards
+  /// come back to the row instead, and elsewhere, as in another app, they
+  /// wait there.
+  void _keptOpen(Map<int, Set<int>> kept) {
+    final open = state.openAppWindowsByObjectId;
+    final apps = <int>{
+      for (final MapEntry(key: card, value: windows) in kept.entries)
+        for (final id in {card, ...windows})
+          if (open.containsKey(id)) ?state.deckAppOf(id),
+    };
+    if (apps.isEmpty) return;
+    _dismissedIds.removeAll(apps);
+    if (_deck.presenting.value) {
+      _deck.reorder(_presentedOrder(), ShellSprings.appStrip);
+    } else {
+      _arrangeDeck();
+    }
+    final recency = _recencyOrder().reversed.toList();
+    int rank(int id) {
+      final index = recency.indexOf(id);
+      return index < 0 ? recency.length : index;
+    }
+
+    _toAnswer
+      ..removeWhere(apps.contains)
+      ..addAll(apps)
+      ..sort((a, b) => rank(a).compareTo(rank(b)));
+    _offerAnswer();
+  }
+
+  /// Brings the next kept app to the front, as its home icon would, when
+  /// nothing else is on screen: home at rest. Anywhere else the kept apps
+  /// wait in Recents.
+  void _offerAnswer() {
+    if (_answering != null || _toAnswer.isEmpty) return;
+    final open = state.deckAppsByObjectId;
+    _toAnswer.removeWhere((id) => !open.containsKey(id));
+    if (_toAnswer.isEmpty) return;
+    if (!_homeAtRest) {
+      _toAnswer.clear();
+      return;
+    }
+    final card = _toAnswer.removeAt(0);
+    final window = state.deckFocusOf(card);
+    if (window == null) return;
+    // It opens as from its home icon: out of the icon when home shows it,
+    // else out of the middle of home.
+    final application = ref.read(windowApplicationProvider(window.appId));
+    final icon = ref.read(homeIconLocatorProvider).iconFor(window);
+    activateAppFromLauncher(
+      window: window,
+      appName: application.name ?? window.title,
+      iconPath: application.iconPath,
+      sourceRect: icon?.rect,
+      sourceItemId: icon?.item.id,
+    );
+    if (state.deckAppOf(state.foregroundObjectId) == card) _answering = card;
+  }
+
+  /// Home shows and nothing moves or is held: no app in front, no Recents,
+  /// shade, gesture, launch or lock.
+  bool get _homeAtRest {
+    final current = state;
+    return current.foregroundWindow == null &&
+        current.launchRequest == null &&
+        !current.overviewVisible &&
+        !current.homeTransitionActive &&
+        !current.quickSettingsEngaged &&
+        !current.edgePanelVisible &&
+        !current.locked &&
+        !current.lockLayerVisible &&
+        current.gesture == GestureDragPhase.idle &&
+        _hold == _DeckHold.none &&
+        !_deck.presenting.value;
+  }
+
+  /// The user turned from the kept app in front to something else: the
+  /// close-all is over, and the other kept apps stay in Recents.
+  void _checkAnswering(ReferenceShellState next) {
+    final id = _answering;
+    if (id == null || !next.openAppWindowsByObjectId.containsKey(id)) return;
+    if (next.deckAppOf(next.foregroundObjectId) == id) return;
+    _answering = null;
+    _toAnswer.clear();
   }
 
   /// A card tapped in recents: recents closes around it as the row brings it
@@ -1003,6 +1140,10 @@ class ReferenceShellController extends Notifier<ReferenceShellState>
     }
     for (final window in state.windows) {
       if (window.windowId == windowId && window.isUserApp) {
+        // An app closed from Recents does not come back as the focus moves
+        // on to it while others close; one that keeps a window open to ask
+        // something comes back through [_keptOpen].
+        if (_dismissedIds.contains(state.deckAppOf(window.objectId))) return;
         final appId = AppLaunchRequest.normalizeAppId(window.appId);
         if (_backgroundLaunchAppIds.remove(appId)) {
           return;
