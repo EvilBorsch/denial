@@ -291,3 +291,52 @@ handles and Recents.
   Recents entry is the one way in for now.
 - Enlarging anything for the old 1.5 scale: eb18's 2.5 makes the shell
   iPad-sized.
+
+## eb19: the finger pass (track T)
+
+A finger-only walk through the tablet presentation on `eb19~i1`
+(`device-logs/eb19-tablet-walk/`, frames in `device-logs/eb19-tablet-frames-i1`
+and `-frames2-i1`) and the fixes it led to:
+
+- **Home's fade rendered home anew on every fade.** `FadeSnapshot` drew the
+  grid into a full-screen image on the first frame of each fade, 43 to 80 ms
+  of raster: Recents from home (96 %, worst 108 ms), home again by a tap
+  beside the cards (62 %, worst 118 ms), the home flick (96 %, worst 92 ms).
+  `FadeSnapshot(retain: true)`, which home uses, keeps the image while home is
+  unchanged and renders it again ahead, once home has held still for 1.5 s,
+  when it changed while shown. Home's own change is seen at the layer: its
+  child is a repaint boundary whose layer counts the scenes that built it
+  anew. Left: a home flick after an app was opened from home still renders
+  once, since the icon hidden and shown again around the launch changed home
+  while it was covered.
+- **The search field took a finger only on its line of text** (22 of 48 px):
+  a tap on the magnifier or the rim did nothing. The whole pill now takes it.
+- **Home's last row sat apart with the dots above it**, the dock layout, also
+  without a shared bottom row: at 300 % (four rows) it split the grid. The
+  rows are one even grid unless the bottom row is shared, the dots under it.
+- **The one search over the desktop went under the screen keyboard** a finger
+  brings with it; its panel now ends above the keyboard.
+- Not jank, measured as such: the back gesture's arrow rests at its full
+  stretch while the finger keeps moving (no frames are due), which the
+  frame report counts as missed vblanks (`back` 72 %, the drawer's close by
+  Back 81 %).
+
+Open (with the reason):
+- A GTK app tapped in the tablet presentation showed no screen keyboard and
+  did not get the keys typed after the tap (Text Editor; Files' search
+  entry, focused by a tap, no keyboard either), while keys typed into a
+  freshly opened editor without a tap arrive (`eb19-check-recents`). Not
+  found without the tablet: `eb19-check-tablet.sh keys` measures it, fresh
+  and after the drawer's search was used.
+- The pull-down search opens focused but without the keyboard: deniald
+  allows a shell editor the keyboard only within 250 ms of a touch's start,
+  and the sheet takes the focus once it has opened. A tap on the field (any
+  part of it now) brings the keyboard.
+- The pill's sideways switch takes a finger only on its 200 px zone (12 % of
+  the width at scale 2); iPadOS takes it along the whole bottom edge.
+- The shade over an app is GPU-bound (87 %, 94 of 96 missed vblanks late on
+  the GPU): its glass, track G's.
+- An app opened from its home icon while it runs, minimized, waits for the
+  restored window: up to 125 ms without a frame (`app-open`, 81 %).
+- A long press on a home icon only lifts it for moving; there is no menu
+  (iPadOS: remove, details, widgets).
