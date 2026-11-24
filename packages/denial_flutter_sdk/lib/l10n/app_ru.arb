@@ -7219,6 +7219,10 @@
       }
     }
   },
+  "recentsCloseAll": "Закрыть все",
+  "@recentsCloseAll": {
+    "description": "Tablet recents: the button at the bottom that closes every app in recents and goes home, as on Android and iPadOS app switchers."
+  },
   "splitViewDivider": "Разделитель между приложениями",
   "@splitViewDivider": {
     "description": "Accessibility label of the divider between two apps side by side (Split View) on the tablet."

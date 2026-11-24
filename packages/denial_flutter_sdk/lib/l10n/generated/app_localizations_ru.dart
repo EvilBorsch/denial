@@ -5414,6 +5414,9 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String get recentsCloseAll => 'Закрыть все';
+
+  @override
   String get splitViewDivider => 'Разделитель между приложениями';
 
   @override

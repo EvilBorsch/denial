@@ -5106,6 +5106,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get recentsCloseAll => '全部关闭';
+
+  @override
   String get splitViewDivider => '应用之间的分隔条';
 
   @override

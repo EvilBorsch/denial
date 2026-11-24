@@ -1,11 +1,13 @@
 import 'package:denial_desktop/src/state/app_deck.dart';
+import 'package:denial_desktop/src/state/reference_shell_metrics.dart';
 import 'package:denial_desktop/src/widgets/overview/app_deck_layer.dart';
 import 'package:denial_desktop/src/widgets/overview/overview_card_label.dart';
 import 'package:denial_flutter_sdk/applications.dart';
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/models.dart';
 import 'package:denial_flutter_sdk/platform.dart' show DenialBridge;
-import 'package:denial_flutter_sdk/rendering.dart' show WindowPose;
+import 'package:denial_flutter_sdk/rendering.dart'
+    show PosedWindow, WindowPose, WindowSurface;
 import 'package:denial_flutter_sdk/glass_configuration.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 import 'package:denial_flutter_sdk/state.dart' show denialBridgeProvider;
@@ -53,6 +55,7 @@ void main() {
   Future<({AppDeck deck, List<String> calls})> recents(
     WidgetTester tester, {
     DenialWindow? front,
+    List<DenialWindow>? windows,
   }) async {
     tester.view
       ..physicalSize = tabletView
@@ -61,7 +64,10 @@ void main() {
     final deck = AppDeck();
     addTearDown(deck.dispose);
     final calls = <String>[];
-    deck.arrange([1, 2, 3], rowAt: 2);
+    final open = windows ?? [term, github, inbox];
+    deck.arrange([
+      for (final window in open) window.objectId,
+    ], rowAt: (open.length - 1).clamp(0, open.length).toDouble());
     deck.open.jump(1);
     await tester.pumpWidget(
       ProviderScope(
@@ -83,7 +89,7 @@ void main() {
                   children: [
                     AppDeckLayer(
                       deck: deck,
-                      windows: [term, github, inbox],
+                      windows: open,
                       recents: true,
                       onPresentationChanged: (_) {},
                       onCloseRecents: () => calls.add('home'),
@@ -147,6 +153,100 @@ void main() {
     expect(shown.calls, containsAll(['close 2', 'close 3']));
     expect(shown.calls, isNot(contains('close 1')));
     expect(shown.calls, isNot(contains('open 2')));
+  });
+
+  testWidgets('Close all sits under the cards, clear of the home gesture', (
+    tester,
+  ) async {
+    final shown = await recents(tester);
+    final button = find.byType(RecentsCloseAllButton);
+    expect(button, findsOneWidget);
+    expect(find.text('Close all'), findsOneWidget);
+    expect(find.bySemanticsLabel(l10n.recentsCloseAll), findsOneWidget);
+    final rect = tester.getRect(button);
+    final gesture = ReferenceShellMetrics.gestureRect(tabletView);
+    // Big enough for a finger, in the middle under the cards.
+    expect(rect.height, greaterThanOrEqualTo(48));
+    expect(rect.width, greaterThanOrEqualTo(RecentsCloseAllButton.minWidth));
+    expect(rect.center.dx, closeTo(tabletView.width / 2, 0.5));
+    expect(rect.top, greaterThan(shown.deck.geometry.card.bottom));
+    expect(
+      rect.bottom,
+      lessThanOrEqualTo(gesture.top - RecentsCloseAllButton.gestureClearance),
+    );
+  });
+
+  test('Close all keeps clear of the cards and the gesture upright too', () {
+    for (final size in [tabletView, tabletView.flipped]) {
+      final geometry = DeckGeometry(
+        size: size,
+        padding: EdgeInsets.zero,
+        windowRadius: 20,
+        switchRadius: 18,
+        ltr: true,
+      );
+      final top = recentsCloseAllTop(geometry);
+      final gesture = ReferenceShellMetrics.gestureRect(size);
+      expect(top, greaterThan(geometry.card.bottom));
+      expect(
+        top + RecentsCloseAllButton.height,
+        lessThanOrEqualTo(gesture.top - RecentsCloseAllButton.gestureClearance),
+      );
+    }
+  });
+
+  testWidgets('Close all shows only when there is something to close', (
+    tester,
+  ) async {
+    await recents(tester, windows: const []);
+    expect(find.byType(RecentsCloseAllButton), findsNothing);
+    expect(find.text(l10n.overviewNoWindows), findsOneWidget);
+  });
+
+  testWidgets('Close all sends every card away, closing each app, and goes '
+      'home', (tester) async {
+    final shown = await recents(tester);
+    await tester.tap(find.byType(RecentsCloseAllButton));
+    // Every card leaves the row, and Recents goes home at once.
+    expect(shown.calls, containsAll(['leave 1', 'leave 2', 'leave 3']));
+    expect(shown.calls.last, 'home');
+    expect(shown.calls.where((call) => call.startsWith('close')), isEmpty);
+    for (var i = 0; i < 120; i++) {
+      await tester.pump(const Duration(milliseconds: 8));
+    }
+    // Each app closes once its card is gone, as a swiped card's does.
+    expect(shown.calls, containsAll(['close 1', 'close 2', 'close 3']));
+    expect(shown.calls.where((call) => call == 'home'), hasLength(1));
+    expect(shown.calls.where((call) => call.startsWith('open')), isEmpty);
+  });
+
+  testWidgets('a card sent away by Close all flies straight up', (
+    tester,
+  ) async {
+    await recents(tester, windows: [term]);
+    // Where the card is drawn: its window, as its pose places it.
+    final window = find.descendant(
+      of: find.byType(PosedWindow),
+      matching: find.byType(WindowSurface),
+    );
+    Rect card() => tester.getRect(window);
+    final before = card();
+    await tester.tap(find.byType(RecentsCloseAllButton));
+    // The frame that starts the throw draws the card where it was.
+    await tester.pump();
+    var previous = card();
+    var moved = 0;
+    for (var i = 0; i < 12; i++) {
+      await tester.pump(const Duration(milliseconds: 8));
+      if (window.evaluate().isEmpty) break;
+      final now = card();
+      // It moves on every frame, up, and keeps its place across.
+      expect(now.center.dy, lessThan(previous.center.dy));
+      expect(now.center.dx, closeTo(before.center.dx, 0.5));
+      previous = now;
+      moved++;
+    }
+    expect(moved, greaterThan(3));
   });
 
   testWidgets('a long-pressed card dropped on a side shares the screen', (
