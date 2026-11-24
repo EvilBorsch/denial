@@ -115,6 +115,7 @@ class _PresentationSwitchCoverState
   ui.Image? _picture;
   Timer? _holdLimit;
   ProviderSubscription<bool>? _settled;
+  final _since = Stopwatch();
 
   @override
   void didUpdateWidget(covariant PresentationSwitchCover oldWidget) {
@@ -136,19 +137,33 @@ class _PresentationSwitchCoverState
   /// Takes the last picture shown, before this frame draws the new scene.
   void _cover() {
     final boundary = _boundary.currentContext?.findRenderObject();
-    if (boundary is! RenderRepaintBoundary || !boundary.hasSize) return;
+    if (boundary is! RenderRepaintBoundary || !boundary.hasSize) {
+      debugPrint('presentation switch: no cover, the scene is not laid out');
+      return;
+    }
     // The layer still holds the frame on screen: this build has not painted.
     final layer = boundary.layer;
-    if (layer is! OffsetLayer || !layer.attached) return;
+    if (layer is! OffsetLayer || !layer.attached) {
+      debugPrint('presentation switch: no cover, the scene has no picture');
+      return;
+    }
     final ui.Image picture;
     try {
       picture = layer.toImageSync(
         Offset.zero & boundary.size,
         pixelRatio: MediaQuery.devicePixelRatioOf(context),
       );
-    } on Object {
+    } on Object catch (error) {
+      debugPrint('presentation switch: no cover, $error');
       return;
     }
+    debugPrint(
+      'presentation switch to ${widget.presentation.name}: covered by a '
+      '${picture.width}x${picture.height} picture',
+    );
+    _since
+      ..reset()
+      ..start();
     _endCover();
     _picture = picture;
     _dissolve.value = 0;
@@ -172,7 +187,7 @@ class _PresentationSwitchCoverState
           ),
         ),
         (_, settled) {
-          if (settled) _reveal();
+          if (settled) _reveal(settled: true);
         },
         fireImmediately: true,
       );
@@ -180,13 +195,19 @@ class _PresentationSwitchCoverState
   }
 
   /// The windows are ready, or the hold is over: dissolve.
-  void _reveal() {
+  void _reveal({bool settled = false}) {
     _holdLimit?.cancel();
     _holdLimit = null;
     _settled?.close();
     _settled = null;
     if (!mounted || _picture == null || _dissolve.isAnimating) return;
-    if (_dissolve.value == 0) _dissolve.forward();
+    if (_dissolve.value == 0) {
+      debugPrint(
+        'presentation switch: dissolves after ${_since.elapsedMilliseconds} '
+        'ms (${settled ? 'windows redrawn' : 'hold limit'})',
+      );
+      _dissolve.forward();
+    }
   }
 
   void _dissolveStatus(AnimationStatus status) {
