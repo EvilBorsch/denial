@@ -24,13 +24,19 @@ part 'desktop_workspace_indicator.dart';
 const systemBarBatteryButtonKey = ValueKey<String>('system-bar-battery-button');
 const systemBarClockButtonKey = ValueKey<String>('system-bar-clock-button');
 
+/// The control-center icon beside the clock: like the clock, it opens and
+/// closes the dashboard, the desktop's control center.
+const systemBarControlCenterButtonKey = ValueKey<String>(
+  'system-bar-control-center-button',
+);
+
 class _DesktopSystemBarContent extends ConsumerWidget {
   const _DesktopSystemBarContent({
     required this.monitorId,
     required this.side,
     required this.stayAwake,
     required this.onOpenPowerSettings,
-    required this.onOpenDashboard,
+    required this.onToggleDashboard,
   });
 
   static const double _edgePadding = 8.0;
@@ -41,7 +47,7 @@ class _DesktopSystemBarContent extends ConsumerWidget {
   final PanelEdge side;
   final bool stayAwake;
   final VoidCallback onOpenPowerSettings;
-  final VoidCallback onOpenDashboard;
+  final VoidCallback onToggleDashboard;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -145,6 +151,22 @@ class _DesktopSystemBarContent extends ConsumerWidget {
             cpuVisible: cpuVisible,
           ),
         if (cpuVisible) _CpuStatusCard(accent: accent, horizontal: horizontal),
+        // As on macOS, the control center's icon sits just before the clock.
+        _SystemBarEntrance(
+          key: const ValueKey('system-bar-control-center'),
+          index: 0,
+          horizontal: horizontal,
+          child: Padding(
+            padding: horizontal
+                ? const EdgeInsets.only(right: _cardGap)
+                : const EdgeInsets.only(bottom: _cardGap),
+            child: _ControlCenterButton(
+              accent: accent,
+              horizontal: horizontal,
+              onPressed: onToggleDashboard,
+            ),
+          ),
+        ),
         _SystemBarEntrance(
           key: const ValueKey('system-bar-clock'),
           index: 0,
@@ -153,7 +175,7 @@ class _DesktopSystemBarContent extends ConsumerWidget {
             key: systemBarClockButtonKey,
             accent: accent,
             label: context.pluginStrings.openDashboard,
-            onPressed: onOpenDashboard,
+            onPressed: onToggleDashboard,
             child: _ClockStatusModule(accent: accent),
           ),
         ),
@@ -258,9 +280,47 @@ class DesktopSystemBar extends StatelessWidget {
       side: side,
       stayAwake: stayAwake,
       onOpenPowerSettings: services.openPowerSettings,
-      onOpenDashboard: services.openDashboard,
+      onToggleDashboard: services.toggleDashboard,
     ),
   );
+}
+
+/// The control-center icon: two toggle switches, as macOS's. Lit while the
+/// dashboard is open. A click opens the dashboard; while it is open, the
+/// shell's barrier over the bar takes the next click and closes it.
+class _ControlCenterButton extends ConsumerWidget {
+  const _ControlCenterButton({
+    required this.accent,
+    required this.horizontal,
+    required this.onPressed,
+  });
+
+  final WallpaperAccent accent;
+  final bool horizontal;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final open = ref.watch(context.desktopServices.dashboardOpen);
+    return _SystemBarButton(
+      key: systemBarControlCenterButtonKey,
+      accent: accent,
+      label: context.pluginStrings.controlCenter,
+      onPressed: onPressed,
+      active: open,
+      padding: horizontal
+          ? const EdgeInsets.symmetric(horizontal: 11)
+          : const EdgeInsets.symmetric(vertical: 11),
+      child: RepaintBoundary(
+        child: CustomPaint(
+          size: const Size(18, 15),
+          painter: _ControlCenterGlyphPainter(
+            color: context.shellColors.textPrimary,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// The mark shown while Stay awake is on: a cup, like the phone status
@@ -290,6 +350,7 @@ extension _PluginContext on BuildContext {
   ShellTelemetryServices get telemetryServices => ShellServicesScope.of(this);
   ShellMediaServices get mediaServices => ShellServicesScope.of(this);
   ShellWorkspaceServices get workspaceServices => ShellServicesScope.of(this);
+  ShellDesktopServices get desktopServices => ShellServicesScope.of(this);
   ShellPresentationServices get presentationServices =>
       ShellServicesScope.of(this);
   ShellTrayServices get trayServices => ShellServicesScope.of(this);
