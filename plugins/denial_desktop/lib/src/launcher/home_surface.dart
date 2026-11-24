@@ -778,7 +778,9 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
                 if (opacity == null)
                   content
                 else
-                  FadeSnapshot(opacity: opacity, child: content),
+                  // Recents and the home flick fade home many times over
+                  // while it holds still: one image serves them all.
+                  FadeSnapshot(opacity: opacity, retain: true, child: content),
                 if (contents.drawer && apps != null && _geometry != null)
                   HomeAppDrawer(
                     openness: _drawer,

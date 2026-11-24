@@ -44,6 +44,25 @@ class HomePager extends StatefulWidget {
   static const double inset = 22;
   static const double dotsReservedHeight = 7;
 
+  /// Under a grid whose bottom row is not shared: the band the page dots
+  /// take, kept clear of the home pill below it.
+  static const double dotsBand = 36;
+
+  /// Where the page dots go in a pager [viewportHeight] tall: between the
+  /// rows above and a shared bottom row, or in the band under the grid.
+  static double dotsTop(HomeGridGeometry geometry, double viewportHeight) {
+    if (!geometry.sharedBottomRow) {
+      return viewportHeight - dotsBand + 8;
+    }
+    final rowVisualHeight = geometry.tileSize.height.clamp(
+      0.0,
+      _rowVisualHeight,
+    );
+    final upperBottom =
+        (geometry.upperRows - 1) * geometry.stepY + rowVisualHeight;
+    return (upperBottom + geometry.bottomRowTop - dotsReservedHeight) / 2;
+  }
+
   /// Icon and label of a phone tile; rows below a taller cell show no more.
   static const double _rowVisualHeight = 126;
 
@@ -105,7 +124,9 @@ class _HomePagerState extends State<HomePager> {
         final geometry = HomeGridGeometry.forViewport(
           constraints.biggest,
           inset: HomePager.inset,
-          rowGap: HomePager.dotsReservedHeight,
+          rowGap: widget.sharedBottomRow
+              ? HomePager.dotsReservedHeight
+              : HomePager.dotsBand,
           sharedBottomRow: widget.sharedBottomRow,
         );
         HomeGridLayout.columns = geometry.columns;
@@ -114,20 +135,7 @@ class _HomePagerState extends State<HomePager> {
         widget.onLayout(geometry);
 
         final slots = widget.slots;
-        final rowVisualHeight = geometry.tileSize.height.clamp(
-          0.0,
-          HomePager._rowVisualHeight,
-        );
-        // Between the rows above and the bottom row, which sits at the
-        // bottom of the screen.
-        final upperBottom =
-            (geometry.upperRows - 1) * geometry.stepY + rowVisualHeight;
-        final dotsTop = geometry.rows < 2
-            ? upperBottom
-            : (upperBottom +
-                      geometry.bottomRowTop -
-                      HomePager.dotsReservedHeight) /
-                  2;
+        final dotsTop = HomePager.dotsTop(geometry, constraints.maxHeight);
 
         final pageCount = slots == null
             ? 0
