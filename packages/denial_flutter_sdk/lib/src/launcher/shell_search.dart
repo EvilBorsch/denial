@@ -10,6 +10,7 @@ class ShellSearchWindow {
     required this.appId,
     required this.appName,
     required this.title,
+    this.appSearchableText = '',
   });
 
   /// The shell's identity of the window; search does not interpret it.
@@ -20,16 +21,23 @@ class ShellSearchWindow {
   final String appName;
   final String title;
 
+  /// The app's other words, as its [LauncherApplication.searchableText]
+  /// gives them: a window is found by every word its app is found by, the
+  /// English name of a translated app too. Empty for an app the catalog
+  /// does not have.
+  final String appSearchableText;
+
   @override
   bool operator ==(Object other) =>
       other is ShellSearchWindow &&
       other.id == id &&
       other.appId == appId &&
       other.appName == appName &&
-      other.title == title;
+      other.title == title &&
+      other.appSearchableText == appSearchableText;
 
   @override
-  int get hashCode => Object.hash(id, appId, appName, title);
+  int get hashCode => Object.hash(id, appId, appName, title, appSearchableText);
 
   @override
   String toString() => 'ShellSearchWindow($id, $appId, "$title")';
@@ -93,7 +101,8 @@ class ShellSearchResults {
 /// Every word of the query must match a word of the candidate. A match at
 /// the start of the name ranks above one at the start of a later word, which
 /// ranks above one inside a word, and matches in the name above matches in
-/// other text (window titles' app ids, apps' categories and keywords). A
+/// other text (the app ids, categories, keywords and untranslated names of
+/// apps and of the apps windows belong to). A
 /// query typed in the other keyboard layout (Russian ЙЦУКЕН for Latin QWERTY
 /// and back, the tablet's two layouts) also finds its candidates, below the
 /// direct matches. Ties keep the windows' order and sort apps by name.
@@ -136,7 +145,10 @@ ShellSearchResults searchShell(
         normalizeShellSearchText(window.appName),
         normalizeShellSearchText(window.title),
       ],
-      [normalizeShellSearchText(window.appId)],
+      [
+        normalizeShellSearchText(window.appId),
+        normalizeShellSearchText(window.appSearchableText),
+      ],
     );
     if (score != null) {
       rankedWindows.add((score, index, window));
