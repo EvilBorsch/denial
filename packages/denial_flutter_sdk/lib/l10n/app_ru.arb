@@ -879,6 +879,10 @@
       }
     }
   },
+  "desktopControlCenter": "Пункт управления",
+  "@desktopControlCenter": {
+    "description": "Name and spoken label of the control in the desktop system bar that opens and closes the dashboard (notifications, quick settings), as macOS's Control Center."
+  },
   "desktopDashboardTitle": "Панель управления",
   "@desktopDashboardTitle": {
     "description": "English UI text for desktopDashboardTitle."
@@ -7524,6 +7528,14 @@
   "@homeSearchNoResults": {
     "description": "Shown when the tablet's search matches no window and no app."
   },
+  "shellSearchAllApps": "Все приложения",
+  "@shellSearchAllApps": {
+    "description": "Heading of every app, by name, in the shell's one search (Super, Alt+F, the tablet's app drawer and pull-down search) before anything is typed."
+  },
+  "shellSearchOpenWindowsHint": "Поиск открытых окон",
+  "@shellSearchOpenWindowsHint": {
+    "description": "Placeholder and accessible label of the overview's search field: it finds only the open windows and the apps that run, not apps to start."
+  },
   "powerActionRestartDenial": "Перезапустить Denial",
   "@powerActionRestartDenial": {
     "description": "Power action that starts Denial again in the same session, closing open apps."
@@ -7622,5 +7634,6 @@
   },
   "settingsWindowLayoutScreens": "На весь экран",
   "screensOverviewStackCount": "{count, plural, one{{count} окно} few{{count} окна} many{{count} окон} other{{count} окна}}",
-  "screensOverviewStackExpand": "Показать каждое окно: {app}"
+  "screensOverviewStackExpand": "Показать каждое окно: {app}",
+  "screensOverviewNewScreen": "Новый экран"
 }

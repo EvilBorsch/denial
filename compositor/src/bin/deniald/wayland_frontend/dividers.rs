@@ -13,14 +13,23 @@
 //! background. That lies beneath the tiles, not above them: a press the
 //! shell has in the gap still takes the divider when nothing lies above the
 //! tiles on both sides of it ([`divider_press_reachable`]).
+//!
+//! A tiled client may also ask to be resized from one of its own edges
+//! (`xdg_toplevel.resize`, an X11 client's `_NET_WM_MOVERESIZE`). The edge
+//! it names is a divider when a split neighbour shares it
+//! ([`edge_dividers`]): the request then drags that split, as a press on
+//! the divider would, so both sides keep filling the screen. A corner
+//! drags the split on each of its two edges. An edge on the screen's outer
+//! border has nothing to give way and stays put.
 
 use std::time::{Duration, Instant};
 
 use smithay::desktop::Window;
+use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::backend::ObjectId;
 use smithay::utils::{Logical, Point, Rectangle, Size};
 
-use super::super::window_layout::{LayoutAxis, LayoutDivider, LayoutSpace};
+use super::super::window_layout::{LayoutAxis, LayoutDivider, LayoutResizeEdges, LayoutSpace};
 use super::WaylandFrontend;
 
 /// The narrowest a divider's zone gets for the pointer, in logical pixels
@@ -162,6 +171,18 @@ impl<WindowId: Clone + PartialEq> DividerPresses<WindowId> {
     }
 }
 
+/// What a tiled client's resize from its own edges drags.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct TiledEdgeResize {
+    /// The split beside each requested edge that has one.
+    pub(crate) hits: Vec<DividerHit>,
+    /// The cursor while they move.
+    pub(crate) cursor: &'static str,
+    /// The requested edges on the screen's outer border (or a scrolling
+    /// strip's column edge): nothing gives way there, they stay put.
+    pub(crate) outer: LayoutResizeEdges,
+}
+
 /// A divider under a press, and where its boundary was then.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct DividerHit {
@@ -256,14 +277,117 @@ fn same_split<'a>(
     })
 }
 
-/// A finger holding a divider.
+/// The splits a client's resize from `edges` of `tile` drags: for each
+/// requested edge, the divider right beside it, whose gap starts where the
+/// tile ends and which spans the whole tile. `dividers` and `tile` come
+/// from one arrangement of the layout, so the edges meet exactly. Also the
+/// requested edges with no divider beside them: the screen's outer border,
+/// or a scrolling strip's column edge, which no split owns.
+pub(crate) fn edge_dividers<WindowId>(
+    dividers: &[LayoutDivider<WindowId>],
+    tile: Rectangle<i32, Logical>,
+    edges: LayoutResizeEdges,
+) -> (Vec<&LayoutDivider<WindowId>>, LayoutResizeEdges) {
+    let (left, top) = (tile.loc.x, tile.loc.y);
+    let (right, bottom) = (left + tile.size.w, top + tile.size.h);
+    let spans_rows =
+        |rect: Rectangle<i32, Logical>| rect.loc.y <= top && rect.loc.y + rect.size.h >= bottom;
+    let spans_columns =
+        |rect: Rectangle<i32, Logical>| rect.loc.x <= left && rect.loc.x + rect.size.w >= right;
+    let beside =
+        |wanted: bool, axis: LayoutAxis, meets: &dyn Fn(Rectangle<i32, Logical>) -> bool| {
+            if !wanted {
+                return None;
+            }
+            Some(
+                dividers
+                    .iter()
+                    .find(|divider| divider.axis == axis && meets(divider.rect)),
+            )
+        };
+    let sides = [
+        beside(edges.left, LayoutAxis::Horizontal, &|rect| {
+            rect.loc.x + rect.size.w == left && spans_rows(rect)
+        }),
+        beside(edges.right, LayoutAxis::Horizontal, &|rect| {
+            rect.loc.x == right && spans_rows(rect)
+        }),
+        beside(edges.top, LayoutAxis::Vertical, &|rect| {
+            rect.loc.y + rect.size.h == top && spans_columns(rect)
+        }),
+        beside(edges.bottom, LayoutAxis::Vertical, &|rect| {
+            rect.loc.y == bottom && spans_columns(rect)
+        }),
+    ];
+    let mut found = Vec::new();
+    let mut outer = LayoutResizeEdges::default();
+    let outer_flags = [
+        &mut outer.left,
+        &mut outer.right,
+        &mut outer.top,
+        &mut outer.bottom,
+    ];
+    for (side, outer_flag) in sides.into_iter().zip(outer_flags) {
+        match side {
+            Some(Some(divider)) => found.push(divider),
+            Some(None) => *outer_flag = true,
+            None => {}
+        }
+    }
+    (found, outer)
+}
+
+/// The cursor of a drag that moves `dividers`: the boundary's own resize
+/// shape, or a diagonal one for a corner that moves two.
+pub(crate) fn edge_resize_cursor<WindowId>(
+    dividers: &[&LayoutDivider<WindowId>],
+    edges: LayoutResizeEdges,
+) -> &'static str {
+    let upright = dividers
+        .iter()
+        .any(|divider| divider.axis == LayoutAxis::Horizontal);
+    let level = dividers
+        .iter()
+        .any(|divider| divider.axis == LayoutAxis::Vertical);
+    match (upright, level) {
+        (true, true) if (edges.left && edges.top) || (edges.right && edges.bottom) => "nwse-resize",
+        (true, true) => "nesw-resize",
+        (false, true) => "row-resize",
+        _ => "col-resize",
+    }
+}
+
+/// One split a drag moves: the split as it was when the press came down,
+/// and where its boundary and the press were along its axis then.
+#[derive(Clone, Debug)]
+pub(crate) struct DividerHandle {
+    pub(crate) hit: DividerHit,
+    start_boundary: f64,
+    start_along: f64,
+}
+
+impl DividerHandle {
+    pub(crate) fn new(hit: DividerHit, position: Point<f64, Logical>) -> Self {
+        Self {
+            start_boundary: hit.boundary(),
+            start_along: hit.along(position),
+            hit,
+        }
+    }
+
+    /// Where the boundary goes for the press at `position`: it keeps its
+    /// offset from the press, and does not drift when the press comes back
+    /// from past a limit.
+    pub(crate) fn boundary_at(&self, position: Point<f64, Logical>) -> f64 {
+        self.start_boundary + self.hit.along(position) - self.start_along
+    }
+}
+
+/// A finger holding a divider, or two for a client's corner resize.
 #[derive(Clone, Debug)]
 pub(crate) struct TouchDivider {
     pub(crate) slot: i32,
-    pub(crate) hit: DividerHit,
-    /// Where the boundary and the finger were when it came down.
-    pub(crate) start_boundary: f64,
-    pub(crate) start_along: f64,
+    pub(crate) handles: Vec<DividerHandle>,
     /// The second tap of a double tap evened the split out: the finger
     /// holds the divider without moving it, so its jitter cannot undo that.
     pub(crate) evened: bool,
@@ -271,10 +395,16 @@ pub(crate) struct TouchDivider {
 }
 
 impl TouchDivider {
-    /// Where the boundary goes for the finger at `position`, or nothing
-    /// while the finger only holds the divider.
-    pub(crate) fn boundary_at(&self, position: Point<f64, Logical>) -> Option<f64> {
-        (!self.evened).then(|| self.start_boundary + self.hit.along(position) - self.start_along)
+    /// Where each boundary goes for the finger at `position`; none while
+    /// the finger only holds the divider.
+    pub(crate) fn boundaries_at(&self, position: Point<f64, Logical>) -> Vec<(DividerHit, f64)> {
+        if self.evened {
+            return Vec::new();
+        }
+        self.handles
+            .iter()
+            .map(|handle| (handle.hit.clone(), handle.boundary_at(position)))
+            .collect()
     }
 }
 
@@ -294,20 +424,22 @@ impl TouchDividers {
         self.held.is_none() && !others_down
     }
 
-    /// The finger `slot` came down at `position` and took `hit`, the divider
-    /// as it is now; `evened`: its press evened the split out.
+    /// The finger `slot` came down at `position` and took `hits`, the
+    /// dividers as they are now (one, or two for a client's corner resize);
+    /// `evened`: its press evened the split out.
     pub(crate) fn take(
         &mut self,
         slot: i32,
         position: Point<f64, Logical>,
-        hit: DividerHit,
+        hits: Vec<DividerHit>,
         evened: bool,
     ) {
         self.held = Some(TouchDivider {
             slot,
-            start_boundary: hit.boundary(),
-            start_along: hit.along(position),
-            hit,
+            handles: hits
+                .into_iter()
+                .map(|hit| DividerHandle::new(hit, position))
+                .collect(),
             evened,
             moved: Vec::new(),
         });
@@ -318,16 +450,16 @@ impl TouchDividers {
         self.held.as_ref().is_some_and(|held| held.slot == slot)
     }
 
-    /// The divider the finger `slot` holds and where its boundary goes for
-    /// the finger at `position`: `None` when `slot` holds no divider,
-    /// `Some((hit, None))` while it holds one without moving it.
+    /// Where the boundaries the finger `slot` holds go for the finger at
+    /// `position`: `None` when `slot` holds no divider, an empty list while
+    /// it holds one without moving it.
     pub(crate) fn motion(
         &self,
         slot: i32,
         position: Point<f64, Logical>,
-    ) -> Option<(DividerHit, Option<f64>)> {
+    ) -> Option<Vec<(DividerHit, f64)>> {
         let held = self.held.as_ref().filter(|held| held.slot == slot)?;
-        Some((held.hit.clone(), held.boundary_at(position)))
+        Some(held.boundaries_at(position))
     }
 
     /// Notes a window the drag resized, for the placement that ends it.
@@ -388,6 +520,48 @@ impl WaylandFrontend {
                 divider: divider.clone(),
             },
         )
+    }
+
+    /// The splits a client's request to resize `window` from `edges` drags
+    /// while a layout tiles it ([`edge_dividers`]). `None` when no layout
+    /// tiles the window here: stacking, or the phone of the mobile
+    /// presentation.
+    pub(crate) fn tiled_edge_resize(
+        &self,
+        window: &Window,
+        edges: LayoutResizeEdges,
+    ) -> Option<TiledEdgeResize> {
+        if !self.window_layout.manages_geometry() || (self.mobile_shell && !self.phone_with_desk())
+        {
+            return None;
+        }
+        let window_id = self.window_root_surface(window)?.id();
+        let space = self.window_layout.space_for(&window_id)?;
+        let output = self
+            .outputs
+            .iter()
+            .find(|output| output.id == space.output)?;
+        let work_area = self.maximize_work_area(Some(&output.output), output.logical_geometry);
+        let gap = self.layout_gap();
+        let tile = self
+            .window_layout
+            .arrange(space, work_area, gap)
+            .into_iter()
+            .find(|placement| placement.window == window_id)?
+            .geometry;
+        let dividers = self.window_layout.dividers(space, work_area, gap);
+        let (found, outer) = edge_dividers(&dividers, tile, edges);
+        Some(TiledEdgeResize {
+            cursor: edge_resize_cursor(&found, edges),
+            hits: found
+                .into_iter()
+                .map(|divider| DividerHit {
+                    space,
+                    divider: divider.clone(),
+                })
+                .collect(),
+            outer,
+        })
     }
 
     /// What is on top at `position`: the shell where its input layout gives
@@ -499,6 +673,13 @@ impl WaylandFrontend {
         if self.divider_cursor == shape {
             return false;
         }
+        // Once per change, never per motion: where hovering finds a divider.
+        tracing::info!(
+            ?shape,
+            x = self.pointer_location.x.round(),
+            y = self.pointer_location.y.round(),
+            "split divider cursor"
+        );
         self.divider_cursor = shape;
         self.divider_cursor_changed = true;
         true
@@ -718,14 +899,15 @@ mod tests {
         fingers.take(
             0,
             Point::from((563.0, 400.0)),
-            touch_hit(rect(561, 40, 8, 760)),
+            vec![touch_hit(rect(561, 40, 8, 760))],
             false,
         );
         assert!(fingers.holds(0));
         assert!(!fingers.holds(1));
         // Move: the boundary keeps its offset from the finger.
-        let (_, boundary) = fingers.motion(0, Point::from((663.0, 420.0))).unwrap();
-        assert_eq!(boundary, Some(665.0));
+        let boundaries = fingers.motion(0, Point::from((663.0, 420.0))).unwrap();
+        assert_eq!(boundaries.len(), 1);
+        assert_eq!(boundaries[0].1, 665.0);
         // Another finger moving is not the drag.
         assert_eq!(fingers.motion(1, Point::from((663.0, 420.0))), None);
         // Up ends it.
@@ -745,7 +927,7 @@ mod tests {
         fingers.take(
             2,
             Point::from((565.0, 400.0)),
-            touch_hit(rect(561, 40, 8, 760)),
+            vec![touch_hit(rect(561, 40, 8, 760))],
             false,
         );
         // A second finger while one holds a divider.
@@ -760,13 +942,14 @@ mod tests {
         fingers.take(
             0,
             Point::from((663.0, 400.0)),
-            touch_hit(rect(561, 40, 8, 760)),
+            vec![touch_hit(rect(561, 40, 8, 760))],
             true,
         );
-        let (hit, boundary) = fingers.motion(0, Point::from((667.0, 401.0))).unwrap();
-        assert_eq!(boundary, None);
-        assert_eq!(hit.boundary(), 565.0);
-        assert!(fingers.release(0).is_some_and(|held| held.evened));
+        let boundaries = fingers.motion(0, Point::from((667.0, 401.0))).unwrap();
+        assert!(boundaries.is_empty());
+        let held = fingers.release(0).expect("the finger held the divider");
+        assert!(held.evened);
+        assert_eq!(held.handles[0].hit.boundary(), 565.0);
     }
 
     #[test]
@@ -775,7 +958,7 @@ mod tests {
         fingers.take(
             5,
             Point::from((565.0, 400.0)),
-            touch_hit(rect(561, 40, 8, 760)),
+            vec![touch_hit(rect(561, 40, 8, 760))],
             false,
         );
         assert!(fingers.release_all().is_some());
@@ -799,6 +982,142 @@ mod tests {
         assert!(at(576, DividerPress::Finger));
         assert!(!at(577, DividerPress::Finger));
         assert!(!at(552, DividerPress::Finger));
+    }
+
+    fn edges(top: bool, bottom: bool, left: bool, right: bool) -> LayoutResizeEdges {
+        LayoutResizeEdges {
+            top,
+            bottom,
+            left,
+            right,
+        }
+    }
+
+    const LEFT: LayoutResizeEdges = LayoutResizeEdges {
+        top: false,
+        bottom: false,
+        left: true,
+        right: false,
+    };
+    const RIGHT: LayoutResizeEdges = LayoutResizeEdges {
+        top: false,
+        bottom: false,
+        left: false,
+        right: true,
+    };
+
+    #[test]
+    fn a_shared_edge_of_halves_is_their_divider_and_the_outer_edges_are_none() {
+        let dividers = vec![split_screen()];
+        let left_tile = rect(0, 40, 561, 760);
+        let right_tile = rect(569, 40, 561, 760);
+        let (found, outer) = edge_dividers(&dividers, left_tile, RIGHT);
+        assert_eq!(found, vec![&dividers[0]]);
+        assert_eq!(outer, LayoutResizeEdges::default());
+        let (found, outer) = edge_dividers(&dividers, right_tile, LEFT);
+        assert_eq!(found, vec![&dividers[0]]);
+        assert_eq!(outer, LayoutResizeEdges::default());
+        // The screen's outer border: nothing to drag.
+        let (found, outer) = edge_dividers(&dividers, left_tile, LEFT);
+        assert!(found.is_empty());
+        assert_eq!(outer, LEFT);
+        let (found, outer) = edge_dividers(&dividers, right_tile, edges(true, false, false, false));
+        assert!(found.is_empty());
+        assert!(outer.top);
+        // A corner on a shared edge drags that edge's split; its other
+        // edge is the outer border.
+        let (found, outer) = edge_dividers(&dividers, left_tile, edges(false, true, false, true));
+        assert_eq!(found, vec![&dividers[0]]);
+        assert_eq!(outer, edges(false, true, false, false));
+        assert_eq!(
+            edge_resize_cursor(&found, edges(false, true, false, true)),
+            "col-resize"
+        );
+    }
+
+    #[test]
+    fn a_corner_between_quarters_drags_the_split_on_each_of_its_edges() {
+        // [A | [B / C]], and the left half split too, at the same height:
+        // [[A / D] | [B / C]].
+        let dividers = vec![
+            divider(LayoutAxis::Horizontal, rect(496, 40, 8, 600), vec![]),
+            divider(LayoutAxis::Vertical, rect(0, 336, 496, 8), vec![false]),
+            divider(LayoutAxis::Vertical, rect(504, 336, 496, 8), vec![true]),
+        ];
+        let b = rect(504, 40, 496, 296);
+        let c = rect(504, 344, 496, 296);
+        let a = rect(0, 40, 496, 296);
+        // B's lower edge is its own half's split, not the left half's level
+        // one at the same height.
+        let (found, outer) = edge_dividers(&dividers, b, edges(false, true, false, false));
+        assert_eq!(found, vec![&dividers[2]]);
+        assert_eq!(outer, LayoutResizeEdges::default());
+        // B's lower left corner: the upright split and its own level one.
+        let corner = edges(false, true, true, false);
+        let (found, outer) = edge_dividers(&dividers, b, corner);
+        assert_eq!(found, vec![&dividers[0], &dividers[2]]);
+        assert_eq!(outer, LayoutResizeEdges::default());
+        assert_eq!(edge_resize_cursor(&found, corner), "nesw-resize");
+        // C's upper left corner.
+        let corner = edges(true, false, true, false);
+        let (found, _) = edge_dividers(&dividers, c, corner);
+        assert_eq!(found, vec![&dividers[0], &dividers[2]]);
+        assert_eq!(edge_resize_cursor(&found, corner), "nwse-resize");
+        // A's upper right corner: the upright split; the top is the border.
+        let corner = edges(true, false, false, true);
+        let (found, outer) = edge_dividers(&dividers, a, corner);
+        assert_eq!(found, vec![&dividers[0]]);
+        assert_eq!(outer, edges(true, false, false, false));
+        assert_eq!(edge_resize_cursor(&found, corner), "col-resize");
+        // A's lower edge.
+        let (found, _) = edge_dividers(&dividers, a, edges(false, true, false, false));
+        assert_eq!(found, vec![&dividers[1]]);
+        assert_eq!(
+            edge_resize_cursor(&found, edges(false, true, false, false)),
+            "row-resize"
+        );
+    }
+
+    #[test]
+    fn a_handle_keeps_the_boundary_offset_from_the_press() {
+        let handle = DividerHandle::new(
+            touch_hit(rect(561, 40, 8, 760)),
+            Point::from((563.0, 400.0)),
+        );
+        assert_eq!(handle.boundary_at(Point::from((663.0, 420.0))), 665.0);
+        assert_eq!(handle.boundary_at(Point::from((463.0, 0.0))), 465.0);
+        let level = DividerHandle::new(
+            DividerHit {
+                divider: LayoutDivider {
+                    axis: LayoutAxis::Vertical,
+                    rect: rect(0, 336, 1000, 8),
+                    ..touch_hit(rect(0, 0, 0, 0)).divider
+                },
+                ..touch_hit(rect(0, 0, 0, 0))
+            },
+            Point::from((300.0, 342.0)),
+        );
+        assert_eq!(level.boundary_at(Point::from((900.0, 402.0))), 400.0);
+    }
+
+    #[test]
+    fn a_finger_can_hold_both_splits_of_a_corner() {
+        let mut fingers = TouchDividers::default();
+        let upright = touch_hit(rect(496, 40, 8, 600));
+        let level = DividerHit {
+            divider: LayoutDivider {
+                axis: LayoutAxis::Vertical,
+                rect: rect(504, 336, 496, 8),
+                ..upright.divider.clone()
+            },
+            ..upright.clone()
+        };
+        fingers.take(3, Point::from((502.0, 338.0)), vec![upright, level], false);
+        let boundaries = fingers.motion(3, Point::from((452.0, 398.0))).unwrap();
+        assert_eq!(
+            boundaries.iter().map(|(_, at)| *at).collect::<Vec<_>>(),
+            vec![450.0, 400.0]
+        );
     }
 
     #[test]

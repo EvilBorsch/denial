@@ -81,7 +81,8 @@ class _BatteryActionCard extends StatelessWidget {
   }
 }
 
-/// A bar card that acts on a tap or click, lit while hovered or focused.
+/// A bar card that acts on a tap or click, lit while hovered or focused, and
+/// while [active]: the panel it opened is open.
 class _SystemBarButton extends StatefulWidget {
   const _SystemBarButton({
     super.key,
@@ -89,12 +90,16 @@ class _SystemBarButton extends StatefulWidget {
     required this.label,
     required this.onPressed,
     required this.child,
+    this.active = false,
+    this.padding = const EdgeInsets.symmetric(horizontal: 12),
   });
 
   final WallpaperAccent accent;
   final String label;
   final VoidCallback onPressed;
   final Widget child;
+  final bool active;
+  final EdgeInsetsGeometry padding;
 
   @override
   State<_SystemBarButton> createState() => _SystemBarButtonState();
@@ -109,6 +114,7 @@ class _SystemBarButtonState extends State<_SystemBarButton> {
     return Semantics(
       button: true,
       label: widget.label,
+      expanded: widget.active ? true : null,
       onTap: widget.onPressed,
       child: ExcludeSemantics(
         child: Material(
@@ -125,8 +131,9 @@ class _SystemBarButtonState extends State<_SystemBarButton> {
             onFocusChange: (value) => setState(() => _focused = value),
             child: _SystemBarCard(
               accent: widget.accent,
-              highlighted: _hovered || _focused,
+              highlighted: _hovered || _focused || widget.active,
               focused: _focused,
+              padding: widget.padding,
               child: widget.child,
             ),
           ),
@@ -558,6 +565,47 @@ class _BatteryLevelPainter extends CustomPainter {
         oldDelegate.foreground != foreground ||
         oldDelegate.cornerRadiusScale != cornerRadiusScale;
   }
+}
+
+/// The control-center glyph: two toggle switches stacked, the upper one off
+/// (its knob at the start), the lower one on (its knob at the end), as the
+/// menu-bar icon of macOS's Control Center. Vector strokes and fills in the
+/// bar's value color, crisp at fractional scales like the battery gauge.
+class _ControlCenterGlyphPainter extends CustomPainter {
+  const _ControlCenterGlyphPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 1.35;
+    final trackHeight = (size.height - 2.0) / 2.0;
+    final radius = Radius.circular(trackHeight / 2.0);
+    final knobRadius = trackHeight / 2.0 - 1.4;
+    final outline = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke;
+    final fill = Paint()..color = color;
+    for (final (row, on) in [(0, false), (1, true)]) {
+      final top = row * (trackHeight + 2.0);
+      final track = Rect.fromLTWH(
+        stroke / 2,
+        top + stroke / 2,
+        size.width - stroke,
+        trackHeight - stroke,
+      );
+      canvas.drawRRect(RRect.fromRectAndRadius(track, radius), outline);
+      final knobX = on
+          ? track.right - trackHeight / 2.0 + stroke / 2
+          : track.left + trackHeight / 2.0 - stroke / 2;
+      canvas.drawCircle(Offset(knobX, track.center.dy), knobRadius, fill);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ControlCenterGlyphPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 /// Maps [history] (oldest first, 0-1 values) onto sparkline points inside

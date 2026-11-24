@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'package:denial_flutter_sdk/input.dart';
 import 'package:denial_flutter_sdk/motion.dart';
@@ -17,6 +20,11 @@ class DesktopPanelTransition extends StatefulWidget {
     this.durationScale = 1,
     this.keyboardPolicy = ShellKeyboardPolicy.none,
     this.maintainState = false,
+    this.prebuild = false,
+    this.openingDuration,
+    this.closingDuration,
+    this.curve = Curves.linear,
+    this.reverseCurve = Motion.md3EmphasizedAccelerate,
     this.onOpened,
   });
 
@@ -35,6 +43,20 @@ class DesktopPanelTransition extends StatefulWidget {
   /// panels whose initial state contains decoded images or other expensive
   /// resources that should survive repeated open/close cycles.
   final bool maintainState;
+
+  /// With [maintainState]: builds the child offstage once the shell is idle
+  /// after it starts, so the first opening animates an already built and
+  /// laid out panel instead of building it in its first frame.
+  final bool prebuild;
+
+  /// Durations of the motion when the panel enters from an edge; null keeps
+  /// the desktop panels' defaults. Scaled by [durationScale].
+  final Duration? openingDuration;
+  final Duration? closingDuration;
+
+  /// Easing of the opening and of the closing.
+  final Curve curve;
+  final Curve reverseCurve;
 
   @override
   State<DesktopPanelTransition> createState() => _DesktopPanelTransitionState();
@@ -59,9 +81,35 @@ class _DesktopPanelTransitionState extends State<DesktopPanelTransition>
     );
     _progress = CurvedAnimation(
       parent: _controller,
-      curve: Curves.linear,
-      reverseCurve: Motion.md3EmphasizedAccelerate,
+      curve: widget.curve,
+      reverseCurve: widget.reverseCurve,
     );
+    if (widget.prebuild && widget.maintainState && !widget.visible) {
+      _prebuildTimer = Timer(_prebuildDelay, _prebuild);
+    }
+  }
+
+  /// After the shell's start, when its entrance animations have settled.
+  static const _prebuildDelay = Duration(seconds: 2);
+  Timer? _prebuildTimer;
+  var _prebuildAttempts = 0;
+
+  void _prebuild() {
+    _prebuildTimer = null;
+    if (!mounted || _showChild) {
+      return;
+    }
+    // Not in the middle of an animation: the build and layout of the panel
+    // take a frame of their own while nothing moves (within ten seconds).
+    if (SchedulerBinding.instance.transientCallbackCount > 0 &&
+        ++_prebuildAttempts < 20) {
+      _prebuildTimer = Timer(const Duration(milliseconds: 500), _prebuild);
+      return;
+    }
+    setState(() {
+      _showChild = true;
+      _offstage = true;
+    });
   }
 
   @override
@@ -74,7 +122,9 @@ class _DesktopPanelTransitionState extends State<DesktopPanelTransition>
   void didUpdateWidget(covariant DesktopPanelTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.durationScale != oldWidget.durationScale ||
-        widget.entryDirection != oldWidget.entryDirection) {
+        widget.entryDirection != oldWidget.entryDirection ||
+        widget.openingDuration != oldWidget.openingDuration ||
+        widget.closingDuration != oldWidget.closingDuration) {
       _updateDurations();
     }
     if (widget.visible == oldWidget.visible) {
@@ -126,14 +176,15 @@ class _DesktopPanelTransitionState extends State<DesktopPanelTransition>
 
   Duration get _openingDuration => widget.entryDirection == Offset.zero
       ? Motion.desktopPanelFadeOpen
-      : Motion.desktopPanelOpen;
+      : widget.openingDuration ?? Motion.desktopPanelOpen;
 
   Duration get _closingDuration => widget.entryDirection == Offset.zero
       ? Motion.desktopPanelFadeClose
-      : Motion.desktopPanelClose;
+      : widget.closingDuration ?? Motion.desktopPanelClose;
 
   @override
   void dispose() {
+    _prebuildTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }

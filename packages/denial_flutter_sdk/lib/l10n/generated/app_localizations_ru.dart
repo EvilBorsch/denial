@@ -637,6 +637,9 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String get desktopControlCenter => 'Пункт управления';
+
+  @override
   String get desktopDashboardTitle => 'Панель управления';
 
   @override
@@ -5646,6 +5649,12 @@ class AppLocalizationsRu extends AppLocalizations {
   String get homeSearchNoResults => 'Ничего не найдено';
 
   @override
+  String get shellSearchAllApps => 'Все приложения';
+
+  @override
+  String get shellSearchOpenWindowsHint => 'Поиск открытых окон';
+
+  @override
   String get powerActionRestartDenial => 'Перезапустить Denial';
 
   @override
@@ -5740,4 +5749,7 @@ class AppLocalizationsRu extends AppLocalizations {
   String screensOverviewStackExpand(String app) {
     return 'Показать каждое окно: $app';
   }
+
+  @override
+  String get screensOverviewNewScreen => 'Новый экран';
 }

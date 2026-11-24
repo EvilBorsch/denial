@@ -10,7 +10,6 @@ Future<void> main() async {
     shell: const ReferenceDesktop(
       surfaces: [TopBarPlugin(), DesktopClockPlugin()],
       workArea: TopBarWorkArea(),
-      launcher: LauncherPlugin(),
       actions: [OpenApplicationsAction()],
       petHolds: PerchHolds(),
       petShadows: ContactShadows(),

@@ -164,9 +164,11 @@ void main() {
       backgroundBounds: Offset.zero & _view,
       viewport: _workArea,
     );
-    var overview = container.read(desktopWorkspaceProvider).overview!;
-    final settings = overview.workspaces!.screens!.cards.last.geometry;
     workspace.beginOverviewDrag(2);
+    var overview = container.read(desktopWorkspaceProvider).overview!;
+    // Nothing marks a new screen while it is on its card.
+    expect(overview.workspaces!.screens!.newScreen, isNull);
+    final settings = overview.workspaces!.screens!.cards.last.geometry;
     final from = overview.frames[2]!.center;
     final to = settings.contentRect.centerLeft + const Offset(6, 0);
     workspace.moveOverviewBy(2, to - from);
@@ -180,24 +182,151 @@ void main() {
     overview = container.read(desktopWorkspaceProvider).overview!;
     expect(overview.workspaces!.dropSlot, drop!.highlight);
 
-    // Between the rows, off every card and gap: nothing to highlight.
+    // Between the rows, off every card and gap: out of its split, so the
+    // new screen's slot opens and lights up.
     final first = overview.workspaces!.screens!.cards.first.geometry.rect;
     final outside = first.bottomCenter + const Offset(0, 6);
-    workspace.moveOverviewBy(
-      2,
-      outside -
-          container.read(desktopWorkspaceProvider).overview!.frames[2]!.center,
+    workspace.moveOverviewBy(2, outside - workspace.screensDragPoint!);
+    final detach = workspace.planScreensDrop(2);
+    final slot = container
+        .read(desktopWorkspaceProvider)
+        .overview!
+        .workspaces!
+        .screens!
+        .newScreen!;
+    expect(
+      detach,
+      isA<DesktopScreensMove>()
+          .having((move) => move.targetObjectId, 'target', 3)
+          .having((move) => move.before, 'before', isFalse),
     );
-    expect(workspace.planScreensDrop(2), isNull);
     expect(
       container.read(desktopWorkspaceProvider).overview!.workspaces!.dropSlot,
-      isNull,
+      slot.rect,
     );
     workspace.cancelOverviewDrag(2);
     expect(
       container.read(desktopWorkspaceProvider).placements[2]!.dragging,
       isFalse,
     );
+    // The slot goes with the drag.
+    expect(
+      container
+          .read(desktopWorkspaceProvider)
+          .overview!
+          .workspaces!
+          .screens!
+          .newScreen,
+      isNull,
+    );
+
+    // A lone screen's window dropped off every card and gap stays.
+    workspace.beginOverviewDrag(5);
+    workspace.moveOverviewBy(5, outside - workspace.screensDragPoint!);
+    expect(workspace.planScreensDrop(5), isNull);
+    expect(
+      container
+          .read(desktopWorkspaceProvider)
+          .overview!
+          .workspaces!
+          .screens!
+          .newScreen,
+      isNull,
+    );
+    workspace.cancelOverviewDrag(5);
+  });
+
+  test('a tile dragged out of its split marks its new screen, takes it '
+      'there anywhere off the cards, and cancels back on its card', () {
+    final (container, workspace) = _desktop();
+    addTearDown(container.dispose);
+    workspace.openScreensOverview(
+      monitorId: 1,
+      bounds: Offset.zero & _view,
+      backgroundBounds: Offset.zero & _view,
+      viewport: _workArea,
+    );
+    DesktopOverviewState overview() =>
+        container.read(desktopWorkspaceProvider).overview!;
+    final before = overview().workspaces!.screens!;
+    final cardRects = [for (final card in before.cards) card.geometry.rect];
+    final splitCard = before.cardOfWindow(2)!.geometry.rect;
+    workspace.beginOverviewDrag(2);
+    // Within its own card: no marker, and a drop rearranges the split.
+    workspace.moveOverviewBy(2, const Offset(4, 4));
+    expect(workspace.planScreensDrop(2), isA<DesktopScreensJoin>());
+    expect(overview().workspaces!.screens!.newScreen, isNull);
+
+    // Out of it, past the card's lower edge into the space between the
+    // rows: the marker shows right after the split's card and lights up.
+    workspace.moveOverviewBy(
+      2,
+      splitCard.bottomCenter + const Offset(0, 6) - workspace.screensDragPoint!,
+    );
+    final drop = workspace.planScreensDrop(2);
+    final screens = overview().workspaces!.screens!;
+    final slot = screens.newScreen!;
+    expect(slot.objectId, 2);
+    expect(slot.targetObjectId, 3);
+    expect(
+      drop,
+      isA<DesktopScreensMove>()
+          .having((move) => move.targetObjectId, 'target', 3)
+          .having((move) => move.before, 'before', isFalse)
+          .having((move) => move.highlight, 'highlight', slot.rect),
+    );
+    expect(overview().workspaces!.dropSlot, slot.rect);
+    // No card moved for it.
+    expect([for (final card in screens.cards) card.geometry.rect], cardRects);
+
+    // Back onto its own card: it stays, and the marker stays for the drag.
+    workspace.moveOverviewBy(2, splitCard.center - workspace.screensDragPoint!);
+    expect(workspace.planScreensDrop(2), isNull);
+    expect(overview().workspaces!.dropSlot, isNull);
+    expect(overview().workspaces!.screens!.newScreen, isNotNull);
+
+    // Far past the bottom of the overview, where the preview itself cannot
+    // follow: the drop still goes by the pointer.
+    workspace.moveOverviewBy(
+      2,
+      Offset(_view.width / 2, _view.height + 200) - workspace.screensDragPoint!,
+    );
+    expect(overview().frames[2]!.bottom, lessThanOrEqualTo(_view.height + 0.5));
+    expect(
+      workspace.planScreensDrop(2),
+      isA<DesktopScreensMove>().having(
+        (move) => move.highlight,
+        'highlight',
+        slot.rect,
+      ),
+    );
+
+    // The shell ends the drag as it asks the compositor for the move: the
+    // marker goes with the drag.
+    workspace.cancelOverviewDrag(2);
+    expect(overview().workspaces!.screens!.newScreen, isNull);
+    expect(overview().workspaces!.dropSlot, isNull);
+
+    // The compositor's answer: window 2 on a screen of its own right after
+    // the split.
+    const current = 2;
+    final strip = _strip();
+    workspace.syncWindows(
+      <DenialWindow>[
+        strip[0],
+        _window(2, app: 'files', screen: 3, current: current),
+        _window(3, app: 'terminal', screen: 2, current: current),
+        _window(4, app: 'firefox', screen: 4, current: current),
+        _window(5, app: 'settings', screen: 5, current: current),
+      ],
+      _view,
+      1,
+      snapshotSequence: 2,
+      windowLayout: DesktopWindowLayout.screens,
+    );
+    final after = overview().workspaces!.screens!;
+    expect(after.newScreen, isNull);
+    expect(after.cards.map((card) => card.identity), ['1,4', '3', '2', '5']);
   });
 
   test('a drop leaves no highlight behind when the strip changes', () {

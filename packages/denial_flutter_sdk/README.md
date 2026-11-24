@@ -141,7 +141,10 @@ labels, host-owned focus and cursors, icon rendering, and launch/dismiss callbac
 IDs are opaque and shared between catalog entries and recent history. Hosts retain
 catalog identity until its contents or locale change. Implementations own their
 search/navigation state; the runtime owns native input, activation and transitions.
-The reference implementation lives in `plugins/denial_launcher`.
+The EvilBorsch fork's shell (eb19) ships no implementation: its one search is the
+launcher, and `plugins/denial_launcher` provides only the launcher's action.
+`launcher.dart` also exports `searchShell`, the matcher and ranking of that search;
+the reference desktop calls it from one place, `plugins/denial_desktop/lib/src/search/`.
 
 ### Shortcut actions
 
