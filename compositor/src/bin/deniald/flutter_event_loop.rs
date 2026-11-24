@@ -652,6 +652,8 @@ impl Session<'_, '_> {
             }
             let screenshot_prepared = self.flutter.take_screenshot_prepared();
             let screenshot_cancelled = self.flutter.take_screenshot_cancelled();
+            let presentation_cover_requested = self.flutter.take_presentation_cover_requested();
+            let presentation_cover_released = self.flutter.take_presentation_cover_released();
             let screenshot_request = self.flutter.take_screenshot_requested().or_else(|| {
                 std::mem::take(&mut self.events.screenshot_requested).then_some(
                     flutter_runtime::system_command::ScreenshotRequest {
@@ -681,6 +683,9 @@ impl Session<'_, '_> {
             frontend.process_pending_dmabufs(self.renderer)?;
             frontend.process_toplevel_screencopies(self.renderer)?;
 
+            // A cover the shell is done with goes before a new one starts.
+            self.handle_presentation_cover_release(presentation_cover_released)?;
+            self.handle_presentation_cover_request(presentation_cover_requested)?;
             if self.begin_pending_screenshot_selection()?
                 || self.handle_prepared_screenshot(screenshot_prepared)?
             {

@@ -2553,6 +2553,44 @@ fn eb18_shell_actions_reach_the_wire() {
 }
 
 #[test]
+fn a_presentation_cover_answers_with_its_frozen_frame_or_without_one() {
+    let mut bridge = bridge();
+    let bytes = bridge
+        .encode_screenshot_action(ShellAction::PresentationCover, 7, Some(42))
+        .unwrap();
+    let envelope = fb::root_as_envelope(bytes).unwrap();
+    assert_eq!(envelope.request_id(), 7);
+    let action = envelope.payload_as_shell_action().unwrap();
+    assert_eq!(action.action(), fb::ShellActionKind::PresentationCover);
+    assert_eq!(action.texture_id(), 42);
+
+    let bytes = bridge
+        .encode_screenshot_action(ShellAction::PresentationCover, 8, None)
+        .unwrap();
+    let envelope = fb::root_as_envelope(bytes).unwrap();
+    assert_eq!(envelope.request_id(), 8);
+    assert_eq!(envelope.payload_as_shell_action().unwrap().texture_id(), 0);
+
+    // The shell's request names it; a texture identity is never zero.
+    assert!(
+        bridge
+            .encode_screenshot_action(ShellAction::PresentationCover, 0, Some(42))
+            .is_err()
+    );
+    assert!(
+        bridge
+            .encode_screenshot_action(ShellAction::PresentationCover, 9, Some(0))
+            .is_err()
+    );
+    // Screenshots keep their rules.
+    assert!(
+        bridge
+            .encode_screenshot_action(ShellAction::ScreenshotTextureReady, 9, None)
+            .is_err()
+    );
+}
+
+#[test]
 fn input_device_capabilities_tell_physical_keyboards_from_virtual_ones() {
     let mut bridge = bridge();
     let touchpad = TouchpadSettings::default();

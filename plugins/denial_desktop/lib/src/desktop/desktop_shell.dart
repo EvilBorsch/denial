@@ -212,6 +212,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         if (monitorId != null && workspaceId != null) {
           _workspaceChanged(monitorId, workspaceId);
         }
+      case DenialShellAction.presentationCover:
+        // The presentation switch takes it (presentationSwitchProvider).
+        break;
     }
   }
 

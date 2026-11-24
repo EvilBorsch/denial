@@ -479,6 +479,9 @@ pub enum ShellAction {
     /// [`ShellGesture`], which carries its direction and progress.
     #[allow(dead_code)]
     ShellGesture,
+    /// The answer to the shell's presentation cover request: the frame on
+    /// screen frozen in a texture, or none.
+    PresentationCover,
 }
 
 /// The direction of a [`ShellGesture`].
@@ -563,6 +566,7 @@ impl ShellAction {
             Self::AppSwitcherCancel => fb::ShellActionKind::AppSwitcherCancel,
             Self::Search => fb::ShellActionKind::Search,
             Self::ShellGesture => fb::ShellActionKind::ShellGesture,
+            Self::PresentationCover => fb::ShellActionKind::PresentationCover,
         }
     }
 }

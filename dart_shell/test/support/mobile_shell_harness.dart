@@ -11,6 +11,7 @@ import 'package:denial_flutter_sdk/system_services.dart'
     show HapticsService, hapticsServiceProvider;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 
 /// The tablet's landscape panel at the shell's scale, in logical pixels.
@@ -111,6 +112,9 @@ class MobileShellBridge extends DenialBridge {
   final _devices = StreamController<DenialInputDeviceCapabilities>.broadcast(
     sync: true,
   );
+  final _shellActions = StreamController<DenialShellActionEvent>.broadcast(
+    sync: true,
+  );
 
   List<DenialWindow> windows = const [];
   int _sequence = 0;
@@ -185,11 +189,40 @@ class MobileShellBridge extends DenialBridge {
       requests.add('leave split ${window.objectId}');
 
   @override
+  Stream<DenialShellActionEvent> get shellActions => _shellActions.stream;
+
+  @override
+  bool requestPresentationCover(int requestId) {
+    if (requestId <= 0) return false;
+    requests.add('cover $requestId');
+    return true;
+  }
+
+  @override
+  bool releasePresentationCover(int requestId) {
+    requests.add('release cover $requestId');
+    return true;
+  }
+
+  /// deniald answers cover request [requestId] with the frozen frame in
+  /// [texture], or without one.
+  void answerCover(int requestId, int? texture) => _shellActions.add(
+    DenialShellActionEvent(
+      action: DenialShellAction.presentationCover,
+      monitorId: null,
+      requestId: requestId,
+      textureId: texture,
+      workspaceId: null,
+    ),
+  );
+
+  @override
   void prewarmHaptics() {}
 
   @override
   void dispose() {
     unawaited(_snapshots.close());
+    unawaited(_shellActions.close());
     unawaited(_activations.close());
     unawaited(_editors.close());
     unawaited(_devices.close());
@@ -199,9 +232,10 @@ class MobileShellBridge extends DenialBridge {
 
 /// The mobile shell's controller over [MobileShellBridge].
 class MobileShellHarness {
-  MobileShellHarness() {
+  MobileShellHarness({List<Override> overrides = const []}) {
     container = ProviderContainer(
       overrides: [
+        ...overrides,
         denialBridgeProvider.overrideWithValue(bridge),
         startupEnvironmentProvider.overrideWithValue(
           StartupEnvironment(const {'DENIAL_SHELL_PROFILE': 'mobile'}),
