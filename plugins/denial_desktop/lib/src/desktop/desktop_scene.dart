@@ -9,7 +9,6 @@ import 'package:denial_flutter_sdk/models.dart';
 import 'package:denial_flutter_sdk/motion.dart';
 import 'package:denial_flutter_sdk/rendering.dart';
 import 'package:denial_flutter_sdk/settings.dart';
-import 'package:denial_flutter_sdk/shell_theme.dart';
 import 'package:denial_flutter_sdk/surface_hosting.dart';
 import 'package:denial_flutter_sdk/surfaces.dart';
 import 'package:flutter/foundation.dart';
@@ -37,7 +36,6 @@ import 'desktop_panel_overlay.dart';
 import 'desktop_pixel_alignment.dart';
 import 'desktop_scene_layers.dart';
 import 'desktop_search_overlay.dart';
-import 'desktop_wallpaper_backdrop.dart';
 import 'desktop_window_frame.dart';
 import 'desktop_window_layers.dart';
 import 'desktop_window_switcher_bounds.dart';
@@ -394,11 +392,6 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
   List<DenialWindow>? _heldLayersSource;
   Map<int, List<DenialWindow>> _heldLayers = const <int, List<DenialWindow>>{};
 
-  /// The wallpaper frosted once with the window material, for the overview's
-  /// glass: the overview moves over a still wallpaper, so it draws its glass
-  /// from this image instead of filtering the scene on every frame.
-  final FrostedBackdropCapture _wallpaperGlass = FrostedBackdropCapture();
-
   @override
   void initState() {
     super.initState();
@@ -725,19 +718,8 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // The frost hides detail: one image pixel per logical pixel is enough.
-    _wallpaperGlass.configure(
-      theme: context.shellTheme,
-      pixelRatio: math.min(MediaQuery.devicePixelRatioOf(context), 1),
-    );
-  }
-
-  @override
   void dispose() {
     _overviewDepartureTimer?.cancel();
-    _wallpaperGlass.dispose();
     _minimizeLayerHandoff.dispose();
     _minimizedPlacementTransition.dispose();
     _minimizedPlacementExitFrames.clear();
@@ -924,49 +906,11 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
             switcher: windowSwitcher,
           );
 
-    final coveredOutputs = _cachedCoveredOutputs(layerSurfaces, displayLayout);
-    final desktopPlaneWindowLayers = buildDesktopWindowLayers(
-      desktopVisible: desktopVisible,
-      placements: placements,
-      windowsById: windowsById,
-      desktop: desktop,
-      desktopPlane: true,
-      minimizeLayerHandoff: _minimizeLayerHandoff,
-      minimizedPlacementTransition: _minimizedPlacementTransition,
-      minimizedPlacementExitFrames: _minimizedPlacementExitFrames,
-      minimizeOffscreenBounds: canvas,
-      minimizedWindowPlacement: minimizedWindowPlacement,
-      desktopWidgetFrames: homeLayout.windowFrames,
-      switcher: windowSwitcher,
-      switcherStageBounds: switcherStageBounds,
-      topZ: topZ,
-      reduceMotion: reduceMotion,
-      displayLayout: displayLayout,
-      devicePixelRatio: devicePixelRatio,
-      windowRevealRegistry: _windowRevealRegistry,
-      windowFrameKeys: _windowFrameKeys,
-      onActivateWindow: onActivateWindow,
-      onCloseWindow: onCloseWindow,
-      onBeginOverviewDrag: onBeginOverviewDrag,
-      onUpdateOverviewDrag: onUpdateOverviewDrag,
-      onEndOverviewDrag: onEndOverviewDrag,
-      onCancelOverviewDrag: onCancelOverviewDrag,
-      overviewDepartingFrames: _overviewDepartingFrames,
-      heldLayers: heldLayers,
-      overviewMotion: overviewMotion,
-    );
-    final backdropIsWallpaper = desktopBackdropIsWallpaper(
-      coveredOutputs: coveredOutputs,
-      layerSurfaces: layerSurfaces,
-      surfaceEntries: surfaceEntries,
-      desktopPlaneWindows: desktopPlaneWindowLayers.length,
-    );
     return Stack(
       fit: StackFit.expand,
       children: [
         ShellWallpaper(
-          coveredOutputs: coveredOutputs,
-          onPainted: _wallpaperGlass.painted,
+          coveredOutputs: _cachedCoveredOutputs(layerSurfaces, displayLayout),
         ),
         // A held layer is drawn in its window's slot instead.
         for (final surface in layerSurfaces)
@@ -994,7 +938,38 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                     curve: Motion.md3EmphasizedAccelerate,
                     child: Stack(
                       fit: StackFit.expand,
-                      children: desktopPlaneWindowLayers,
+                      children: buildDesktopWindowLayers(
+                        desktopVisible: desktopVisible,
+                        placements: placements,
+                        windowsById: windowsById,
+                        desktop: desktop,
+                        desktopPlane: true,
+                        minimizeLayerHandoff: _minimizeLayerHandoff,
+                        minimizedPlacementTransition:
+                            _minimizedPlacementTransition,
+                        minimizedPlacementExitFrames:
+                            _minimizedPlacementExitFrames,
+                        minimizeOffscreenBounds: canvas,
+                        minimizedWindowPlacement: minimizedWindowPlacement,
+                        desktopWidgetFrames: homeLayout.windowFrames,
+                        switcher: windowSwitcher,
+                        switcherStageBounds: switcherStageBounds,
+                        topZ: topZ,
+                        reduceMotion: reduceMotion,
+                        displayLayout: displayLayout,
+                        devicePixelRatio: devicePixelRatio,
+                        windowRevealRegistry: _windowRevealRegistry,
+                        windowFrameKeys: _windowFrameKeys,
+                        onActivateWindow: onActivateWindow,
+                        onCloseWindow: onCloseWindow,
+                        onBeginOverviewDrag: onBeginOverviewDrag,
+                        onUpdateOverviewDrag: onUpdateOverviewDrag,
+                        onEndOverviewDrag: onEndOverviewDrag,
+                        onCancelOverviewDrag: onCancelOverviewDrag,
+                        overviewDepartingFrames: _overviewDepartingFrames,
+                        heldLayers: heldLayers,
+                        overviewMotion: overviewMotion,
+                      ),
                     ),
                   ),
                 ),
@@ -1008,11 +983,7 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                 decoration: Stack(
                   fit: StackFit.expand,
                   children: [
-                    DesktopOverviewBackdrop(
-                      wallpaperGlass: backdropIsWallpaper
-                          ? _wallpaperGlass
-                          : null,
-                    ),
+                    const DesktopOverviewBackdrop(),
                     DesktopWorkspaceOverviewDeck(
                       desktop: desktop,
                       motion: overviewMotion,
