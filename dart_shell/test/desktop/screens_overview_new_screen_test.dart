@@ -123,10 +123,19 @@ void main() {
                   transparencyMode: ShellTransparencyMode.off,
                 ),
                 child: Consumer(
-                  builder: (context, ref, _) => DesktopWorkspaceOverviewDeck(
-                    desktop: ref.watch(desktopWorkspaceProvider),
-                    motion: const AlwaysStoppedAnimation<double>(1.0),
-                    onSelectWorkspace: (_, _) {},
+                  builder: (context, ref, _) => Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      DesktopWorkspaceOverviewDeck(
+                        desktop: ref.watch(desktopWorkspaceProvider),
+                        motion: const AlwaysStoppedAnimation<double>(1.0),
+                        onSelectWorkspace: (_, _) {},
+                      ),
+                      // The scene puts the label above the windows.
+                      DesktopScreensNewScreenLabel(
+                        desktop: ref.watch(desktopWorkspaceProvider),
+                      ),
+                    ],
                   ),
                 ),
               ),

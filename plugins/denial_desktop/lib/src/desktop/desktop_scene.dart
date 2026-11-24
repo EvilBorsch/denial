@@ -1046,6 +1046,10 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                   ),
                 ),
               ),
+              // Above the windows, so the dragged one never hides it.
+              Positioned.fill(
+                child: DesktopScreensNewScreenLabel(desktop: desktop),
+              ),
               Positioned.fill(
                 child: DesktopOverviewHub(
                   onActivateWindow: onActivateWindow,

@@ -841,11 +841,11 @@ class _DropSlotState extends State<_DropSlot> {
 
 /// Where a window dragged out of its split goes as a screen of its own
 /// (`DesktopScreenNewSlot`): an accent bar in the gap right after its former
-/// screen's card, and a "+ New screen" label on it. It fades in as soon as
-/// the window leaves its card and fades out when the drag ends; the drop
-/// highlight lights the gap while a drop would land there. Nothing in it
-/// changes while it shows: it is built once, then only faded.
-class _NewScreenMarker extends StatefulWidget {
+/// screen's card. Its "+ New screen" label ([DesktopScreensNewScreenLabel])
+/// lies above the windows, so the dragged window never hides it. Both fade
+/// in as soon as the window leaves its card and fade out when the drag ends;
+/// the drop highlight lights the gap while a drop would land there.
+class _NewScreenMarker extends StatelessWidget {
   const _NewScreenMarker({
     required this.slot,
     required this.zoom,
@@ -857,59 +857,56 @@ class _NewScreenMarker extends StatefulWidget {
   final Rect Function(Rect rect) place;
 
   @override
-  State<_NewScreenMarker> createState() => _NewScreenMarkerState();
+  Widget build(BuildContext context) {
+    final accent = context.shellTheme.accent;
+    return _FadingSlot(
+      slot: slot,
+      builder: (slot) {
+        final bar = Rect.fromCenter(
+          center: slot.rect.center,
+          width: 6.0,
+          height: slot.rect.height,
+        );
+        return _Placed(
+          motion: zoom,
+          rect: () => place(bar),
+          child: RepaintBoundary(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius: BorderRadius.circular(3.0),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
-class _NewScreenMarkerState extends State<_NewScreenMarker> {
-  DesktopScreenNewSlot? _last;
+/// The "+ New screen" label of the new screen's marker, for the layer
+/// above the windows of the screens overview: in scene coordinates, which
+/// the open overview shares with its cards. Shown only while the overview
+/// is open and a window has left its split card.
+class DesktopScreensNewScreenLabel extends StatelessWidget {
+  const DesktopScreensNewScreenLabel({super.key, required this.desktop});
+
+  final DesktopWorkspaceState desktop;
 
   @override
   Widget build(BuildContext context) {
-    final slot = widget.slot ?? _last;
-    _last = slot;
-    if (slot == null) {
-      return const SizedBox.shrink();
-    }
     final theme = context.shellTheme;
     final accent = theme.accent;
-    final reduceMotion = MediaQuery.disableAnimationsOf(context);
-    final bar = Rect.fromCenter(
-      center: slot.rect.center,
-      width: 6.0,
-      height: slot.rect.height,
-    );
+    final foreground = theme.accentPalette.onPrimary;
     final label = context.l10n.screensOverviewNewScreen;
     return IgnorePointer(
-      child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: 0.0, end: widget.slot == null ? 0.0 : 1.0),
-        duration: reduceMotion ? Duration.zero : Motion.tile,
-        curve: Motion.standard,
-        // Faded out: gone until a window leaves its split again.
-        onEnd: () {
-          if (widget.slot == null && _last != null && mounted) {
-            setState(() => _last = null);
-          }
-        },
-        builder: (context, opacity, child) =>
-            Opacity(opacity: opacity, child: child),
-        child: Stack(
+      child: _FadingSlot(
+        slot: desktop.overview?.workspaces?.screens?.newScreen,
+        builder: (slot) => Stack(
           fit: StackFit.expand,
           children: [
-            _Placed(
-              motion: widget.zoom,
-              rect: () => widget.place(bar),
-              child: RepaintBoundary(
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: accent,
-                    borderRadius: BorderRadius.circular(3.0),
-                  ),
-                ),
-              ),
-            ),
-            _Placed(
-              motion: widget.zoom,
-              rect: () => widget.place(slot.labelRect),
+            Positioned.fromRect(
+              rect: slot.labelRect,
               child: RepaintBoundary(
                 child: Semantics(
                   label: label,
@@ -932,7 +929,7 @@ class _NewScreenMarkerState extends State<_NewScreenMarker> {
                               Icon(
                                 Icons.add_rounded,
                                 size: 22,
-                                color: theme.accentPalette.onPrimary,
+                                color: foreground,
                               ),
                               const SizedBox(width: 6),
                               Text(
@@ -942,7 +939,7 @@ class _NewScreenMarkerState extends State<_NewScreenMarker> {
                                   fontSize: 15,
                                   height: 1.2,
                                   fontWeight: FontWeight.w600,
-                                  color: theme.accentPalette.onPrimary,
+                                  color: foreground,
                                   decoration: TextDecoration.none,
                                 ),
                               ),
@@ -958,6 +955,46 @@ class _NewScreenMarkerState extends State<_NewScreenMarker> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Fades [builder]'s widget for [slot] in when a slot appears and out when
+/// it goes, then drops it; its opacity animates over [Motion.tile].
+class _FadingSlot extends StatefulWidget {
+  const _FadingSlot({required this.slot, required this.builder});
+
+  final DesktopScreenNewSlot? slot;
+  final Widget Function(DesktopScreenNewSlot slot) builder;
+
+  @override
+  State<_FadingSlot> createState() => _FadingSlotState();
+}
+
+class _FadingSlotState extends State<_FadingSlot> {
+  DesktopScreenNewSlot? _last;
+
+  @override
+  Widget build(BuildContext context) {
+    final slot = widget.slot ?? _last;
+    if (slot == null) {
+      return const SizedBox.shrink();
+    }
+    _last = slot;
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: widget.slot == null ? 0.0 : 1.0),
+      duration: reduceMotion ? Duration.zero : Motion.tile,
+      curve: Motion.standard,
+      // Faded out: gone until a window leaves its split again.
+      onEnd: () {
+        if (widget.slot == null && _last != null && mounted) {
+          setState(() => _last = null);
+        }
+      },
+      builder: (context, opacity, child) =>
+          Opacity(opacity: opacity, child: child),
+      child: widget.builder(slot),
     );
   }
 }
