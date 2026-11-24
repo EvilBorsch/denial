@@ -19,6 +19,20 @@ tablet nothing switches on its own; a keyboard attached or detached
 meanwhile decides once the monitor is gone. A switch keeps every window, and
 under the lock screen the other presentation's lock screen shows at once.
 
+What a switch keeps (eb19): while the tablet presentation holds the screen,
+the desktop's window layout waits as it was left, so the desktop comes back
+with the same screens in the same order, and the app in front on the tablet
+is the current screen (and the other way round). A screen of the full-screen
+apps layout holding two windows side by side is a Split View pair on the
+tablet, with the same share, and a pair made, changed or taken apart on the
+tablet is a split screen, changed or taken apart, on the desktop. Apps the
+tablet paused because the user left them are on their screens again; windows
+minimized on the desktop stay minimized. The last picture of the
+presentation left stays in front until the windows the new one shows have
+redrawn at their new sizes (half a second at most), then dissolves into it
+(`deniald`: `wayland_frontend/presentation_switch.rs`; shell:
+`core/presentation_switch_cover.dart`).
+
 The shell keeps the presentation in the settings document, section
 `presentation` (validated by `deniald`, read by no release before eb18,
 which keep it as it is):

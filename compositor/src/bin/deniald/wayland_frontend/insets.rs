@@ -327,6 +327,9 @@ impl WaylandFrontend {
                 }
             }
             self.mobile_shell = true;
+            // Split screens are Split View pairs on the tablet; their windows
+            // take their halves below.
+            self.pair_side_by_side_screens();
             for window in &windows {
                 self.configure_mobile_window(window);
             }
@@ -337,7 +340,7 @@ impl WaylandFrontend {
                 .into_iter()
                 .filter(|window| self.mobile_window_geometry(window).is_some())
                 .collect::<Vec<_>>();
-            self.clear_split_views();
+            let dormant = self.desktop_layout_dormant();
             self.mobile_shell = false;
             for window in &windows {
                 if let Some(record) = self
@@ -346,6 +349,16 @@ impl WaylandFrontend {
                 {
                     record.mobile_fullscreen = false;
                 }
+            }
+            // Apps the tablet paused because the user left them are on their
+            // screens again: the desktop shows its windows side by side.
+            let restored = if dormant {
+                self.restore_windows_the_tablet_minimized()
+            } else {
+                0
+            };
+            if restored > 0 {
+                info!(restored, "windows the tablet minimized are shown again");
             }
             for window in &windows {
                 let Some(root) = self.window_root_surface(window) else {
@@ -385,7 +398,14 @@ impl WaylandFrontend {
                 }
                 self.set_window_geometry_target_with_authority(window, target, authority);
             }
-            self.rebuild_window_layout();
+            // The layout kept every window's place; windows opened on the
+            // tablet join it, Split View pairs become split screens, and the
+            // app in front on the tablet is the current screen.
+            self.rebuild_window_layout_membership(&HashMap::new());
+            self.show_split_views_as_screens();
+            self.activate_focused_layout_window();
+            self.arrange_layout_windows();
+            self.place_dialogs_over_parents();
         }
         self.send_keyboard_insets(0);
         self.client_input_route_cache = None;

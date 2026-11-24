@@ -10,7 +10,9 @@
 //! (`window_layout::split_geometry_on_axis`).
 //!
 //! A pair comes apart when the shell asks (`LeaveSplitView`), when either
-//! window goes away or to a desk, and when the presentation leaves mobile.
+//! window goes away or to a desk, and when the presentation leaves mobile:
+//! then the full-screen apps layout shows it as a split screen, and its split
+//! screens come back as pairs (`presentation_switch.rs`).
 //! A window that asks for full screen fills the screen while it is full
 //! screen; its pair resumes when it leaves full screen. A pair is minimized
 //! and restored as one: what the user left, or brings back, is the pair.
@@ -238,14 +240,6 @@ impl WaylandFrontend {
         if let Some(partner) = pair.partner_of(window_id) {
             info!(window_id, partner, "Split View ended with a window");
             self.configure_split_view_windows(&[partner]);
-        }
-    }
-
-    /// The presentation left mobile: every pair comes apart. The desktop
-    /// configures the windows itself.
-    pub(super) fn clear_split_views(&mut self) {
-        if !self.split_views.clear().is_empty() {
-            info!("Split View ended with the mobile presentation");
         }
     }
 

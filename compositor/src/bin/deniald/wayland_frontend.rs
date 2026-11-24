@@ -214,6 +214,9 @@ mod pet;
 mod phone_desk;
 #[path = "wayland_frontend/presentation.rs"]
 mod presentation;
+#[cfg(feature = "flutter")]
+#[path = "wayland_frontend/presentation_switch.rs"]
+mod presentation_switch;
 #[path = "wayland_frontend/scene_input.rs"]
 mod scene_input;
 #[path = "wayland_frontend/screencopy.rs"]

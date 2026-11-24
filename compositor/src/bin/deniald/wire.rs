@@ -927,6 +927,9 @@ pub struct WindowDescription {
     /// window's share of the width (0 when none).
     pub split_view_partner_id: u64,
     pub split_view_ratio: f64,
+    /// Laid out by the tablet (mobile) presentation's policy: the window
+    /// fills the phone's panel below the status bar, or its Split View half.
+    pub on_phone: bool,
 }
 
 /// A desktop pet (denial-pet-v1) as the shell knows it. A held pet is drawn

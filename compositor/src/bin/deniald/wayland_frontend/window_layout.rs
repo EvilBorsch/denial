@@ -1039,7 +1039,13 @@ impl WaylandFrontend {
     /// Layout algorithms only ever see regular, resizable toplevels; protocol
     /// policy for dialogs and auxiliary surfaces stays isolated in this adapter.
     pub(super) fn reconcile_window_layout(&mut self, window: &Window) -> bool {
-        // A phone window fills the panel; one that left a desk leaves its layout.
+        // A phone window fills the panel; one that left a desk leaves its
+        // layout. The phone alone keeps the desktop's layout as it is for
+        // the desktop's return (`presentation_switch.rs`).
+        #[cfg(feature = "flutter")]
+        if self.desktop_layout_dormant() {
+            return false;
+        }
         #[cfg(feature = "flutter")]
         if self.window_on_phone(window) {
             let removed = self
@@ -1219,15 +1225,27 @@ impl WaylandFrontend {
         &mut self,
         order: &HashMap<ObjectId, (usize, u8, usize)>,
     ) -> bool {
-        // The phone alone: every window fills it, and no desk layout keeps
-        // the windows a desk took away with it.
+        // The phone alone: every window fills it, and the desktop's layout
+        // waits as it is. Windows a desk took away with it leave that desk's
+        // strip when the desktop rebuilds it.
         #[cfg(feature = "flutter")]
-        if self.mobile_shell && !self.phone_with_desk() {
-            if self.window_layout.manages_geometry() {
-                self.window_layout.rebuild(Vec::new());
-            }
+        if self.desktop_layout_dormant() {
             return self.arrange_layout_windows();
         }
+        if !self.rebuild_window_layout_membership(order) {
+            return false;
+        }
+        self.arrange_layout_windows()
+    }
+
+    /// The membership half of a rebuild: every eligible window keeps its
+    /// place, new ones join in `order` and then stacking order, and the rest
+    /// leave. Returns false when the layout does not arrange windows. The
+    /// caller arranges.
+    pub(super) fn rebuild_window_layout_membership(
+        &mut self,
+        order: &HashMap<ObjectId, (usize, u8, usize)>,
+    ) -> bool {
         if !self.window_layout.manages_geometry() {
             return false;
         }
@@ -1280,7 +1298,7 @@ impl WaylandFrontend {
         for window in maximize_after_rebuild {
             self.adopt_scrolling_maximize(&window);
         }
-        self.arrange_layout_windows()
+        true
     }
 
     pub(super) fn arrange_layout_windows(&mut self) -> bool {
@@ -1661,7 +1679,7 @@ impl WaylandFrontend {
             .unwrap_or(fallback)
     }
 
-    fn focused_layout_window(&self) -> Option<ObjectId> {
+    pub(super) fn focused_layout_window(&self) -> Option<ObjectId> {
         let focus = self.seat.get_keyboard()?.current_focus()?;
         let surface = focus.wl_surface()?;
         let root = self

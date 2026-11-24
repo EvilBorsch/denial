@@ -1739,6 +1739,7 @@ class DenialWireCodec {
                 window.splitViewRatio < 1
             ? window.splitViewRatio
             : 0.0,
+        onPhone: window.onPhone,
       );
       // FlatBuffers getters parse their field on each access. Validate the
       // materialized snapshot so geometry and layer fields are read only once.

@@ -1599,6 +1599,7 @@ impl WaylandFrontend {
                 layout_screen_floating: window_screen.is_some_and(|screen| screen.floating),
                 split_view_partner_id: split_view.map_or(0, |(partner, _)| partner),
                 split_view_ratio: split_view.map_or(0.0, |(_, ratio)| ratio),
+                on_phone: self.mobile_window_geometry(window).is_some(),
             };
             if let Some(previous) = windows.get_mut(window_count) {
                 *previous = description;
@@ -1713,6 +1714,7 @@ impl WaylandFrontend {
                 layout_screen_floating: false,
                 split_view_partner_id: 0,
                 split_view_ratio: 0.0,
+                on_phone: false,
             };
             if let Some(previous) = windows.get_mut(window_count) {
                 *previous = description;
@@ -1900,6 +1902,7 @@ impl WaylandFrontend {
                     layout_screen_floating: false,
                     split_view_partner_id: 0,
                     split_view_ratio: 0.0,
+                    on_phone: false,
                 };
                 if let Some(previous) = windows.get_mut(window_count) {
                     *previous = description;
@@ -2057,6 +2060,7 @@ impl WaylandFrontend {
                     layout_screen_floating: false,
                     split_view_partner_id: 0,
                     split_view_ratio: 0.0,
+                    on_phone: false,
                 };
                 if let Some(previous) = windows.get_mut(window_count) {
                     *previous = description;

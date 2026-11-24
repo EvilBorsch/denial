@@ -247,6 +247,7 @@ class DenialWindow {
     this.layoutScreenFloating = false,
     this.splitViewPartnerObjectId,
     this.splitViewRatio = 0.0,
+    this.onPhone = false,
   });
 
   final int objectId;
@@ -323,6 +324,12 @@ class DenialWindow {
   /// Split View: the left window's share of the width; 0 outside Split
   /// View.
   final double splitViewRatio;
+
+  /// deniald lays the window out by the tablet (mobile) presentation's
+  /// policy: it fills the phone's panel below the status bar, or its
+  /// Split View half. A presentation switch is laid out once the windows
+  /// it shows say so.
+  final bool onPhone;
 
   /// The window shares the phone's screen in Split View.
   bool get inSplitView => splitViewPartnerObjectId != null;
@@ -593,6 +600,7 @@ class DenialWindow {
         other.layoutScreenFloating == layoutScreenFloating &&
         other.splitViewPartnerObjectId == splitViewPartnerObjectId &&
         other.splitViewRatio == splitViewRatio &&
+        other.onPhone == onPhone &&
         listEquals(other.surfaceLayers, surfaceLayers);
   }
 
@@ -654,6 +662,7 @@ class DenialWindow {
     layoutScreenFloating,
     splitViewPartnerObjectId,
     splitViewRatio,
+    onPhone,
     ...surfaceLayers,
   ]);
 }

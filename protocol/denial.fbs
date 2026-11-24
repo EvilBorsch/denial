@@ -565,6 +565,12 @@ table Window {
   // geometry_width/height give the half deniald configured.
   split_view_partner_id:ulong;
   split_view_ratio:double;
+  // Appended for compatibility. deniald lays this window out by the tablet
+  // (mobile) presentation's policy: it fills the phone's panel below the
+  // status bar, or its Split View half. False on the desktop and on a
+  // monitor beside the phone. A shell that switches presentations learns
+  // from it that deniald laid the window out for the presentation shown.
+  on_phone:bool;
 }
 
 table WindowSnapshot {

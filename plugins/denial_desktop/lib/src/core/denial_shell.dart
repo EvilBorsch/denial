@@ -37,6 +37,7 @@ import '../widgets/screenshot_selection_layer.dart';
 
 import 'package:denial_flutter_sdk/shell.dart';
 
+import 'presentation_switch_cover.dart';
 import 'shell_runtime_bindings.dart';
 import 'shell_secure_stage.dart';
 import '../features/setup/first_user_setup_layer.dart';
@@ -175,7 +176,13 @@ class DenialShell extends ConsumerWidget {
         benchmarkSocket: ref.watch(
           startupEnvironmentProvider,
         )['DENIAL_CURSOR_BENCHMARK_SOCKET'],
-        child: ShellOverlayHost(child: scene),
+        // The tablet and the desktop presentations of one screen dissolve
+        // into each other once the windows have their new sizes.
+        child: PresentationSwitchCover(
+          presentation: effectivePresentation,
+          enabled: split == null && !forceDesktop,
+          child: ShellOverlayHost(child: scene),
+        ),
       ),
     );
 
@@ -400,17 +407,20 @@ class _ShellEnvironment extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final animatedTheme = context.shellTheme;
-    final textInputPolicy = TapRegionSurface(
-      child: ShellDefaultTextStyle(child: child),
-    );
     return MediaQuery(
       data: MediaQueryData.fromView(View.of(context))
           .copyWith(platformBrightness: animatedTheme.brightness),
       child: ScrollConfiguration(
         behavior: const _ShellScrollBehavior(),
-        child: profile == ReferenceShellProfile.mobile
-            ? MobileTextInputPolicy(child: textInputPolicy)
-            : textInputPolicy,
+        // One tree for both presentations: a switch keeps the state of
+        // everything below, the cursor, the fingerprint stage and the
+        // switch's own cover included.
+        child: MobileTextInputPolicy(
+          enabled: profile == ReferenceShellProfile.mobile,
+          child: TapRegionSurface(
+            child: ShellDefaultTextStyle(child: child),
+          ),
+        ),
       ),
     );
   }
