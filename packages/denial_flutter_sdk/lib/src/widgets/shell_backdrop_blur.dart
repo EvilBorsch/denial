@@ -1,6 +1,5 @@
 import 'dart:ui' as ui;
 
-import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 
 import '../theme/shell_theme.dart';
@@ -78,51 +77,29 @@ class ShellBackdropBlur extends StatelessWidget {
         useWindowAlphaThreshold: useWindowAlphaThreshold,
         singleWindowSurface: singleWindowSurface,
       );
-      // An opacity above the filter changes on every frame of a fade, and
-      // the engine then filters the unchanged backdrop again each frame.
-      // Faded inside the filter's own layer instead, the filtered backdrop
-      // is reused across the fade. A grouped or disabled filter has no
-      // layer of its own to fade.
-      final fadesInLayer = opacity != null && enabled && !grouped;
       final filterChild = separateChild ? const SizedBox.expand() : child;
-      final layerChild = fadesInLayer
-          ? Stack(
-              fit: StackFit.passthrough,
-              children: [
-                filterChild,
-                Positioned.fill(
-                  child: RepaintBoundary(
-                    child: CustomPaint(painter: _LayerFade(opacity!)),
-                  ),
-                ),
-              ],
-            )
-          : filterChild;
       final backdrop = grouped
           ? BackdropFilter.grouped(
               filterConfig: filterConfig,
               blendMode: effectiveBlendMode,
               enabled: enabled,
-              child: layerChild,
+              child: filterChild,
             )
           : BackdropFilter(
               filterConfig: filterConfig,
               blendMode: effectiveBlendMode,
               enabled: enabled,
-              child: layerChild,
+              child: filterChild,
             );
-      final fadedBackdrop = fadesInLayer
-          ? _HiddenAtZero(opacity: opacity!, child: backdrop)
-          : fade(backdrop);
       filtered = separateChild
           ? Stack(
               fit: StackFit.passthrough,
               children: [
-                Positioned.fill(child: fadedBackdrop),
+                Positioned.fill(child: fade(backdrop)),
                 fade(child),
               ],
             )
-          : fadedBackdrop;
+          : fade(backdrop);
     } else {
       filtered = fade(child);
     }
@@ -143,94 +120,5 @@ class ShellBackdropBlur extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: filtered,
     );
-  }
-}
-
-/// Multiplies the backdrop filter's layer, the filtered backdrop and the
-/// child over it, by [opacity] (destination-in), quantized as an opacity
-/// layer quantizes it. The layer then composites over the scene exactly as
-/// the whole filter would under that opacity.
-class _LayerFade extends CustomPainter {
-  _LayerFade(this.opacity) : super(repaint: opacity);
-
-  final Animation<double> opacity;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final alpha = ui.Color.getAlphaFromOpacity(opacity.value.clamp(0.0, 1.0));
-    if (alpha == 255) return;
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()
-        ..blendMode = ui.BlendMode.dstIn
-        ..color = Color.fromARGB(alpha, 0, 0, 0),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_LayerFade oldDelegate) => oldDelegate.opacity != opacity;
-}
-
-/// Paints [child] only while [opacity] is above zero, as a fade does, and
-/// repaints only when it crosses zero: the fade itself is [_LayerFade]'s.
-class _HiddenAtZero extends SingleChildRenderObjectWidget {
-  const _HiddenAtZero({required this.opacity, required super.child});
-
-  final Animation<double> opacity;
-
-  @override
-  _RenderHiddenAtZero createRenderObject(BuildContext context) =>
-      _RenderHiddenAtZero(opacity);
-
-  @override
-  void updateRenderObject(
-    BuildContext context,
-    _RenderHiddenAtZero renderObject,
-  ) {
-    renderObject.opacity = opacity;
-  }
-}
-
-class _RenderHiddenAtZero extends RenderProxyBox {
-  _RenderHiddenAtZero(this._opacity);
-
-  Animation<double> _opacity;
-  set opacity(Animation<double> value) {
-    if (value == _opacity) return;
-    if (attached) {
-      _opacity.removeListener(_changed);
-      value.addListener(_changed);
-    }
-    _opacity = value;
-    _changed();
-  }
-
-  bool _visible = false;
-
-  bool get _shown => ui.Color.getAlphaFromOpacity(
-        _opacity.value.clamp(0.0, 1.0),
-      ) >
-      0;
-
-  void _changed() {
-    if (_shown != _visible) markNeedsPaint();
-  }
-
-  @override
-  void attach(PipelineOwner owner) {
-    super.attach(owner);
-    _opacity.addListener(_changed);
-  }
-
-  @override
-  void detach() {
-    _opacity.removeListener(_changed);
-    super.detach();
-  }
-
-  @override
-  void paint(PaintingContext context, Offset offset) {
-    _visible = _shown;
-    if (_visible) super.paint(context, offset);
   }
 }

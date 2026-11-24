@@ -1,8 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:denial_flutter_sdk/effects.dart';
-import 'package:denial_flutter_sdk/environment.dart'
-    show startupEnvironmentProvider;
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/models.dart';
 import 'package:denial_flutter_sdk/motion.dart';
@@ -146,35 +144,24 @@ class _DesktopOverviewBackdropState
     }
     final motion = ref.watch(desktopOverviewMotionProvider).presence;
     final scrim = context.shellColors.overviewScrim;
-    final dimming = ColoredBox(
-      color: scrim.withValues(alpha: math.min(1.0, scrim.a * 0.8)),
-    );
-    // The blurred desktop fades in over the sharp one; the blur itself does
-    // not change per frame, so the engine filters it once for the whole
-    // fade. DENIAL_LEAN_GLASS=0 fades it by an opacity above the filter, as
-    // before, which filters it again on every frame.
-    final glass =
-        ref
-            .watch(startupEnvironmentProvider)
-            .flag('DENIAL_LEAN_GLASS', defaultValue: true)
-        ? ShellBackdropBlur(
-            opacity: motion,
-            blendMode: BlendMode.srcOver,
-            child: dimming,
-          )
-        : FadeTransition(
-            opacity: motion,
-            child: ShellBackdropBlur(
-              blendMode: BlendMode.srcOver,
-              child: dimming,
-            ),
-          );
     return Stack(
       fit: StackFit.expand,
       children: [
         Positioned.fromRect(
           rect: overview.backgroundBounds,
-          child: IgnorePointer(child: RepaintBoundary(child: glass)),
+          child: IgnorePointer(
+            child: RepaintBoundary(
+              child: ShellBackdropBlur(
+                // The blurred desktop fades in over the sharp one; the blur
+                // itself does not change per frame.
+                opacity: motion,
+                blendMode: BlendMode.srcOver,
+                child: ColoredBox(
+                  color: scrim.withValues(alpha: math.min(1.0, scrim.a * 0.8)),
+                ),
+              ),
+            ),
+          ),
         ),
       ],
     );
