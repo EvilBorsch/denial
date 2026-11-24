@@ -260,5 +260,14 @@ The owner used eb18 and said "all great, but" listed six points (quoted, transla
      - floating dialogs stay with their parents;
      - the change is animated smoothly at 120 fps, without flashes of the wallpaper or a lock-screen flicker.
    - Write down each bug found with its cause and fix.
+7. **"This panel in the desktop presentation must not slide out from the side when the mouse reaches the left part of the screen. It should open on a click on a new icon or the clock (the new icon means a control center) and slide out from the top."** (added 2026-11-24)
+   - "This panel" is read as Denial's desktop Dashboard (notifications, quick settings, the «Мобильный режим» button), opened today by the hover edge trigger (`plugins/denial_desktop/lib/src/desktop/desktop_workspace.dart`, `desktop_panel_edges.dart`) and by the clock in `denial_top_bar`. If a left-edge hover opens another panel, the same rule applies to it.
+   - Like the macOS Control Center:
+     - No hover-to-open in the desktop presentation: no edge hover trigger and no pointer edge swipe. A pointer never opens it by accident. Whether a finger swipe from the top edge still opens it in the desktop presentation is the builder's call.
+     - A new control-center icon in the top bar near the clock (a glyph like macOS's two toggles; Denial's icon set if a fitting one exists). Clicking it or the clock toggles the panel.
+     - The panel drops down from the top, anchored under the icon at the top right, and opens and closes with a smooth 120 fps animation. A click outside, Esc or a second click on the icon closes it.
+   - The tablet presentation's top shade stays as it is.
+   - Old settings (dashboard placement or hover keys in `settings.json`) do not bring back the side hover in the desktop presentation. Rollback safety as for the other keys.
+   - Tests, and a section of `eb19-check.sh` with the virtual mouse: a hover at the left edge opens nothing; a click on the icon drops the panel from the top.
 
 Delivery as before: package `denial 0.6.8-1+eb19`. Build, install and verify on the tablet autonomously, under the same permissions and limits (no partitions, no reboots, battery ≥ 40 %, Stay awake only during tests). Merge into the forks' `eb/main` once verified on the tablet. End state as for eb18.
