@@ -667,6 +667,26 @@ impl WaylandFrontend {
         self.divider_presses.note(&hit.divider, now)
     }
 
+    /// Shows the resize cursor of the divider the pointer hovers at
+    /// `position`, or stops showing it where there is none. True when that
+    /// changed.
+    pub(crate) fn hover_divider_cursor(&mut self, position: Point<f64, Logical>) -> bool {
+        let shape = self
+            .layout_divider_at(position, DividerPress::Pointer)
+            .map(|hit| hit.cursor());
+        self.set_divider_cursor(shape)
+    }
+
+    /// Ends a pointer grab that showed its cursor as the divider cursor (a
+    /// divider drag, a middle-button drag). The pointer rests where the drag
+    /// left it, often on the divider it moved, and a touchpad sends no
+    /// motion after the click comes up: the cursor shows what hovering there
+    /// shows now.
+    pub(crate) fn end_divider_cursor_grab(&mut self) {
+        self.set_compositor_pointer_grab_active(false);
+        self.hover_divider_cursor(self.pointer_location);
+    }
+
     /// Shows the resize cursor of a divider over whatever the shell or a
     /// client asks for, or stops showing it. True when that changed.
     pub(crate) fn set_divider_cursor(&mut self, shape: Option<&'static str>) -> bool {

@@ -977,11 +977,7 @@ impl PointerGrab<RuntimeState> for DividerGrab {
     }
 
     fn unset(&mut self, data: &mut RuntimeState) {
-        let frontend = data.frontend_mut();
-        frontend.set_compositor_pointer_grab_active(false);
-        // The next motion shows the divider cursor again if it is still over
-        // a divider.
-        frontend.set_divider_cursor(None);
+        data.frontend_mut().end_divider_cursor_grab();
         let mut tiles = Vec::new();
         for window in self.affected_windows.clone() {
             if !window_is_mapped(data, &window) {
@@ -1274,9 +1270,7 @@ impl PointerGrab<RuntimeState> for MiddleButtonGrab {
                 );
             }
         }
-        let frontend = data.frontend_mut();
-        frontend.set_compositor_pointer_grab_active(false);
-        frontend.set_divider_cursor(None);
+        data.frontend_mut().end_divider_cursor_grab();
         data.scene_sync.mark_dirty();
     }
 }

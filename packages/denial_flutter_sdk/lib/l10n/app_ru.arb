@@ -2838,7 +2838,7 @@
   },
   "settingsCursorSize": "Размер курсора",
   "@settingsCursorSize": {
-    "description": "Label for the physical cursor-size slider."
+    "description": "Label for the cursor-size slider (logical pixels)."
   },
   "settingsCursorTitle": "Курсор",
   "@settingsCursorTitle": {

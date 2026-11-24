@@ -200,6 +200,37 @@ void main() {
       expect(_names(search('папка').apps), ['Файлы']);
     });
 
+    test('an open window of a translated app by the same words', () {
+      // On the tablet "files" listed «Файлы» but not its open window, while
+      // «файлы» and "afqks" (it on the Latin keys) found both.
+      final open = shellSearchOpenWindows(
+        [
+          _window(5, 'org.gnome.Nautilus', 'Загрузки'),
+          ...[for (final window in windows) window.window],
+        ],
+        index: index,
+        titleOf: (window) => window.title,
+      );
+      for (final query in ['files', 'folder', 'папка', 'файлы', 'afqks']) {
+        for (final scope in ShellSearchScope.values) {
+          final outcome = backend.search(
+            query,
+            scope: scope,
+            index: index,
+            windows: open,
+          );
+          expect(
+            [for (final window in outcome.windows) window.id],
+            [5],
+            reason: '"$query" in $scope',
+          );
+        }
+      }
+      final terminal = search('terminal');
+      expect(_names(terminal.apps), ['Терминал']);
+      expect([for (final window in terminal.windows) window.id], [3]);
+    });
+
     test('a query typed in the other keyboard layout', () {
       // "ашду" is "file" typed on the Russian keys, and "nthv" is "терм"
       // typed on the Latin ones.
