@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:denial_desktop/src/state/reference_shell_controller.dart';
 import 'package:denial_flutter_sdk/applications.dart';
 import 'package:denial_flutter_sdk/diagnostics.dart';
+import 'package:denial_flutter_sdk/environment.dart'
+    show startupEnvironmentProvider;
 import 'package:denial_flutter_sdk/glass_configuration.dart';
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/models.dart';
@@ -1009,8 +1011,12 @@ class _DesktopWindowContent extends ConsumerWidget {
     }
     // A client translucent only at its rounded corners shows the material
     // only there, unless the shell makes the whole window translucent.
+    // DENIAL_LEAN_GLASS=0 evaluates it over the whole window, as before.
     final translucentCorners =
-        windowOpacity >= 1 &&
+        ref
+                .watch(startupEnvironmentProvider)
+                .flag('DENIAL_LEAN_GLASS', defaultValue: true) &&
+            windowOpacity >= 1 &&
             window.opacityClass == DenialWindowOpacityClass.borderAlphaOnly &&
             window.translucentCorner > 0 &&
             window.contentWidth > 0 &&
