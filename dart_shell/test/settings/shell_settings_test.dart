@@ -46,6 +46,8 @@ void main() {
         focusedWindowBorderEnabled: false,
         focusedWindowOpacity: 0.96,
         unfocusedWindowOpacity: 0.72,
+        roundedWindowFrame: true,
+        windowCornerRadiusScale: 0.8,
         cursorSize: 44,
         cursorThemeId: 'imported-theme-sha256',
         allowClientCursorSurfaces: false,
@@ -191,6 +193,69 @@ void main() {
       isFalse,
       reason: 'idle suspend stays off when the owner turned it off',
     );
+  });
+
+  test('windows are square and frameless by default, in older documents '
+      'too, and the shell keeps its roundness', () {
+    // A new user, and the tablet's owner on eb19: his shell roundness 1.6,
+    // the focused-window border off, no window setting yet.
+    for (final document in <Map<String, dynamic>>[
+      <String, dynamic>{},
+      <String, dynamic>{
+        'appearance': <String, dynamic>{
+          'cornerRadiusScale': 1.6,
+          'focusedWindowBorderEnabled': false,
+        },
+      },
+    ]) {
+      final appearance = ShellSettings.fromJson(document).appearance;
+      expect(appearance.roundedWindowFrame, isFalse);
+      expect(appearance.windowCornerRadiusScale, 0.5);
+    }
+    final owner = ShellSettings.fromJson(<String, dynamic>{
+      'appearance': <String, dynamic>{
+        'cornerRadiusScale': 1.6,
+        'focusedWindowBorderEnabled': false,
+      },
+    });
+    final written = owner.toJson()['appearance']! as Map<String, Object>;
+    expect(written['cornerRadiusScale'], 1.6);
+    expect(written['focusedWindowBorderEnabled'], isFalse);
+    expect(written['roundedWindowFrame'], isFalse);
+  });
+
+  test('rounded windows have their own roundness, apart from the shell', () {
+    final owner = ShellSettings.fromJson(<String, dynamic>{
+      'appearance': <String, dynamic>{'cornerRadiusScale': 1.6},
+    });
+    final rounded = owner.copyWith(
+      appearance: owner.appearance.copyWith(
+        roundedWindowFrame: true,
+        windowCornerRadiusScale: 0.3,
+      ),
+    );
+
+    // Turning rounding on writes the switch and its roundness, nothing else.
+    expect(rounded.differenceFrom(owner), <String, Object?>{
+      'appearance': <String, Object?>{
+        'roundedWindowFrame': true,
+        'windowCornerRadiusScale': 0.3,
+      },
+    });
+    final read = ShellSettings.fromJson(rounded.toJson()).appearance;
+    expect(read.roundedWindowFrame, isTrue);
+    expect(read.windowCornerRadiusScale, 0.3);
+    expect(read.cornerRadiusScale, 1.6);
+
+    // A malformed switch is off; the roundness stays in the slider's range.
+    final malformed = ShellSettings.fromJson(<String, dynamic>{
+      'appearance': <String, dynamic>{
+        'roundedWindowFrame': 'yes',
+        'windowCornerRadiusScale': 9,
+      },
+    }).appearance;
+    expect(malformed.roundedWindowFrame, isFalse);
+    expect(malformed.windowCornerRadiusScale, ShellRoundness.maximum);
   });
 
   test('the presentation follows the keyboard by default and keeps the '

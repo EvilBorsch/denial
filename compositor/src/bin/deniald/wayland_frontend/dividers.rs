@@ -743,6 +743,31 @@ mod tests {
         );
     }
 
+    /// Square windows (`appearance.roundedWindowFrame` off) meet with no
+    /// gap: the divider is their seam, and its zone still reaches 8 px into
+    /// each tile for the pointer and 12 px for a finger.
+    #[test]
+    fn square_tiles_meeting_without_a_gap_keep_the_whole_zone() {
+        let seam = divider(LayoutAxis::Horizontal, rect(500, 40, 0, 600), vec![]);
+        assert_eq!(divider_zone(&seam, DIVIDER_ZONE), rect(492, 40, 16, 600));
+        assert_eq!(
+            divider_zone(&seam, FINGER_DIVIDER_ZONE),
+            rect(488, 40, 24, 600)
+        );
+        let dividers = [seam];
+        let hit = |x| divider_at(&dividers, Point::from((x, 300)), DividerPress::Pointer);
+        assert!(hit(492).is_some());
+        assert!(hit(507).is_some());
+        assert!(hit(491).is_none());
+        assert!(hit(508).is_none());
+        // A press there with only the tiles beneath takes it.
+        assert!(divider_press_reachable(
+            &dividers[0],
+            Point::from((497.0, 300.0)),
+            |_| DividerCover::Tile,
+        ));
+    }
+
     #[test]
     fn a_press_takes_the_divider_whose_gap_is_nearest() {
         // Quarters: one upright boundary, and a level one in each half.

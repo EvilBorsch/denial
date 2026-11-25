@@ -12,6 +12,9 @@ import 'package:denial_flutter_sdk/diagnostics.dart';
 
 import 'desktop_workspace.dart';
 
+/// The colour over the frame surface of a window's frame: the pin mark, the
+/// focused-window accent or the hairline. A window without the rounded frame
+/// has no border, only the plain frame surface, unless it is pinned.
 Color desktopWindowBorderColor({
   required bool pinned,
   required bool active,
@@ -20,6 +23,9 @@ Color desktopWindowBorderColor({
 }) {
   if (pinned) {
     return theme.accentPalette.container;
+  }
+  if (!theme.roundedWindowFrame) {
+    return const Color(0x00000000);
   }
   if (active && theme.focusedWindowBorderEnabled) {
     return theme.accent;
@@ -42,6 +48,7 @@ class DesktopWindowFrameLayers extends StatelessWidget {
     required this.borderColor,
     required this.child,
     this.drawFrame = true,
+    this.drawShadow = true,
     super.key,
   });
 
@@ -52,6 +59,7 @@ class DesktopWindowFrameLayers extends StatelessWidget {
   final Color borderColor;
   final Widget child;
   final bool drawFrame;
+  final bool drawShadow;
 
   @override
   Widget build(BuildContext context) {
@@ -59,22 +67,23 @@ class DesktopWindowFrameLayers extends StatelessWidget {
       fit: StackFit.expand,
       clipBehavior: Clip.none,
       children: [
-        DesktopVisibilityFade(
-          child: DesktopWindowRepaintBoundary(
-            outset: DesktopWindowShadowPainter.shadowOutset,
-            child: IgnorePointer(
-              child: CustomPaint(
-                painter: DesktopWindowShadowPainter(
-                  windowId: windowId,
-                  radius: radius,
-                  shadowColor: context.shellColors.shadow,
+        if (drawShadow)
+          DesktopVisibilityFade(
+            child: DesktopWindowRepaintBoundary(
+              outset: DesktopWindowShadowPainter.shadowOutset,
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: DesktopWindowShadowPainter(
+                    windowId: windowId,
+                    radius: radius,
+                    shadowColor: context.shellColors.shadow,
+                  ),
+                  isComplex: true,
+                  willChange: false,
                 ),
-                isComplex: true,
-                willChange: false,
               ),
             ),
           ),
-        ),
         child,
         if (drawFrame)
           DesktopVisibilityFade(

@@ -137,6 +137,8 @@ class ShellAppearanceSettings {
     this.focusedWindowBorderEnabled = true,
     this.focusedWindowOpacity = 1,
     this.unfocusedWindowOpacity = 1,
+    this.roundedWindowFrame = false,
+    this.windowCornerRadiusScale = 0.5,
     this.cursorSize = shellCursorDefaultSize,
     this.cursorThemeId = 'bibata_modern_ice',
     this.allowClientCursorSurfaces = true,
@@ -161,6 +163,15 @@ class ShellAppearanceSettings {
   final bool focusedWindowBorderEnabled;
   final double focusedWindowOpacity;
   final double unfocusedWindowOpacity;
+
+  /// Rounded window corners, a visible window frame (the hairline, and the
+  /// focused-window border when that is on) and the padding around windows.
+  /// Off, windows are square and use the whole work area;
+  /// [cornerRadiusScale] still rounds the shell's surfaces.
+  final bool roundedWindowFrame;
+
+  /// The roundness of window corners while [roundedWindowFrame] is on.
+  final double windowCornerRadiusScale;
   final double cursorSize;
   final String cursorThemeId;
   final bool allowClientCursorSurfaces;
@@ -182,6 +193,8 @@ class ShellAppearanceSettings {
     bool? focusedWindowBorderEnabled,
     double? focusedWindowOpacity,
     double? unfocusedWindowOpacity,
+    bool? roundedWindowFrame,
+    double? windowCornerRadiusScale,
     double? cursorSize,
     String? cursorThemeId,
     bool? allowClientCursorSurfaces,
@@ -209,6 +222,9 @@ class ShellAppearanceSettings {
       focusedWindowOpacity: focusedWindowOpacity ?? this.focusedWindowOpacity,
       unfocusedWindowOpacity:
           unfocusedWindowOpacity ?? this.unfocusedWindowOpacity,
+      roundedWindowFrame: roundedWindowFrame ?? this.roundedWindowFrame,
+      windowCornerRadiusScale:
+          windowCornerRadiusScale ?? this.windowCornerRadiusScale,
       cursorSize: cursorSize ?? this.cursorSize,
       cursorThemeId: cursorThemeId ?? this.cursorThemeId,
       allowClientCursorSurfaces:
@@ -235,13 +251,15 @@ class ShellAppearanceSettings {
         other.focusedWindowBorderEnabled == focusedWindowBorderEnabled &&
         other.focusedWindowOpacity == focusedWindowOpacity &&
         other.unfocusedWindowOpacity == unfocusedWindowOpacity &&
+        other.roundedWindowFrame == roundedWindowFrame &&
+        other.windowCornerRadiusScale == windowCornerRadiusScale &&
         other.cursorSize == cursorSize &&
         other.cursorThemeId == cursorThemeId &&
         other.allowClientCursorSurfaces == allowClientCursorSurfaces;
   }
 
   @override
-  int get hashCode => Object.hash(
+  int get hashCode => Object.hashAll([
     colorSchemePreference,
     accentSource,
     customAccentColor,
@@ -258,10 +276,12 @@ class ShellAppearanceSettings {
     focusedWindowBorderEnabled,
     focusedWindowOpacity,
     unfocusedWindowOpacity,
+    roundedWindowFrame,
+    windowCornerRadiusScale,
     cursorSize,
     cursorThemeId,
     allowClientCursorSurfaces,
-  );
+  ]);
 }
 
 @immutable
@@ -1348,6 +1368,13 @@ class ShellSettings {
       if (appearance.unfocusedWindowOpacity != before.unfocusedWindowOpacity) {
         section['unfocusedWindowOpacity'] = appearance.unfocusedWindowOpacity;
       }
+      if (appearance.roundedWindowFrame != before.roundedWindowFrame) {
+        section['roundedWindowFrame'] = appearance.roundedWindowFrame;
+      }
+      if (appearance.windowCornerRadiusScale !=
+          before.windowCornerRadiusScale) {
+        section['windowCornerRadiusScale'] = appearance.windowCornerRadiusScale;
+      }
       if (appearance.cursorSize != before.cursorSize) {
         section['cursorSize'] = appearance.cursorSize;
       }
@@ -1601,6 +1628,8 @@ class ShellSettings {
         'focusedWindowBorderEnabled': appearance.focusedWindowBorderEnabled,
         'focusedWindowOpacity': appearance.focusedWindowOpacity,
         'unfocusedWindowOpacity': appearance.unfocusedWindowOpacity,
+        'roundedWindowFrame': appearance.roundedWindowFrame,
+        'windowCornerRadiusScale': appearance.windowCornerRadiusScale,
         'cursorSize': appearance.cursorSize,
         'cursorThemeId': appearance.cursorThemeId,
         'allowClientCursorSurfaces': appearance.allowClientCursorSurfaces,
@@ -1841,6 +1870,17 @@ class ShellSettings {
           defaults.appearance.unfocusedWindowOpacity,
           0.2,
           1,
+        ),
+        // Documents from before this setting had rounded, framed windows;
+        // they read as off, the new default, and their shell roundness stays.
+        roundedWindowFrame: appearanceJson['roundedWindowFrame'] is bool
+            ? appearanceJson['roundedWindowFrame'] as bool
+            : defaults.appearance.roundedWindowFrame,
+        windowCornerRadiusScale: _number(
+          appearanceJson['windowCornerRadiusScale'],
+          defaults.appearance.windowCornerRadiusScale,
+          ShellRoundness.minimum,
+          ShellRoundness.maximum,
         ),
         cursorSize: _number(
           appearanceJson['cursorSize'],

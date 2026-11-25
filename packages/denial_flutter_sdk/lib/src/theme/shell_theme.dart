@@ -111,6 +111,8 @@ class ShellThemeData {
     this.focusedWindowBorderEnabled = true,
     this.focusedWindowOpacity = 1,
     this.unfocusedWindowOpacity = 1,
+    this.roundedWindowFrame = false,
+    this.windowCornerRadiusScale = 0.5,
     this._resolvedTextTheme,
     this._resolvedAccentPalette,
     this._resolvedGeneratedColorScheme,
@@ -132,6 +134,16 @@ class ShellThemeData {
   final bool focusedWindowBorderEnabled;
   final double focusedWindowOpacity;
   final double unfocusedWindowOpacity;
+
+  /// Whether windows have rounded corners and a visible frame: the hairline
+  /// around every window and, with [focusedWindowBorderEnabled], the accent
+  /// around the focused one. Without it windows are square and their frame
+  /// is the plain frame surface.
+  final bool roundedWindowFrame;
+
+  /// The roundness of window corners when [roundedWindowFrame] is on, apart
+  /// from [cornerRadiusScale], which rounds the shell's own surfaces.
+  final double windowCornerRadiusScale;
 
   static final Expando<_ShellThemeResolution> _resolutionCache =
       Expando<_ShellThemeResolution>('ShellThemeData resolution');
@@ -196,7 +208,19 @@ class ShellThemeData {
   BorderRadius borderRadius(double baseRadius) =>
       _resolution.borderRadius(baseRadius);
 
-  double get windowRadius => scaledRadius(ShellRadii.window);
+  /// Scales a window corner's base radius by the window roundness: zero
+  /// while windows are square. A client window takes its corners from here
+  /// wherever it is shown as itself: its frame, its place in the overview,
+  /// apps sliding side by side, a Split View app lifted by its handle.
+  double scaledWindowRadius(double radius) =>
+      roundedWindowFrame ? radius * windowCornerRadiusScale : 0;
+
+  double get windowRadius => scaledWindowRadius(ShellRadii.window);
+
+  /// The corners of a card previewing a window or a screen of windows, in
+  /// recents and the overview: shell surfaces, rounded by the shell's
+  /// roundness whatever the windows' own.
+  double get windowCardRadius => scaledRadius(ShellRadii.window);
 
   double get notificationRadius => scaledRadius(ShellRadii.notification);
 
@@ -255,6 +279,8 @@ class ShellThemeData {
     bool? focusedWindowBorderEnabled,
     double? focusedWindowOpacity,
     double? unfocusedWindowOpacity,
+    bool? roundedWindowFrame,
+    double? windowCornerRadiusScale,
   }) {
     return ShellThemeData(
       colors: colors ?? this.colors,
@@ -273,6 +299,9 @@ class ShellThemeData {
       focusedWindowOpacity: focusedWindowOpacity ?? this.focusedWindowOpacity,
       unfocusedWindowOpacity:
           unfocusedWindowOpacity ?? this.unfocusedWindowOpacity,
+      roundedWindowFrame: roundedWindowFrame ?? this.roundedWindowFrame,
+      windowCornerRadiusScale:
+          windowCornerRadiusScale ?? this.windowCornerRadiusScale,
     );
   }
 
@@ -345,6 +374,13 @@ class ShellThemeData {
         first.unfocusedWindowOpacity,
         second.unfocusedWindowOpacity,
       ),
+      roundedWindowFrame: t < 0.5
+          ? first.roundedWindowFrame
+          : second.roundedWindowFrame,
+      windowCornerRadiusScale: blend(
+        first.windowCornerRadiusScale,
+        second.windowCornerRadiusScale,
+      ),
     );
   }
 
@@ -363,7 +399,9 @@ class ShellThemeData {
         other.glass == glass &&
         other.focusedWindowBorderEnabled == focusedWindowBorderEnabled &&
         other.focusedWindowOpacity == focusedWindowOpacity &&
-        other.unfocusedWindowOpacity == unfocusedWindowOpacity;
+        other.unfocusedWindowOpacity == unfocusedWindowOpacity &&
+        other.roundedWindowFrame == roundedWindowFrame &&
+        other.windowCornerRadiusScale == windowCornerRadiusScale;
   }
 
   @override
@@ -381,6 +419,8 @@ class ShellThemeData {
     focusedWindowBorderEnabled,
     focusedWindowOpacity,
     unfocusedWindowOpacity,
+    roundedWindowFrame,
+    windowCornerRadiusScale,
   );
 }
 

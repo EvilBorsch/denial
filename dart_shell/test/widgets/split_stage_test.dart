@@ -22,7 +22,13 @@ void main() {
     texture: false,
   );
 
-  Future<void> show(WidgetTester tester, MobileShellHarness shell) async {
+  Future<void> show(
+    WidgetTester tester,
+    MobileShellHarness shell, {
+    ShellThemeData theme = const ShellThemeData(
+      transparencyMode: ShellTransparencyMode.off,
+    ),
+  }) async {
     final state = shell.container.read(referenceShellProvider);
     final pair = state.primarySplit!;
     await tester.pumpWidget(
@@ -33,9 +39,7 @@ void main() {
           child: MediaQuery(
             data: const MediaQueryData(size: tabletView),
             child: ShellTheme(
-              data: const ShellThemeData(
-                transparencyMode: ShellTransparencyMode.off,
-              ),
+              data: theme,
               child: Directionality(
                 textDirection: TextDirection.ltr,
                 child: MobileSplitStage(
@@ -56,6 +60,9 @@ void main() {
   Future<MobileShellHarness> stage(
     WidgetTester tester, {
     double share = 0.5,
+    ShellThemeData theme = const ShellThemeData(
+      transparencyMode: ShellTransparencyMode.off,
+    ),
   }) async {
     tester.view
       ..physicalSize = tabletView
@@ -67,7 +74,7 @@ void main() {
     await shell.publish(tester, [other, left, right]);
     shell.controller.focusWindow(right);
     await tester.pump();
-    await show(tester, shell);
+    await show(tester, shell, theme: theme);
     shell.bridge.requests.clear();
     return shell;
   }
@@ -138,6 +145,71 @@ void main() {
     expect(pair.share, closeTo(1 / 3, 1e-9));
     await drag(tester, const Offset(224, 62), const Offset(600, 30));
     expect(shell.bridge.requests, ['split 1 2 right 0.667']);
+    await shell.finish(tester);
+  });
+
+  testWidgets('an app lifted by its handle is square while windows are, and '
+      'rounded as windows when they are', (tester) async {
+    Future<BorderRadiusGeometry> liftedCorners(ShellThemeData theme) async {
+      final shell = await stage(tester, theme: theme);
+      final gesture = await tester.startGesture(const Offset(337, 62));
+      for (var i = 0; i < 6; i++) {
+        await gesture.moveBy(const Offset(0, 20));
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      final corners = tester
+          .widget<ClipRRect>(find.byType(ClipRRect))
+          .borderRadius;
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 400));
+      await shell.finish(tester);
+      return corners;
+    }
+
+    // The shell's own roundness, as on the tablet, does not round windows.
+    expect(
+      await liftedCorners(
+        const ShellThemeData(
+          transparencyMode: ShellTransparencyMode.off,
+          cornerRadiusScale: 1.6,
+        ),
+      ),
+      BorderRadius.zero,
+    );
+    expect(
+      await liftedCorners(
+        const ShellThemeData(
+          transparencyMode: ShellTransparencyMode.off,
+          cornerRadiusScale: 1.6,
+          roundedWindowFrame: true,
+          windowCornerRadiusScale: 0.5,
+        ),
+      ),
+      BorderRadius.circular(9),
+    );
+  });
+
+  testWidgets('square apps meet at a thin divider; rounded ones keep the '
+      'wide gap', (tester) async {
+    double divider() =>
+        tester.getSize(find.byKey(const ValueKey('divider bar'))).width;
+    double grab() =>
+        tester.getSize(find.byKey(const ValueKey('divider zone'))).width;
+
+    var shell = await stage(tester);
+    expect(divider(), SplitViewMetrics.squareGap);
+    expect(grab(), SplitViewMetrics.dividerZone);
+    await shell.finish(tester);
+
+    shell = await stage(
+      tester,
+      theme: const ShellThemeData(
+        transparencyMode: ShellTransparencyMode.off,
+        roundedWindowFrame: true,
+      ),
+    );
+    expect(divider(), SplitViewMetrics.gap);
+    expect(grab(), SplitViewMetrics.dividerZone);
     await shell.finish(tester);
   });
 

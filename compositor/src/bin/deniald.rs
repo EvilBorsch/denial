@@ -293,7 +293,7 @@ use flutter_settings_sync::{
     send_flutter_window_event, synchronize_fingerprint_unlock, synchronize_flutter_window_commands,
     synchronize_flutter_window_management, synchronize_resident_flutter_geometry_state,
     synchronize_settings, synchronize_shortcut_preset, synchronize_stay_awake,
-    synchronize_system_bar_configuration,
+    synchronize_system_bar_configuration, synchronize_window_corners,
 };
 use frame_loop::{FrameLoopContext, run_frame_loop};
 use hotplug_transaction::{
