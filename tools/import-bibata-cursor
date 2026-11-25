@@ -20,7 +20,7 @@ if [[ "$#" -ne 2 ]]; then
 fi
 
 for command in \
-  awk bsdtar find icotool install realpath sha256sum sort wc xargs xcur2png
+  awk bsdtar find icotool install python3 realpath sha256sum sort wc xargs
 do
   command -v "$command" >/dev/null 2>&1 \
     || {
@@ -68,32 +68,35 @@ extract_xcursor_frame() {
   local source_name="$2"
   local expected_hotspot_x="$3"
   local expected_hotspot_y="$4"
-  local extraction_root="$WORK/extracted/$role"
-  local config="$WORK/$role.conf"
-  local size
+  local width
+  local height
   local hotspot_x
   local hotspot_y
-  local image_name
 
-  install -d -- "$extraction_root" "$WORK/stage/$role"
-  xcur2png \
-    --quiet \
-    --directory "$extraction_root" \
-    --conf "$config" \
-    "$XCURSOR_ROOT/$source_name" >/dev/null 2>&1
-  read -r size hotspot_x hotspot_y image_name < <(
-    awk '$1 == 32 { print $1, $2, $3, $4; exit }' "$config"
+  install -d -- "$WORK/stage/$role/2.0x" "$WORK/stage/$role/3.0x"
+  read -r width height hotspot_x hotspot_y < <(
+    python3 "$SCRIPT_DIR/xcursor-frame.py" "$XCURSOR_ROOT/$source_name" 32 \
+      "$WORK/stage/$role/00.png"
   )
-  [[ "$size" == 32 \
+  [[ "$width $height" == '32 32' \
     && "$hotspot_x" == "$expected_hotspot_x" \
-    && "$hotspot_y" == "$expected_hotspot_y" \
-    && -f "$image_name" ]] \
+    && "$hotspot_y" == "$expected_hotspot_y" ]] \
     || {
       printf 'import-bibata-cursor: unexpected %s frame metadata\n' "$role" >&2
       exit 1
     }
-  install -m644 -- "$image_name" \
-    "$WORK/stage/$role/00.png"
+  # The same cursor's 64 and 96 pixel entries are its 2x and 3x densities.
+  for density in 2 3; do
+    read -r width height _ _ < <(
+      python3 "$SCRIPT_DIR/xcursor-frame.py" "$XCURSOR_ROOT/$source_name" \
+        $((32 * density)) "$WORK/stage/$role/$density.0x/00.png"
+    )
+    [[ "$width" == $((32 * density)) ]] \
+      || {
+        printf 'import-bibata-cursor: no %sx %s frame\n' "$density" "$role" >&2
+        exit 1
+      }
+  done
 }
 
 while read -r role source_name hotspot_x hotspot_y; do
@@ -134,15 +137,29 @@ extract_windows_frame() {
     --index=1 \
     --output="$WORK/stage/$role/00.png" \
     "$WINDOWS_ROOT/$source_name"
+  # The 64 and 96 pixel entries are the 2x and 3x densities. icotool names
+  # each extracted entry by its size (its --index does not pick one).
+  install -d -- "$WORK/ico/$role"
+  icotool --extract --output="$WORK/ico/$role" "$WINDOWS_ROOT/$source_name"
+  for density in 2 3; do
+    local size=$((32 * density))
+    local entries=("$WORK/ico/$role/"*"_${size}x${size}x32.png")
+    [[ "${#entries[@]}" == 1 && -f "${entries[0]}" ]] \
+      || {
+        printf 'import-bibata-cursor: no %sx %s frame\n' "$density" "$role" >&2
+        exit 1
+      }
+    install -D -m644 -- "${entries[0]}" "$WORK/stage/$role/$density.0x/00.png"
+  done
 }
 
 extract_windows_frame person Person.cur
 extract_windows_frame pin Pin.cur
 
 frame_count="$(find "$WORK/stage" -type f -name '*.png' | wc -l)"
-[[ "$frame_count" == 17 ]] \
+[[ "$frame_count" == 51 ]] \
   || {
-    printf 'import-bibata-cursor: expected 17 frames, found %s\n' \
+    printf 'import-bibata-cursor: expected 51 frames, found %s\n' \
       "$frame_count" >&2
     exit 1
   }
@@ -160,6 +177,6 @@ cp -a -- "$WORK/stage" "$DESTINATION"
     | xargs -0 sha256sum
 ) > "$MANIFEST"
 
-printf 'Imported 17 unchanged Bibata Modern Ice 32px frames into %s\n' \
+printf 'Imported 17 unchanged Bibata Modern Ice frames at 32, 64 and 96px into %s\n' \
   "$DESTINATION"
 printf 'Wrote frame manifest: %s\n' "$MANIFEST"

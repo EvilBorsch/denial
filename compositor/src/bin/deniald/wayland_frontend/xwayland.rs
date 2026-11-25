@@ -463,23 +463,25 @@ pub(super) fn publish_settings(
 fn publish_resource_dpi(display_number: u32, dpi: u32) {
     let spawned = std::thread::Builder::new()
         .name("denial-x11-resources".into())
-        .spawn(move || {
-            if let Err(error) = set_resource_dpi(display_number, dpi) {
-                warn!(
-                    %error,
-                    display_number, "could not publish Xft.dpi to X11 resources"
-                );
+        .spawn(move || match set_resource_dpi(display_number, dpi) {
+            Ok(held) => {
+                info!(display_number, dpi, held = ?held, "published Xft.dpi to X11 resources")
             }
+            Err(error) => warn!(
+                %error,
+                display_number, "could not publish Xft.dpi to X11 resources"
+            ),
         });
     if let Err(error) = spawned {
         warn!(%error, "could not start the X11 resources thread");
     }
 }
 
+/// Answers the `Xft.dpi` line the server holds once the change is done.
 fn set_resource_dpi(
     display: u32,
     dpi: u32,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     use x11rb::connection::Connection;
     use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, PropMode};
     use x11rb::wrapper::ConnectionExt as _;
@@ -504,8 +506,23 @@ fn set_resource_dpi(
         AtomEnum::STRING,
         resources.as_bytes(),
     )?;
-    connection.flush()?;
-    Ok(())
+    // A reply after the change, as XCloseDisplay waits for one: the server
+    // has applied it before this connection closes.
+    let held = connection
+        .get_property(
+            false,
+            root,
+            AtomEnum::RESOURCE_MANAGER,
+            AtomEnum::STRING,
+            0,
+            u32::MAX / 4,
+        )?
+        .reply()?;
+    Ok(String::from_utf8_lossy(&held.value)
+        .lines()
+        .find(|line| line.starts_with("Xft.dpi:"))
+        .unwrap_or("")
+        .to_owned())
 }
 
 /// The resources with `Xft.dpi` set to `dpi`, others kept as they are.

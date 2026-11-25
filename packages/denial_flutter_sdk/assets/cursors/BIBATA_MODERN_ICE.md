@@ -16,10 +16,20 @@ Denial bundles one unchanged 32 × 32 frame for each cursor role from
   `0045e40324da5b540b3bee260f53d0792df62be9cdef91655a024ae9f151bd04`
 
 The Linux XCursor release supplies fifteen roles. Its native 32 × 32 entry is
-decoded without resampling. The Linux release does not contain `person` or
+decoded without resampling, and so are its 64 × 64 and 96 × 96 entries, kept
+as the role's `2.0x/00.png` and `3.0x/00.png`: a cursor covers its size times
+the display scale in pixels (56 to 104 for 32 points from 175 % to 325 %), and
+the shell draws the next density up, reduced, instead of the 32-pixel frame
+enlarged. The hotspots below, in 32-pixel units, scale with them. The Linux release does not contain `person` or
 `pin`, so those two embedded 32 × 32 PNGs are extracted unchanged from the
-official regular-size Windows release. Denial does not resize, recolor, redraw,
-or otherwise modify any frame.
+official regular-size Windows release, with its 64 and 96 pixel entries.
+Denial does not resize, recolor, redraw, or otherwise modify any frame.
+
+The XCursor entries are decoded by `tools/xcursor-frame.py` (standard
+library Python): pixels un-premultiplied by truncation, which reproduces the
+32-pixel frames first imported with `xcur2png` pixel for pixel; those files
+are kept as they were. `xcur2png` 0.7.1 decodes the 64 and 96 pixel entries
+of this release as black where the file holds opaque white.
 
 Bibata is registered as a static standard-size theme: every role declares its
 own canvas and hotspot and uses `frameCount: 1`. The same renderer contract

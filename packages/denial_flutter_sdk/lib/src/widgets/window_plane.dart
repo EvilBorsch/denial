@@ -266,8 +266,7 @@ class RenderWindowPlane extends RenderShiftedBox {
               1,
             )..multiply(toGlobal),
             viewport:
-                Offset.zero &
-                view.size * view.configuration.devicePixelRatio,
+                Offset.zero & view.size * view.configuration.devicePixelRatio,
           )
         : null;
     if (pieces == null) {
@@ -540,13 +539,16 @@ WindowPlaneTextureGeometry windowPlaneTextureGeometry({
   final integralSource =
       (source.left - source.left.roundToDouble()).abs() < 0.001 &&
       (source.top - source.top.roundToDouble()).abs() < 0.001;
+  // The client draws its whole-point size, rounded to whole pixels, while the
+  // window is laid out at a fractional rect: under a point apart, larger or
+  // smaller, and still meant for one pixel each.
+  bool withinOnePoint(double source, double target) =>
+      source - target <= ratio && target - source < ratio;
   final nativePixels =
       texture.transform == 0 &&
       integralSource &&
-      source.width + 0.001 >= target.width * ratio &&
-      source.height + 0.001 >= target.height * ratio &&
-      source.width - target.width * ratio <= 1 &&
-      source.height - target.height * ratio <= 1;
+      withinOnePoint(source.width, target.width * ratio) &&
+      withinOnePoint(source.height, target.height * ratio);
   final quality = requested == FilterQuality.none && !nativePixels
       ? FilterQuality.low
       : requested;
@@ -575,7 +577,9 @@ WindowPlaneTextureGeometry windowPlaneTextureGeometry({
           nearest = candidate;
         }
       }
-      return nearest == null ? 0 : nearest / ratio + grid - origin;
+      // A buffer rounded down covers the viewport from neither pixel.
+      nearest ??= start.roundToDouble();
+      return nearest / ratio + grid - origin;
     }
 
     final origin = globalOrigin + localTargetOrigin;

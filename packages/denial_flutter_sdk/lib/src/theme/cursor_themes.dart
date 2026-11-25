@@ -110,6 +110,7 @@ class ShellCursorThemeData {
     required this.assetRoot,
     this.fileRoot,
     required this.roles,
+    this.assetScales = const <double>[1],
   });
 
   final String id;
@@ -120,6 +121,25 @@ class ShellCursorThemeData {
   final String? assetRoot;
   final String? fileRoot;
   final Map<ShellCursorKind, ShellCursorRoleData> roles;
+
+  /// Pixel densities the bundled frames come in, ascending: a frame of
+  /// density 2 is `2.0x/00.png` beside `00.png`, twice its size in pixels.
+  final List<double> assetScales;
+
+  /// The density of frames drawn at [pixelScale] device pixels per native
+  /// pixel: the smallest that is not lower, so frames are reduced rather
+  /// than enlarged, or the highest there is.
+  double assetScaleFor(double pixelScale) {
+    if (assetRoot == null) {
+      return 1;
+    }
+    for (final scale in assetScales) {
+      if (scale >= pixelScale - 0.001) {
+        return scale;
+      }
+    }
+    return assetScales.last;
+  }
 
   bool get usesImageFrames => assetRoot != null || fileRoot != null;
   bool get isImported => fileRoot != null;
@@ -135,11 +155,26 @@ class ShellCursorThemeData {
     return '$root/${role.relativeFramePath(frame)}';
   }
 
-  ImageProvider<Object>? imageProvider(ShellCursorKind kind, int frame) {
+  /// The frame drawn at [pixelScale] device pixels per native pixel.
+  ImageProvider<Object>? imageProvider(
+    ShellCursorKind kind,
+    int frame, {
+    double pixelScale = 1,
+  }) {
     final role = roleFor(kind);
     final relativePath = role.relativeFramePath(frame);
     if (assetRoot case final root?) {
-      return AssetImage('$root/$relativePath');
+      // Exact keys: AssetImage would pick its own variant by the display's
+      // ratio alone, and enlarge the 2x frames at 2.25.
+      final scale = assetScaleFor(pixelScale);
+      final path = scale == 1
+          ? relativePath
+          : p.posix.join(
+              p.posix.dirname(relativePath),
+              '${scale}x',
+              p.posix.basename(relativePath),
+            );
+      return ExactAssetImage('$root/$path', scale: scale);
     }
     if (fileRoot case final root?) {
       return FileImage(File(p.join(root, relativePath)));
@@ -147,14 +182,22 @@ class ShellCursorThemeData {
     return null;
   }
 
-  Iterable<ImageProvider<Object>> get imageProviders sync* {
+  /// Every frame, as drawn for a cursor [longestEdge] logical pixels long on
+  /// a display of [devicePixelRatio].
+  Iterable<ImageProvider<Object>> imageProviders({
+    double longestEdge = 0,
+    double devicePixelRatio = 1,
+  }) sync* {
     if (!usesImageFrames) {
       return;
     }
     for (final kind in ShellCursorKind.values) {
       final role = roleFor(kind);
+      final pixelScale = longestEdge > 0
+          ? longestEdge / role.size.longestSide * devicePixelRatio
+          : 1.0;
       for (var frame = 0; frame < role.effectiveFrameCount; frame += 1) {
-        yield imageProvider(kind, frame)!;
+        yield imageProvider(kind, frame, pixelScale: pixelScale)!;
       }
     }
   }
@@ -267,6 +310,7 @@ abstract final class ShellCursorThemes {
     label: 'Bibata Modern Ice',
     author: 'Abdulkaiz Khatri',
     assetRoot: 'packages/denial_flutter_sdk/assets/cursors/bibata_modern_ice',
+    assetScales: <double>[1, 2, 3],
     roles: <ShellCursorKind, ShellCursorRoleData>{
       ShellCursorKind.normal: _bibataNormal,
       ShellCursorKind.help: _bibataHelp,

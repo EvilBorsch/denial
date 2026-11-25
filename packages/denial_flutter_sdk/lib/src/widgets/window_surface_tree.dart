@@ -105,7 +105,6 @@ bool canDrawWindowLayersDirectly({
   );
 }
 
-const double _nativePixelTolerance = 1.0;
 const double _coverageTolerance = 0.001;
 
 bool _sourceMatchesOutputPixels({
@@ -119,12 +118,17 @@ bool _sourceMatchesOutputPixels({
   final sourceOriginIsIntegral =
       (sourceRect.left - sourceRect.left.roundToDouble()).abs() < 0.001 &&
       (sourceRect.top - sourceRect.top.roundToDouble()).abs() < 0.001;
+  // A client draws its whole-point size, its buffer rounded to whole pixels,
+  // while the shell lays the window out at a fractional rect (the stage at
+  // 175 % is 1938.29 points wide): the two differ by under a point, larger or
+  // smaller. Stretching the buffer by that fraction resamples all of it.
   return sourceOriginIsIntegral &&
-      sourceRect.width + _coverageTolerance >= targetSize.width * ratio &&
-      sourceRect.height + _coverageTolerance >= targetSize.height * ratio &&
-      sourceRect.width - targetSize.width * ratio <= _nativePixelTolerance &&
-      sourceRect.height - targetSize.height * ratio <= _nativePixelTolerance;
+      _withinOnePoint(sourceRect.width, targetSize.width * ratio, ratio) &&
+      _withinOnePoint(sourceRect.height, targetSize.height * ratio, ratio);
 }
+
+bool _withinOnePoint(double source, double target, double ratio) =>
+    source - target <= ratio && target - source < ratio;
 
 FilterQuality _effectiveTextureFilterQuality({
   required FilterQuality requested,
@@ -371,9 +375,10 @@ class _LegacyWindowTexture extends StatelessWidget {
 /// pixels. A half-pixel surface origin introduces the same problem even when
 /// the dimensions divide exactly.
 ///
-/// When the source covers the atlas-sized destination with at most one pixel
-/// of rounding excess, retain its native pixel dimensions instead of
-/// resampling it. Its origin is aligned too when that cannot expose an edge.
+/// When the source is within one point of the atlas-sized destination, larger
+/// or smaller (clients round), retain its native pixel dimensions instead of
+/// resampling it, on the pixel grid: at the pixel that keeps the destination
+/// covered, else at the nearest one, which leaves under a pixel uncovered.
 /// The surrounding surface clip absorbs only the fractional edge remainder.
 /// Real resizes, animations, legacy integer-scale buffers, and transformed
 /// surfaces continue through Flutter's normal filtered scaling path.
@@ -584,9 +589,10 @@ class _RenderExternalTextureViewport extends RenderShiftedBox {
         alignedOrigin = candidate;
       }
     }
-    return alignedOrigin == null
-        ? 0.0
-        : alignedOrigin / ratio + gridOrigin - logicalOrigin;
+    // A buffer rounded down cannot cover the viewport from either pixel; it
+    // takes the nearer one and leaves under a pixel of the viewport uncovered.
+    alignedOrigin ??= physicalOrigin.roundToDouble();
+    return alignedOrigin / ratio + gridOrigin - logicalOrigin;
   }
 
   @override
