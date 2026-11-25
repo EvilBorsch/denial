@@ -8,12 +8,13 @@
 # tools/eb-build-deniald: the two speak one portal protocol, so a portal comes
 # only with its deniald). denialctl, the polkit agent, Settings' Wi-Fi country
 # helper and the conffiles stay the release's, the postinst also gives deniald CAP_SYS_NICE (see
-# below), and the package still depends on the release's
-# denial-flutter-engine (= 0.6.8-1). Its libc6 and libinput10 dependencies
+# below), and the package depends on the release's
+# denial-flutter-engine (= 0.6.8-1), or with EB_ENGINE=VERSION on an engine
+# package from tools/eb-repack-engine-deb. Its libc6 and libinput10 dependencies
 # rise to the newest symbol versions the new binaries import. See
 # docs/EB-BUILD.md.
 #
-# Usage: [EB_PORTAL=DENIAL_PORTAL] tools/eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY [DENIALD [SETTINGS]]
+# Usage: [EB_PORTAL=DENIAL_PORTAL] [EB_ENGINE=VERSION] tools/eb-repack-deb BUNDLE_DIRECTORY VERSION OUTPUT_DIRECTORY [DENIALD [SETTINGS]]
 #   e.g. tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb1 ~/debs
 #   DENIALD may be '' to keep the release's deniald with a new SETTINGS.
 set -euo pipefail
@@ -25,6 +26,7 @@ OUTPUT="${3:?$USAGE}"
 DENIALD="${4:-}"
 SETTINGS="${5:-}"
 PORTAL="${EB_PORTAL:-}"
+ENGINE="${EB_ENGINE:-0.6.8-1}"
 WORK="${EB_WORK:-$HOME/work-denial-shell}"
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tools/lib/denial-architecture.sh
@@ -136,11 +138,11 @@ PY2
 
 control="$stage/denial/DEBIAN/control"
 python3 -I - "$control" "$VERSION" "$MAINTAINER" "$(git -C "$ROOT" rev-parse HEAD)" \
-    "$glibc_needed" "$DENIALD" "$settings_revision" "${PORTAL:+portal}" "$libinput_needed" <<'PY'
+    "$glibc_needed" "$DENIALD" "$settings_revision" "${PORTAL:+portal}" "$libinput_needed" "$ENGINE" <<'PY'
 import re
 import sys
 import textwrap
-path, version, maintainer, revision, glibc, deniald, settings, portal, libinput = sys.argv[1:10]
+path, version, maintainer, revision, glibc, deniald, settings, portal, libinput, engine = sys.argv[1:11]
 
 
 def newer(a, b):
@@ -166,6 +168,9 @@ for line in lines:
             assert match, 'Depends has no libinput10'
             if match.group(1) is None or newer(libinput, match.group(1)):
                 line = line.replace(match.group(0), 'libinput10 (>= ' + libinput + ')')
+        assert 'denial-flutter-engine (= 0.6.8-1)' in line, 'Depends has no pinned engine'
+        line = line.replace('denial-flutter-engine (= 0.6.8-1)',
+                            'denial-flutter-engine (= ' + engine + ')')
         line = line + ', libcap2-bin'
         out.append(line)
         # deniald is the session's notification server

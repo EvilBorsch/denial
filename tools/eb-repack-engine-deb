@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+# Repack Denial's signed denial-flutter-engine_0.6.8-1_arm64.deb with a
+# libflutter_engine.so built from the EvilBorsch/flutter fork by
+# tools/denial-flutter-engine (docs/EB-BUILD.md, "Build the Flutter engine").
+# Only the library, the version, the maintainer and the description change:
+# the package keeps Provides: denial-flutter-engine-abi (= 3.47.5.denial1),
+# so the engine must keep the embedder ABI and the Dart snapshot identity of
+# the release (an Impeller or Skia change does). A denial package from
+# tools/eb-repack-deb with EB_ENGINE=VERSION depends on it.
+#
+# Usage: tools/eb-repack-engine-deb ENGINE_SO VERSION OUTPUT_DIRECTORY FLUTTER_COMMIT
+#   e.g. tools/eb-repack-engine-deb \
+#     ~/.cache/denial/flutter-engine/build/out/denial_linux_arm64_release/libflutter_engine.so \
+#     0.6.8-1+eb1 ~/debs f0c7fcb2350e
+set -euo pipefail
+
+USAGE='usage: eb-repack-engine-deb ENGINE_SO VERSION OUTPUT_DIRECTORY FLUTTER_COMMIT'
+ENGINE="${1:?$USAGE}"
+VERSION="${2:?$USAGE}"
+OUTPUT="${3:?$USAGE}"
+COMMIT="${4:?$USAGE}"
+WORK="${EB_WORK:-$HOME/work-denial-shell}"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=tools/lib/denial-architecture.sh
+. "$ROOT/tools/lib/denial-architecture.sh"
+
+DEB=denial-flutter-engine_0.6.8-1_arm64.deb
+URL="https://github.com/denialwm/denial/releases/download/v0.6.8/$DEB"
+# From the v0.6.8 SHA256SUMS signed by the Denial release key.
+SHA256=49d3768307a29375bae750a20300f980b9a766188bd32228e1fbb796796d9ce2
+MAINTAINER='EvilBorsch <44337169+EvilBorsch@users.noreply.github.com>'
+# The Dart VM snapshot identity of the release engine: an AOT shell built for
+# the release loads only into an engine that carries it.
+SNAPSHOT=0451907c2eaa8467e848c0067bfe8ed4
+
+die() { printf 'eb-repack-engine-deb: %s\n' "$*" >&2; exit 1; }
+[[ "$VERSION" == 0.6.8-1+* ]] || die 'VERSION must be 0.6.8-1+SUFFIX, newer than the release'
+[[ -f "$ENGINE" && "$(denial_elf_arch "$ENGINE")" == aarch64 ]] \
+    || die "not an aarch64 engine: $ENGINE"
+grep -q "$SNAPSHOT" "$ENGINE" || die "$ENGINE lacks the release's snapshot identity $SNAPSHOT"
+[[ "$COMMIT" =~ ^[0-9a-f]{7,40}$ ]] || die "not a commit: $COMMIT"
+
+mkdir -p -- "$WORK/dl" "$OUTPUT"
+if [[ ! -s "$WORK/dl/$DEB" ]]; then
+    curl -fL --retry 3 -o "$WORK/dl/$DEB.part" "$URL"
+    mv -- "$WORK/dl/$DEB.part" "$WORK/dl/$DEB"
+fi
+[[ "$(sha256sum "$WORK/dl/$DEB" | cut -d' ' -f1)" == "$SHA256" ]] \
+    || die "$WORK/dl/$DEB does not match its pinned SHA-256"
+
+stage="$(mktemp -d "$WORK/repack-engine.XXXXXX")"
+trap 'rm -rf --one-file-system -- "$stage"' EXIT
+dpkg-deb -R "$WORK/dl/$DEB" "$stage/engine"
+install -m644 -- "$ENGINE" "$stage/engine/usr/lib/denial/flutter/lib/libflutter_engine.so"
+control="$stage/engine/DEBIAN/control"
+size="$(du -sk --exclude=DEBIAN "$stage/engine" | cut -f1)"
+sed -i -e "s/^Version: .*/Version: $VERSION/" \
+    -e "s/^Maintainer: .*/Maintainer: $MAINTAINER/" \
+    -e "s/^Installed-Size: .*/Installed-Size: $size/" "$control"
+cat >> "$control" <<EOF2
+ .
+ This build replaces libflutter_engine.so of the signed 0.6.8-1 release with
+ one built from EvilBorsch/flutter $COMMIT; the embedder ABI and the Dart
+ snapshot identity are the release's.
+EOF2
+dpkg-deb --root-owner-group -Zxz -b "$stage/engine" "$OUTPUT/denial-flutter-engine_${VERSION}_arm64.deb" >/dev/null
+echo "$OUTPUT/denial-flutter-engine_${VERSION}_arm64.deb"

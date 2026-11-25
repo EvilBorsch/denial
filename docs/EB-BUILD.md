@@ -400,6 +400,26 @@ build machine's Dart SDK. A change to Impeller or Skia leaves the Dart VM and
 the snapshot identity `0451907c2eaa8467e848c0067bfe8ed4` is in the engine as
 in `libapp.so`.
 
+### A changed engine as a package
+
+eb20 ships the first changed engine: `eb/snapshot-attachments` of the Flutter
+fork (`f0c7fcb2350e`), where a picture snapshot keeps the multisample colour
+and depth/stencil attachments of the previous snapshot of the same size
+instead of allocating 260 MB anew. It was built from that commit checked out
+in `~/androidlinux/components/flutter` with `prepare-app-build` and the
+environment above, which stages the engine in
+`~/.cache/denial/flutter-engine/build/out/denial_linux_arm64_release`.
+`tools/eb-repack-engine-deb` puts it into the signed release's engine
+package; it refuses an engine without the release's snapshot identity:
+
+```sh
+tools/eb-repack-engine-deb     ~/.cache/denial/flutter-engine/build/out/denial_linux_arm64_release/libflutter_engine.so     0.6.8-1+eb1 ~/debs f0c7fcb2350e
+EB_ENGINE=0.6.8-1+eb1 EB_PORTAL=... tools/eb-repack-deb ...
+```
+
+With `EB_ENGINE` the `denial` package depends on exactly that engine
+version instead of the release's `0.6.8-1`.
+
 Denial renders with Impeller GLES only: the engine is built with
 `shell_enable_vulkan = false`, and `deniald` hands the engine an OpenGL
 renderer configuration (`FlutterRendererType_kOpenGL` in
