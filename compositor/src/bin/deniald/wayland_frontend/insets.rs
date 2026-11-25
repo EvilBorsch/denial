@@ -460,7 +460,7 @@ impl WaylandFrontend {
         // takes its half; a full-screen one fills the screen while it is.
         if !fullscreen
             && let Some((owner, pair)) = self.split_view_owner(window)
-            && let Some(half) = pair.rect_of(owner, geometry)
+            && let Some(half) = pair.rect_of(owner, geometry, self.split_views.gap())
         {
             geometry = half;
         }

@@ -977,6 +977,19 @@ impl SettingsManager {
             .unwrap_or(true)
     }
 
+    /// Rounded window corners and a visible window frame
+    /// (`appearance.roundedWindowFrame`, from eb20). Off unless the user
+    /// turned it on: square windows use the whole screen, and the windows of
+    /// a Split View pair meet at a thin divider.
+    pub(super) fn rounded_window_frame(&self) -> bool {
+        self.document
+            .get("appearance")
+            .and_then(Value::as_object)
+            .and_then(|appearance| appearance.get("roundedWindowFrame"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    }
+
     /// Stay awake (`power.stayAwake`): the screen stays on and the session
     /// unlocked, and nothing suspends the system on its own. The idle policy
     /// neither darkens, locks nor suspends, the power button leaves a lit

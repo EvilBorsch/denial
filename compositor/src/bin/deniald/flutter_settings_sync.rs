@@ -526,7 +526,17 @@ pub(super) fn synchronize_settings(
     synchronize_committed_theme(runtime, events)?;
     synchronize_stay_awake(events);
     synchronize_shortcut_preset(events);
+    synchronize_window_corners(events);
     Ok(())
+}
+
+/// Follows `appearance.roundedWindowFrame` at start and after every settings
+/// change. The shell lays out the desktop's windows by it; deniald owns the
+/// gap between the windows of a Split View pair.
+#[cfg(feature = "flutter")]
+pub(super) fn synchronize_window_corners(events: &mut RuntimeState) {
+    let rounded = events.frontend().settings.rounded_window_frame();
+    events.frontend_mut().set_split_view_rounded(rounded);
 }
 
 /// Follows `shortcuts.preset` at start and after every settings change: the

@@ -24,9 +24,13 @@ use tracing::{info, warn};
 use super::super::window_layout::{LayoutAxis, split_geometry_on_axis};
 use super::WaylandFrontend;
 
-/// The divider between the two windows, in logical pixels. The shell draws
-/// it in this gap.
+/// The divider between two rounded windows, in logical pixels. The shell
+/// draws it in this gap.
 pub(crate) const SPLIT_VIEW_GAP: i32 = 10;
+
+/// The divider between two square windows (`appearance.roundedWindowFrame`
+/// off): a thin line, the windows taking the rest.
+pub(crate) const SQUARE_SPLIT_VIEW_GAP: i32 = 2;
 
 /// Two phone windows side by side, by stable window id: `left` takes
 /// `ratio` of the width.
@@ -52,14 +56,15 @@ impl SplitViewPair {
         }
     }
 
-    /// `window`'s half of `area`, the phone's screen below the status bar.
+    /// `window`'s half of `area`, the phone's screen below the status bar,
+    /// `gap` from the other half.
     pub(crate) fn rect_of(
         &self,
         window: u64,
         area: Rectangle<i32, Logical>,
+        gap: i32,
     ) -> Option<Rectangle<i32, Logical>> {
-        let (left, right) =
-            split_geometry_on_axis(area, SPLIT_VIEW_GAP, self.ratio, LayoutAxis::Horizontal);
+        let (left, right) = split_geometry_on_axis(area, gap, self.ratio, LayoutAxis::Horizontal);
         if window == self.left {
             Some(left)
         } else if window == self.right {
@@ -74,9 +79,33 @@ impl SplitViewPair {
 #[derive(Debug, Default)]
 pub(crate) struct SplitViews {
     pairs: Vec<SplitViewPair>,
+    /// Windows have rounded corners: the pairs keep the wide gap.
+    rounded: bool,
 }
 
 impl SplitViews {
+    /// The gap between the windows of a pair.
+    pub(crate) const fn gap(&self) -> i32 {
+        if self.rounded {
+            SPLIT_VIEW_GAP
+        } else {
+            SQUARE_SPLIT_VIEW_GAP
+        }
+    }
+
+    /// Windows turn rounded or square. Gives the windows of every pair
+    /// when the gap between them changes, to be laid out again.
+    pub(crate) fn set_rounded(&mut self, rounded: bool) -> Vec<u64> {
+        if self.rounded == rounded {
+            return Vec::new();
+        }
+        self.rounded = rounded;
+        self.pairs
+            .iter()
+            .flat_map(|pair| [pair.left, pair.right])
+            .collect()
+    }
+
     pub(crate) fn pair_of(&self, window: u64) -> Option<SplitViewPair> {
         self.pairs.iter().copied().find(|pair| pair.holds(window))
     }
@@ -243,6 +272,16 @@ impl WaylandFrontend {
         }
     }
 
+    /// `appearance.roundedWindowFrame`: the pairs take the gap of rounded
+    /// or square windows.
+    pub(crate) fn set_split_view_rounded(&mut self, rounded: bool) {
+        let windows = self.split_views.set_rounded(rounded);
+        if !windows.is_empty() {
+            info!(rounded, "Split View gap follows the window corners");
+            self.configure_split_view_windows(&windows);
+        }
+    }
+
     fn configure_split_view_windows(&mut self, windows: &[u64]) {
         for &id in windows {
             if let Some(window) = self.window_for_id(id) {
@@ -272,15 +311,15 @@ mod tests {
             right: 2,
             ratio: 0.5,
         };
-        let left = pair.rect_of(1, screen()).unwrap();
-        let right = pair.rect_of(2, screen()).unwrap();
+        let left = pair.rect_of(1, screen(), SPLIT_VIEW_GAP).unwrap();
+        let right = pair.rect_of(2, screen(), SPLIT_VIEW_GAP).unwrap();
         assert_eq!(left.loc, (0, 48).into());
         assert_eq!(left.size.h, 912);
         assert_eq!(right.size.h, 912);
         assert_eq!(right.loc.x - (left.loc.x + left.size.w), SPLIT_VIEW_GAP);
         assert_eq!(right.loc.x + right.size.w, 1357);
         assert!((left.size.w - right.size.w).abs() <= 1);
-        assert_eq!(pair.rect_of(3, screen()), None);
+        assert_eq!(pair.rect_of(3, screen(), SPLIT_VIEW_GAP), None);
     }
 
     #[test]
@@ -290,11 +329,36 @@ mod tests {
             right: 2,
             ratio: 1.0 / 3.0,
         };
-        let left = pair.rect_of(1, screen()).unwrap();
-        let right = pair.rect_of(2, screen()).unwrap();
+        let left = pair.rect_of(1, screen(), SPLIT_VIEW_GAP).unwrap();
+        let right = pair.rect_of(2, screen(), SPLIT_VIEW_GAP).unwrap();
         let available = 1357 - SPLIT_VIEW_GAP;
         assert_eq!(left.size.w, (f64::from(available) / 3.0).round() as i32);
         assert_eq!(left.size.w + SPLIT_VIEW_GAP + right.size.w, 1357);
+    }
+
+    /// The owner's tablet: square windows, the default, meet at a thin line
+    /// and take the rest of the screen; turned rounded, every pair gets the
+    /// wide gap and is laid out again.
+    #[test]
+    fn square_windows_meet_at_a_thin_line_and_rounded_ones_keep_the_gap() {
+        let mut views = SplitViews::default();
+        views.split(1, 2, true, 0.5);
+        views.split(3, 4, true, 0.5);
+        assert_eq!(views.gap(), SQUARE_SPLIT_VIEW_GAP);
+        let pair = views.pair_of(1).unwrap();
+        let left = pair.rect_of(1, screen(), views.gap()).unwrap();
+        let right = pair.rect_of(2, screen(), views.gap()).unwrap();
+        assert_eq!(right.loc.x - (left.loc.x + left.size.w), 2);
+        assert_eq!(left.size.w + right.size.w, 1357 - 2);
+
+        let mut relaid = views.set_rounded(true);
+        relaid.sort_unstable();
+        assert_eq!(relaid, vec![1, 2, 3, 4]);
+        assert_eq!(views.gap(), SPLIT_VIEW_GAP);
+        // The same choice again moves nothing.
+        assert!(views.set_rounded(true).is_empty());
+        assert_eq!(views.set_rounded(false).len(), 4);
+        assert_eq!(views.gap(), SQUARE_SPLIT_VIEW_GAP);
     }
 
     #[test]

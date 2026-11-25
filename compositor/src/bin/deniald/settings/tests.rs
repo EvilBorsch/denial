@@ -357,6 +357,55 @@ fn stay_awake_is_off_until_the_power_section_turns_it_on() {
     }
 }
 
+/// eb20: windows are square unless the user rounds them. A new document,
+/// and the owner's from eb19 with his shell roundness and no window key,
+/// read square; the key the shell writes turns them rounded and back, and
+/// the shell's roundness stays as it was.
+#[test]
+fn windows_are_square_until_the_appearance_section_rounds_them() {
+    let temporary = TemporaryDirectory::new("settings-window-corners");
+    let mut manager = SettingsManager::load_path(temporary.settings_path()).unwrap();
+    assert!(!manager.rounded_window_frame());
+    let with_appearance =
+        |appearance: Value| shell_document(serde_json::json!({"appearance": appearance}));
+    for (appearance, expected) in [
+        (
+            serde_json::json!({
+                "colorSchemePreference": "preferDark",
+                "cornerRadiusScale": 1.6,
+                "focusedWindowBorderEnabled": false
+            }),
+            false,
+        ),
+        (
+            serde_json::json!({
+                "colorSchemePreference": "preferDark",
+                "cornerRadiusScale": 1.6,
+                "roundedWindowFrame": true,
+                "windowCornerRadiusScale": 0.5
+            }),
+            true,
+        ),
+        (
+            serde_json::json!({
+                "colorSchemePreference": "preferDark",
+                "cornerRadiusScale": 1.6,
+                "roundedWindowFrame": false
+            }),
+            false,
+        ),
+    ] {
+        let update = manager
+            .prepare_shell_update(manager.revision(), &with_appearance(appearance))
+            .unwrap();
+        manager.commit(update).unwrap();
+        assert_eq!(manager.rounded_window_frame(), expected);
+        let saved: Value =
+            serde_json::from_slice(&fs::read(temporary.settings_path()).unwrap()).unwrap();
+        assert_eq!(saved["appearance"]["cornerRadiusScale"], 1.6);
+    }
+}
+
 #[test]
 fn shell_update_rejects_missing_or_unknown_color_scheme() {
     let temporary = TemporaryDirectory::new("settings-color-scheme");
