@@ -217,7 +217,9 @@ class _ShellCursorHostState extends State<ShellCursorHost>
   DenialCursorState? _platformCursorState;
   int _pendingCursorAckEpoch = 0;
   bool _cursorAckScheduled = false;
-  ShellCursorThemeData? _precacheTheme;
+
+  /// The theme, cursor size and display ratio whose frames are cached.
+  (ShellCursorThemeData, double, double)? _precached;
   CursorBenchmark? _benchmark;
   Offset? _physicalPosition;
 
@@ -291,10 +293,6 @@ class _ShellCursorHostState extends State<ShellCursorHost>
       unawaited(_platformDragIconSubscription?.cancel());
       _subscribeToPlatformDragIcons();
     }
-    if (oldWidget.theme == widget.theme) {
-      return;
-    }
-    _precacheTheme = null;
     _precacheCursorAssets();
   }
 
@@ -311,12 +309,16 @@ class _ShellCursorHostState extends State<ShellCursorHost>
   }
 
   void _precacheCursorAssets() {
-    if (identical(_precacheTheme, widget.theme) ||
-        !widget.theme.usesImageFrames) {
+    final ratio = MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0;
+    final key = (widget.theme, widget.cursorSize, ratio);
+    if (_precached == key || !widget.theme.usesImageFrames) {
       return;
     }
-    _precacheTheme = widget.theme;
-    for (final provider in widget.theme.imageProviders) {
+    _precached = key;
+    for (final provider in widget.theme.imageProviders(
+      longestEdge: widget.cursorSize,
+      devicePixelRatio: ratio,
+    )) {
       unawaited(precacheImage(provider, context));
     }
   }
@@ -698,15 +700,20 @@ class _ShellCursorArtworkState extends State<ShellCursorArtwork> {
     final scale = requestedExtent / nativeExtent;
     final artworkSize = nativeSize * scale;
     final hotspot = role.hotspotAt(_frame);
-    // Pixel for pixel the frame is drawn as it is; resampled (a larger size,
-    // a display scale above 1) it is filtered rather than left blocky.
+    // The frame comes at the density nearest above the pixels it covers.
+    // Pixel for pixel it is drawn as it is; resampled it is filtered rather
+    // than left blocky.
     final pixelScale =
         scale * (MediaQuery.maybeDevicePixelRatioOf(context) ?? 1.0);
     final artwork = Image(
-      image: widget.theme.imageProvider(widget.kind, _frame)!,
+      image: widget.theme.imageProvider(
+        widget.kind,
+        _frame,
+        pixelScale: pixelScale,
+      )!,
       width: artworkSize.width,
       height: artworkSize.height,
-      filterQuality: pixelScale == 1.0
+      filterQuality: pixelScale == widget.theme.assetScaleFor(pixelScale)
           ? FilterQuality.none
           : FilterQuality.medium,
       gaplessPlayback: true,
