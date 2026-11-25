@@ -20,7 +20,7 @@ if [[ "$#" -ne 2 ]]; then
 fi
 
 for command in \
-  awk bsdtar find icotool install realpath sha256sum sort wc xargs xcur2png
+  awk bsdtar find icotool install python3 realpath sha256sum sort wc xargs
 do
   command -v "$command" >/dev/null 2>&1 \
     || {
@@ -68,41 +68,34 @@ extract_xcursor_frame() {
   local source_name="$2"
   local expected_hotspot_x="$3"
   local expected_hotspot_y="$4"
-  local extraction_root="$WORK/extracted/$role"
-  local config="$WORK/$role.conf"
-  local size
+  local width
+  local height
   local hotspot_x
   local hotspot_y
-  local image_name
 
-  install -d -- "$extraction_root" "$WORK/stage/$role"
-  xcur2png \
-    --quiet \
-    --directory "$extraction_root" \
-    --conf "$config" \
-    "$XCURSOR_ROOT/$source_name" >/dev/null 2>&1
-  read -r size hotspot_x hotspot_y image_name < <(
-    awk '$1 == 32 { print $1, $2, $3, $4; exit }' "$config"
+  install -d -- "$WORK/stage/$role/2.0x" "$WORK/stage/$role/3.0x"
+  read -r width height hotspot_x hotspot_y < <(
+    python3 "$SCRIPT_DIR/xcursor-frame.py" "$XCURSOR_ROOT/$source_name" 32 \
+      "$WORK/stage/$role/00.png"
   )
-  [[ "$size" == 32 \
+  [[ "$width $height" == '32 32' \
     && "$hotspot_x" == "$expected_hotspot_x" \
-    && "$hotspot_y" == "$expected_hotspot_y" \
-    && -f "$image_name" ]] \
+    && "$hotspot_y" == "$expected_hotspot_y" ]] \
     || {
       printf 'import-bibata-cursor: unexpected %s frame metadata\n' "$role" >&2
       exit 1
     }
-  install -m644 -- "$image_name" \
-    "$WORK/stage/$role/00.png"
   # The same cursor's 64 and 96 pixel entries are its 2x and 3x densities.
   for density in 2 3; do
-    image_name="$(awk -v size=$((32 * density)) '$1 == size { print $4; exit }' "$config")"
-    [[ -n "$image_name" && -f "$image_name" ]] \
+    read -r width height _ _ < <(
+      python3 "$SCRIPT_DIR/xcursor-frame.py" "$XCURSOR_ROOT/$source_name" \
+        $((32 * density)) "$WORK/stage/$role/$density.0x/00.png"
+    )
+    [[ "$width" == $((32 * density)) ]] \
       || {
         printf 'import-bibata-cursor: no %sx %s frame\n' "$density" "$role" >&2
         exit 1
       }
-    install -D -m644 -- "$image_name" "$WORK/stage/$role/$density.0x/00.png"
   done
 }
 

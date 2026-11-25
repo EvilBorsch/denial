@@ -25,10 +25,11 @@ enlarged. The hotspots below, in 32-pixel units, scale with them. The Linux rele
 official regular-size Windows release, with its 64 and 96 pixel entries.
 Denial does not resize, recolor, redraw, or otherwise modify any frame.
 
-The 32-pixel frames were imported before the larger ones and are kept as
-they were: they hold the XCursor pixels un-premultiplied by truncation, while
-the `xcur2png` of Ubuntu 26.04, which decoded the 64 and 96 pixel frames,
-rounds, which differs by one level in some edge pixels.
+The XCursor entries are decoded by `tools/xcursor-frame.py` (standard
+library Python): pixels un-premultiplied by truncation, which reproduces the
+32-pixel frames first imported with `xcur2png` pixel for pixel; those files
+are kept as they were. `xcur2png` 0.7.1 decodes the 64 and 96 pixel entries
+of this release as black where the file holds opaque white.
 
 Bibata is registered as a static standard-size theme: every role declares its
 own canvas and hotspot and uses `frameCount: 1`. The same renderer contract
