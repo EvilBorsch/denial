@@ -23,11 +23,18 @@ class WindowTextureRect extends StatelessWidget {
     required this.window,
     this.borderRadius = BorderRadius.zero,
     this.applyBackdrop = true,
+    this.atRest = false,
   });
 
   final DenialWindow window;
   final BorderRadius borderRadius;
   final bool applyBackdrop;
+
+  /// The window is on screen unscaled and still, as the mobile stage shows
+  /// the app in front: a buffer that fits it is drawn pixel for pixel on the
+  /// pixel grid. Moving and scaled windows keep filtered sampling, which
+  /// does not shimmer under their animations.
+  final bool atRest;
 
   @override
   Widget build(BuildContext context) {
@@ -66,6 +73,7 @@ class WindowTextureRect extends StatelessWidget {
               parent.height / windowSize.height,
             );
         final radius = borderRadius.topLeft.x;
+        final filterQuality = atRest ? FilterQuality.none : FilterQuality.low;
         final backdrop = glass && cache == null
             ? theme.backdropFilterConfigAt(
                 1,
@@ -79,7 +87,7 @@ class WindowTextureRect extends StatelessWidget {
                 texture: texture,
                 radius: radius,
                 backdrop: backdrop,
-                filterQuality: FilterQuality.low,
+                filterQuality: filterQuality,
                 presentationScale: devicePixelRatio,
               )
             : WindowPlane.child(
@@ -88,7 +96,7 @@ class WindowTextureRect extends StatelessWidget {
                 child: WindowSurfaceTree(
                   window: window,
                   includePopups: true,
-                  filterQuality: FilterQuality.low,
+                  filterQuality: filterQuality,
                 ),
               );
         Widget covered = OverflowBox(

@@ -26,12 +26,17 @@ class WindowContentRect extends ConsumerWidget {
     this.active = false,
     this.applyBackdrop = true,
     this.contentPadding = EdgeInsets.zero,
+    this.atRest = false,
   });
 
   final DenialWindow window;
   final BorderRadius borderRadius;
   final bool active;
   final bool applyBackdrop;
+
+  /// The window is on screen unscaled and still: a compositor buffer that
+  /// fits it is drawn pixel for pixel instead of filtered.
+  final bool atRest;
 
   /// Insets supplied by the shell for in-bundle application content.
   final EdgeInsets contentPadding;
@@ -43,6 +48,7 @@ class WindowContentRect extends ConsumerWidget {
         window: window,
         borderRadius: borderRadius,
         applyBackdrop: applyBackdrop,
+        atRest: atRest,
       );
     }
 

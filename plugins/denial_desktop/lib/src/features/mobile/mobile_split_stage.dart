@@ -489,6 +489,9 @@ class _MobileSplitStageState extends ConsumerState<MobileSplitStage>
     key: ValueKey<int>(window.objectId),
     window: window,
     active: window.objectId == widget.foreground,
+    // While the divider moves the window is drawn at a size its buffer
+    // does not have yet, and the plane filters it then.
+    atRest: true,
     contentPadding: const EdgeInsets.only(
       top: ReferenceShellMetrics.statusBarHeight,
     ),

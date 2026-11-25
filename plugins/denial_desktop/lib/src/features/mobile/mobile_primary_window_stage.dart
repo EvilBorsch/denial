@@ -39,6 +39,7 @@ class MobilePrimaryWindowStage extends StatelessWidget {
               ),
               key: ValueKey<int>(app.objectId),
               window: app,
+              atRest: true,
             ),
           WindowContentRect(
             contentPadding: const EdgeInsets.only(
@@ -47,6 +48,7 @@ class MobilePrimaryWindowStage extends StatelessWidget {
             key: ValueKey<int>(window.objectId),
             window: window,
             active: true,
+            atRest: true,
             // Glass would hide the apps it opened over.
             applyBackdrop: behind.isEmpty,
           ),
