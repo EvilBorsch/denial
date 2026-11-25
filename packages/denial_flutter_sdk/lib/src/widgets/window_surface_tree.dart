@@ -105,7 +105,6 @@ bool canDrawWindowLayersDirectly({
   );
 }
 
-const double _nativePixelTolerance = 1.0;
 const double _coverageTolerance = 0.001;
 
 bool _sourceMatchesOutputPixels({
@@ -119,17 +118,17 @@ bool _sourceMatchesOutputPixels({
   final sourceOriginIsIntegral =
       (sourceRect.left - sourceRect.left.roundToDouble()).abs() < 0.001 &&
       (sourceRect.top - sourceRect.top.roundToDouble()).abs() < 0.001;
-  // fractional-scale-v1 clients round their buffer to whole pixels, so it may
-  // fall short of the fractional viewport by under a pixel as well as exceed
-  // it. Stretching such a buffer by a fraction of a pixel resamples all of it.
+  // A client draws its whole-point size, its buffer rounded to whole pixels,
+  // while the shell lays the window out at a fractional rect (the stage at
+  // 175 % is 1938.29 points wide): the two differ by under a point, larger or
+  // smaller. Stretching the buffer by that fraction resamples all of it.
   return sourceOriginIsIntegral &&
-      _withinOnePixel(sourceRect.width, targetSize.width * ratio) &&
-      _withinOnePixel(sourceRect.height, targetSize.height * ratio);
+      _withinOnePoint(sourceRect.width, targetSize.width * ratio, ratio) &&
+      _withinOnePoint(sourceRect.height, targetSize.height * ratio, ratio);
 }
 
-bool _withinOnePixel(double source, double target) =>
-    source - target <= _nativePixelTolerance &&
-    target - source < _nativePixelTolerance;
+bool _withinOnePoint(double source, double target, double ratio) =>
+    source - target <= ratio && target - source < ratio;
 
 FilterQuality _effectiveTextureFilterQuality({
   required FilterQuality requested,
@@ -376,7 +375,7 @@ class _LegacyWindowTexture extends StatelessWidget {
 /// pixels. A half-pixel surface origin introduces the same problem even when
 /// the dimensions divide exactly.
 ///
-/// When the source is within one pixel of the atlas-sized destination, larger
+/// When the source is within one point of the atlas-sized destination, larger
 /// or smaller (clients round), retain its native pixel dimensions instead of
 /// resampling it, on the pixel grid: at the pixel that keeps the destination
 /// covered, else at the nearest one, which leaves under a pixel uncovered.

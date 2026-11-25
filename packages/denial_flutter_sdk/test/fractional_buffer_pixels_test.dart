@@ -65,6 +65,45 @@ void main() {
       expect(left, closeTo(227, 1e-9));
     });
 
+    test(
+      'draws a client 1490 points wide pixel for pixel in a 1490.3-point rect',
+      () {
+        // The screens layout gives the window a fractional rect; the client
+        // draws its configured 1490 points: 3352 pixels against 3353.
+        final geometry = windowPlaneTextureGeometry(
+          texture: const WindowPlaneTexture(
+            id: 7,
+            bufferSize: Size(3352, 2304),
+            source: Rect.fromLTWH(0, 0, 3352, 2304),
+          ),
+          target: const Rect.fromLTWH(0, 0, 1490.3, 1024),
+          requested: FilterQuality.none,
+          presentationScale: _scale,
+        );
+        expect(geometry.filterQuality, FilterQuality.none);
+        expect(geometry.bounds.width * _scale, closeTo(3352, 1e-9));
+      },
+    );
+
+    test(
+      'draws the app in front on the 175 % tablet stage pixel for pixel',
+      () {
+        // The stage under the status bar is 1938.29 x 1323.43 points; the app
+        // is configured to 1938 x 1323 and draws 3392 x 2315 pixels.
+        final geometry = windowPlaneTextureGeometry(
+          texture: const WindowPlaneTexture(
+            id: 7,
+            bufferSize: Size(3392, 2315),
+            source: Rect.fromLTWH(0, 0, 3392, 2315),
+          ),
+          target: const Rect.fromLTWH(0, 0, 1938.6, 1323.43),
+          requested: FilterQuality.none,
+          presentationScale: 1.75,
+        );
+        expect(geometry.filterQuality, FilterQuality.none);
+      },
+    );
+
     test('still filters a buffer drawn at another scale', () {
       // GTK3 draws at the integer scale above, 3: 2103 pixels.
       expect(_plane(2103).filterQuality, FilterQuality.low);

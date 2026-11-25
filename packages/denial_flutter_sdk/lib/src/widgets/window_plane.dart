@@ -539,15 +539,16 @@ WindowPlaneTextureGeometry windowPlaneTextureGeometry({
   final integralSource =
       (source.left - source.left.roundToDouble()).abs() < 0.001 &&
       (source.top - source.top.roundToDouble()).abs() < 0.001;
-  // A fractional-scale buffer is rounded to whole pixels: up to a pixel larger
-  // or smaller than the viewport, and still meant for one pixel each.
-  bool withinOnePixel(double source, double target) =>
-      source - target <= 1 && target - source < 1;
+  // The client draws its whole-point size, rounded to whole pixels, while the
+  // window is laid out at a fractional rect: under a point apart, larger or
+  // smaller, and still meant for one pixel each.
+  bool withinOnePoint(double source, double target) =>
+      source - target <= ratio && target - source < ratio;
   final nativePixels =
       texture.transform == 0 &&
       integralSource &&
-      withinOnePixel(source.width, target.width * ratio) &&
-      withinOnePixel(source.height, target.height * ratio);
+      withinOnePoint(source.width, target.width * ratio) &&
+      withinOnePoint(source.height, target.height * ratio);
   final quality = requested == FilterQuality.none && !nativePixels
       ? FilterQuality.low
       : requested;
