@@ -94,6 +94,16 @@ extract_xcursor_frame() {
     }
   install -m644 -- "$image_name" \
     "$WORK/stage/$role/00.png"
+  # The same cursor's 64 and 96 pixel entries are its 2x and 3x densities.
+  for density in 2 3; do
+    image_name="$(awk -v size=$((32 * density)) '$1 == size { print $4; exit }' "$config")"
+    [[ -n "$image_name" && -f "$image_name" ]] \
+      || {
+        printf 'import-bibata-cursor: no %sx %s frame\n' "$density" "$role" >&2
+        exit 1
+      }
+    install -D -m644 -- "$image_name" "$WORK/stage/$role/$density.0x/00.png"
+  done
 }
 
 while read -r role source_name hotspot_x hotspot_y; do
@@ -134,15 +144,29 @@ extract_windows_frame() {
     --index=1 \
     --output="$WORK/stage/$role/00.png" \
     "$WINDOWS_ROOT/$source_name"
+  # The 64 and 96 pixel entries are the 2x and 3x densities. icotool names
+  # each extracted entry by its size (its --index does not pick one).
+  install -d -- "$WORK/ico/$role"
+  icotool --extract --output="$WORK/ico/$role" "$WINDOWS_ROOT/$source_name"
+  for density in 2 3; do
+    local size=$((32 * density))
+    local entries=("$WORK/ico/$role/"*"_${size}x${size}x32.png")
+    [[ "${#entries[@]}" == 1 && -f "${entries[0]}" ]] \
+      || {
+        printf 'import-bibata-cursor: no %sx %s frame\n' "$density" "$role" >&2
+        exit 1
+      }
+    install -D -m644 -- "${entries[0]}" "$WORK/stage/$role/$density.0x/00.png"
+  done
 }
 
 extract_windows_frame person Person.cur
 extract_windows_frame pin Pin.cur
 
 frame_count="$(find "$WORK/stage" -type f -name '*.png' | wc -l)"
-[[ "$frame_count" == 17 ]] \
+[[ "$frame_count" == 51 ]] \
   || {
-    printf 'import-bibata-cursor: expected 17 frames, found %s\n' \
+    printf 'import-bibata-cursor: expected 51 frames, found %s\n' \
       "$frame_count" >&2
     exit 1
   }
@@ -160,6 +184,6 @@ cp -a -- "$WORK/stage" "$DESTINATION"
     | xargs -0 sha256sum
 ) > "$MANIFEST"
 
-printf 'Imported 17 unchanged Bibata Modern Ice 32px frames into %s\n' \
+printf 'Imported 17 unchanged Bibata Modern Ice frames at 32, 64 and 96px into %s\n' \
   "$DESTINATION"
 printf 'Wrote frame manifest: %s\n' "$MANIFEST"
