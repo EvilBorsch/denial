@@ -299,3 +299,48 @@ Owner, translated: "the tablet presentation is my main mode, so the most importa
 - When a tablet item and a desktop item compete for the tablet or for build time, the tablet item may go first, but no desktop item is skipped.
 
 Delivery as before: package `denial 0.6.8-1+eb19`. Build, install and verify on the tablet autonomously, under the same permissions and limits (no partitions, no reboots, battery ≥ 40 %, Stay awake only during tests). Merge into the forks' `eb/main` once verified on the tablet. End state as for eb18.
+
+# Iteration 4: eb20 (2026-11-25) — a stable 120 fps from the root cause, and crisp scaling
+
+The owner's reaction to eb19 (translated): "My tablet is very powerful. You can clearly make everything much faster, not by a couple of percent, so that it holds a stable 120 fps. There seems to be some other problem here. For scaling, also make sure sharpness does not drop."
+
+## Goal: stable 120 fps
+
+- **Target.** Every shell animation and gesture in both presentations presents a new frame on at least 99 % of vblanks at 120 Hz, with no gap longer than 2 vblanks, on the 3392×2400 panel. This covers:
+  - the strip, the overview, app windows, Alt+Tab, search and the launcher, and the control center;
+  - in the tablet presentation: home, the drawer, Recents and the home fade after it, the pill, back, the shade and Split View;
+  - the presentation switch.
+- **The beauty rule stays.** The look is as in eb18 and eb19, proven by screenshot comparison.
+- **Approach: root cause first.** eb19's per-percent tuning is not enough. The SM8750 (Adreno 830) has headroom for this scene many times over, so something structural wastes it. Profile the whole frame path and find where the time goes before changing anything:
+  - CPU threads (deniald, the Flutter UI and raster threads);
+  - GPU queue and per-pass timing;
+  - bandwidth;
+  - submit and scanout timing.
+
+  Candidate causes to confirm or rule out with data:
+  1. **Render-pass splits on a tiler.** Each backdrop and glass read forces a resolve and reload of the full 3392×2400 target. On a tiled GPU that costs full-surface memory bandwidth per glass element per frame. eb19 found "every glass read splits the render pass" and "the shade's tiles re-read glass every frame".
+  2. **The overview backdrop as a full-screen 4× multisampled layer.** Check whether `EXT_multisampled_render_to_texture` (tile-local, implicit MSAA; `DENIA_GLES_IMPLICIT_MSAA`) can be made pixel-identical, or whether multisampling is needed there at all.
+  3. **Impeller backend.** Measure Impeller on Vulkan (Mesa Turnip) against GLES (Freedreno) on this GPU.
+  4. **Composition path in deniald.** Look for extra full-screen copies or blits between the Flutter output and scanout. Check direct scanout and overlay planes for the shell and fullscreen clients, and damage-limited composition.
+  5. **GPU frequency policy** (devfreq governor, ramp latency, idle drop between frames) **and CPU placement** of the UI and raster threads (big cores, uclamp).
+  6. **Frame scheduling.** In eb19, deniald submitted some frames 18–30 ms late. Look at vsync alignment and pipeline depth.
+  7. **First-use jank.** Shader and pipeline compilation, and the home-fade snapshot hitch (eb19's cache did not hold on the device).
+- **Fork and rebuild the engine and Skia.** The Denial Flutter engine is open: fork `denial/3.47.5-r1` (Flutter `718ccf2c`) and Skia `denial/3.47.5-r1` (`5b495e3e`); see `docs/flutter-engine/3.47.5/VALIDATION.md`. Fork them into `EvilBorsch` (AGENTS.md rule: fork what you change), rebuild them, and package `denial-flutter-engine` `+ebN`. The AOT shell must then be built against the new engine's snapshot identity.
+- **Mesa.** Prefer configuration (driconf, environment). Fork Mesa only if the root cause is there and it is the proper fix.
+- **Kernel.** Runtime sysfs tuning on the tablet is fine. A kernel source change needs a new boot image, and flashing it needs the owner's explicit consent. Prepare it and report; do not flash.
+
+## Crisp scaling at every step
+
+- **Sharpness.** At every «Масштаб» step (175–325 %), text and icons must be as sharp as at the integer steps. That covers the shell, GTK3 and GTK4, Firefox, Qt if present, X11 through Xwayland, and Android through Droidloom.
+- **No bilinear upscaling.** No client buffer is ever upscaled by bilinear filtering.
+- **Fractional scale protocols.** Verify `wp_fractional_scale_v1` and `wp_viewporter` support end to end in deniald, which clients use them, and that their buffers map 1:1 to panel pixels.
+- **Proof.** Compare full-resolution screenshots (`grim -s 1`) of the same text at each step.
+- **Fix it properly.** Where a client cannot render crisply at a fractional step, fix it properly: protocol support, toolkit settings shipped by default, or Xwayland settings. Hiding steps is acceptable only as a documented last resort.
+- **X11 text size.** eb19 left X11 text 4–7 % larger because `Xft.dpi` does not reach the X resources. Fix that.
+
+## Delivery
+
+- **Package:** `denial 0.6.8-1+eb20`, and the engine package if it is rebuilt.
+- **Same rules as before:** autonomous work, subagents, the tablet lock, both presentations verified, no partitions and no reboots, battery ≥ 40 %, Stay awake only during tests.
+- **Budget:** performance work may iterate freely, under the owner's explicit permission. Everything else is batched.
+- **Merge** into `eb/main` once it is verified on the tablet.
