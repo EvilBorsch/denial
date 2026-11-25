@@ -355,14 +355,44 @@ impl NativeWindowPlan {
             position: [0.0; 2],
             uv: [0.0; 2],
         }; 4];
+        let native = self.native_origin(layer);
         for (vertex, point) in vertices.iter_mut().zip(points) {
-            vertex.position = [
-                ((point[0] - self.canvas.x) * self.scale) as f32,
-                ((point[1] - self.canvas.y) * self.scale) as f32,
+            let position = [
+                (point[0] - self.canvas.x) * self.scale,
+                (point[1] - self.canvas.y) * self.scale,
             ];
-            vertex.uv = layer.uv_at(point, buffer_size)?;
+            vertex.position = position.map(|value| value as f32);
+            vertex.uv = match native {
+                Some(origin) => [
+                    ((layer.source.x + position[0] - origin[0]) / f64::from(buffer_size[0])) as f32,
+                    ((layer.source.y + position[1] - origin[1]) / f64::from(buffer_size[1])) as f32,
+                ],
+                None => layer.uv_at(point, buffer_size)?,
+            };
         }
         Some(vertices)
+    }
+
+    /// Where, in the image, a layer drawn pixel for pixel starts: on the
+    /// pixel nearest its destination. A fractional-scale client rounds its
+    /// buffer to whole pixels, so one within a pixel of the destination,
+    /// larger or smaller, is meant for one pixel each; stretching it by the
+    /// fraction, or starting it between pixels, would resample all of it.
+    fn native_origin(&self, layer: &NativeWindowLayer) -> Option<[f64; 2]> {
+        let within_a_pixel = |source: f64, destination: f64| {
+            source - destination <= 1.0 && destination - source < 1.0
+        };
+        (layer.transform == 0
+            && layer.source.x.fract() == 0.0
+            && layer.source.y.fract() == 0.0
+            && within_a_pixel(layer.source.width, layer.destination.width * self.scale)
+            && within_a_pixel(layer.source.height, layer.destination.height * self.scale))
+        .then(|| {
+            [
+                ((layer.destination.x - self.canvas.x) * self.scale).round(),
+                ((layer.destination.y - self.canvas.y) * self.scale).round(),
+            ]
+        })
     }
 }
 

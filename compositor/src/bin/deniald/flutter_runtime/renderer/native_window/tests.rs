@@ -289,6 +289,58 @@ fn fractional_scale_retains_exact_source_extent_inside_rounded_allocation() {
 }
 
 #[test]
+fn fractional_scale_buffers_map_pixel_for_pixel_on_the_pixel_grid() {
+    // At 225 % a 701x400 window is 1577.25x900 pixels: its client rounds its
+    // buffer down to 1577. The child at (33, 47) starts at (74.25, 105.75)
+    // and is 677.25x456.75 pixels: 677x457.
+    let canvas = ClientRect::new(0.0, 0.0, 701.0, 400.0).unwrap();
+    let child = ClientRect::new(33.0, 47.0, 301.0, 203.0).unwrap();
+    let plan = NativeWindowPlan::new(
+        1,
+        canvas,
+        2.25,
+        &[
+            surface(1, canvas, [1577, 900]),
+            surface(2, child, [677, 457]),
+        ],
+    )
+    .unwrap();
+    // Every pixel centre samples a texel centre: the texel is the pixel less
+    // a whole-pixel origin.
+    let origin = |layer: usize, buffer: [u32; 2]| {
+        let vertices = plan.vertices(&plan.layers[layer], buffer).unwrap();
+        vertices.map(|vertex| {
+            [0, 1].map(|axis| {
+                f64::from(vertex.position[axis])
+                    - f64::from(vertex.uv[axis]) * f64::from(buffer[axis])
+            })
+        })
+    };
+    for (layer, buffer, expected) in [(0, [1577, 900], [0.0, 0.0]), (1, [677, 457], [74.0, 106.0])]
+    {
+        for corner in origin(layer, buffer) {
+            assert!(
+                (corner[0] - expected[0]).abs() < 0.001 && (corner[1] - expected[1]).abs() < 0.001,
+                "layer {layer}: {corner:?} != {expected:?}"
+            );
+        }
+    }
+    // A buffer at another scale, as GTK3 draws at 3, is still scaled.
+    let legacy = NativeWindowPlan::new(
+        1,
+        canvas,
+        2.25,
+        &[
+            surface(1, canvas, [2103, 1200]),
+            surface(2, child, [677, 457]),
+        ],
+    )
+    .unwrap();
+    let vertices = legacy.vertices(&legacy.layers[0], [2103, 1200]).unwrap();
+    close(vertices[3].uv[0], 1.0);
+}
+
+#[test]
 fn registry_reuses_geometry_and_routes_each_input_update_to_one_window() {
     let mut registry = NativeWindowRegistry::default();
     let first = registry.upsert(firefox_plan()).unwrap();
