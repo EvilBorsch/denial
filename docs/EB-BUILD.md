@@ -356,6 +356,61 @@ On v0.6.8 this passes 188 tests and fails 12 that need Denial's engine
 with the same 12 failing, and the SDK all 111; `eb/screens-layout` at
 `2faae0b` (eb18) 413 with the same 12 failing, and the SDK all 135; at `6807c15` (eb19) 501 with the same 12 failing, and the SDK all 144.
 
+## Build the Flutter engine
+
+Only an engine change (Impeller, Skia) needs this; the shell and `deniald`
+build against the release engine as above. The engine sources are the forks
+[EvilBorsch/flutter](https://github.com/EvilBorsch/flutter) and
+[EvilBorsch/skia](https://github.com/EvilBorsch/skia) of Denial's, whose
+`eb/main` starts at the commits `prebuilt/flutter-engine/SOURCE_LOCK.json`
+names. Besides the prerequisites above, `sudo apt install jq ninja-build`.
+
+`tools/eb-engine-sources` makes the source trees `tools/denial-flutter-engine`
+takes as external sources: shallow clones of both forks in
+`~/androidlinux/components/{flutter,skia}`, the Flutter tree synchronized by
+gclient with Skia linked in from its own fork. About 30 minutes and 27 GB,
+plus 2.7 GB of depot_tools and Python in `~/.cache/denial/flutter-engine`.
+Then the release engine, with the release's GN arguments:
+
+```sh
+DENIAL_TARGET_ARCH=aarch64 \
+DENIAL_FLUTTER_SOURCE_ROOT=$HOME/androidlinux/components/flutter \
+DENIAL_SKIA_SOURCE_ROOT=$HOME/androidlinux/components/skia \
+DENIAL_FLUTTER_ENGINE_JOBS=8 \
+    tools/denial-flutter-engine build
+```
+
+It refuses trees that are not clean at the locked commits and an engine that
+differs from `linux-arm64-release/libflutter_engine.so.sha256`. The output is
+`~/.cache/denial/flutter-engine/build/out/denial_linux_arm64_release` (370 MB).
+Eight jobs keep the 20 GB WSL machine clear of the memory limit.
+
+Verified on 25.11.2026: 19 minutes, and `libflutter_engine.so` is
+bit-identical to the one in `denial-flutter-engine_0.6.8-1_arm64.deb`
+(SHA-256 `af2435ed14ce971fc249eaf2aa7bd2e5a0ef963069794db69396cb3c88a0fcff`).
+
+`build` makes the engine library only. A changed engine is built from the
+trees as they are on disk by `prepare-app-build` with the same environment
+(Denial's development path; not run here yet), which also builds the arm64
+`gen_snapshot`, `impellerc`, `font-subset` and `flutter_patched_sdk` and the
+build machine's Dart SDK. A change to Impeller or Skia leaves the Dart VM and
+`dart:ui` alone, so the shell from `tools/eb-build-shell` stays valid for it:
+the snapshot identity `0451907c2eaa8467e848c0067bfe8ed4` is in the engine as
+in `libapp.so`.
+
+Denial renders with Impeller GLES only: the engine is built with
+`shell_enable_vulkan = false`, and `deniald` hands the engine an OpenGL
+renderer configuration (`FlutterRendererType_kOpenGL` in
+`compositor/flutter-engine/src/host.rs`); no setting or environment variable
+selects another. Impeller Vulkan would need both an engine and a `deniald`
+change. The engine without the three Vulkan-off arguments does not compile
+in a Slimpeller build: the embedder still compiles its Skia Vulkan surface
+(`embedder_surface_vulkan.{h,cc}`), whose `ContextType` Slimpeller leaves
+out; everything else compiles (`ninja -k 0`). It needs the `!slimpeller`
+gate the GL Skia surface has. `deniald` would have to supply a `FlutterVulkanRendererConfig` and
+Vulkan backing stores, and the embedder API has no Vulkan external textures,
+through which Denial shows client windows today.
+
 ## Another Denial release
 
 The pins in `tools/eb-build-shell` and `tools/eb-repack-deb` (kit and package

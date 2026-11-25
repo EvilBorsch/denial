@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Prepare the Flutter and Skia source trees of the EvilBorsch engine forks for
+# tools/denial-flutter-engine, in the layout it takes through
+# DENIAL_FLUTTER_SOURCE_ROOT and DENIAL_SKIA_SOURCE_ROOT: a Flutter checkout
+# with its gclient dependencies, and a separate Skia checkout that Flutter's
+# engine/src/flutter/third_party/skia links to (Flutter's DEPS would take Skia
+# from denialwm). A new tree starts as branch eb/main at the revision
+# prebuilt/flutter-engine/SOURCE_LOCK.json names; an existing tree keeps its
+# commit and changes, so the engine tool decides whether it matches the lock.
+#
+# Usage: tools/eb-engine-sources [FLUTTER_DIR SKIA_DIR]
+# Defaults: ~/androidlinux/components/flutter and ~/androidlinux/components/skia.
+set -euo pipefail
+
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+FLUTTER_DIR="${1:-$HOME/androidlinux/components/flutter}"
+SKIA_DIR="${2:-$HOME/androidlinux/components/skia}"
+CACHE_ROOT="${DENIAL_FLUTTER_ENGINE_CACHE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/denial/flutter-engine}"
+FORKS=https://github.com/EvilBorsch
+UPSTREAM=https://github.com/denialwm
+
+lock() { jq -er "$1" "$ROOT/prebuilt/flutter-engine/SOURCE_LOCK.json"; }
+
+# A shallow checkout of one commit; history is fetched on demand.
+clone() {
+    local directory="$1" origin="$2" revision="$3" upstream="$4"
+    [[ -e "$directory" ]] && return
+    git init -q -- "$directory"
+    git -C "$directory" remote add origin "$origin"
+    [[ -z "$upstream" ]] || git -C "$directory" remote add upstream "$upstream"
+    git -C "$directory" fetch -q --depth=1 origin "$revision"
+    if [[ -n "$upstream" ]]; then
+        git -C "$directory" checkout -q -b eb/main FETCH_HEAD
+        git -C "$directory" config branch.eb/main.remote origin
+        git -C "$directory" config branch.eb/main.merge refs/heads/eb/main
+    else
+        git -C "$directory" checkout -q --detach FETCH_HEAD
+    fi
+}
+
+clone "$FLUTTER_DIR" "$FORKS/flutter.git" "$(lock .flutter.revision)" "$UPSTREAM/flutter.git"
+clone "$SKIA_DIR" "$FORKS/skia.git" "$(lock .skia.revision)" "$UPSTREAM/skia.git"
+# gclient itself, at the depot_tools revision DEPS synchronizes.
+DEPOT_TOOLS="$CACHE_ROOT/depot_tools"
+clone "$DEPOT_TOOLS" "$(lock .depot_tools.repository)" "$(lock .depot_tools.revision)" ''
+
+cat >"$FLUTTER_DIR/.gclient" <<EOF
+solutions = [
+  {
+    "custom_deps": {"engine/src/flutter/third_party/skia": None},
+    "custom_vars": {},
+    "deps_file": "DEPS",
+    "managed": False,
+    "name": ".",
+    "safesync_url": "",
+    "url": "$FORKS/flutter.git",
+  },
+]
+EOF
+
+export DEPOT_TOOLS_UPDATE=0 VPYTHON_VIRTUALENV_ROOT="$CACHE_ROOT/vpython"
+cd -- "$FLUTTER_DIR"
+PATH="$DEPOT_TOOLS/.cipd_bin:$DEPOT_TOOLS:$PATH" gclient sync --no-history --nohooks
+ln -sfn -- "$(realpath -- "$SKIA_DIR")" engine/src/flutter/third_party/skia
+# The hooks run with the depot_tools DEPS placed in the tree, as the engine
+# tool's own builds do.
+SYNCED_DEPOT_TOOLS="$FLUTTER_DIR/engine/src/flutter/third_party/depot_tools"
+PATH="$SYNCED_DEPOT_TOOLS/.cipd_bin:$SYNCED_DEPOT_TOOLS:$PATH" gclient runhooks
+printf 'DENIAL_FLUTTER_SOURCE_ROOT=%s DENIAL_SKIA_SOURCE_ROOT=%s\n' \
+    "$(realpath -- "$FLUTTER_DIR")" "$(realpath -- "$SKIA_DIR")"
