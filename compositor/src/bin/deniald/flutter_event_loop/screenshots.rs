@@ -281,6 +281,13 @@ impl Session<'_, '_> {
         let Some(request_id) = request.map(std::num::NonZeroU64::get) else {
             return Ok(());
         };
+        // The switch rebuilds the whole scene and the windows redraw at their
+        // new sizes. It follows the user's own action (the cover keyboard
+        // attached or detached, the tile, a setting) but brings no input event
+        // here: hold the CPU and GPU floors as input does, or the new scene's
+        // first frames run at the GPU's resting clock (160-342 MHz on the
+        // Pad 3: 10 ms of GPU time for a frame that takes 1.5 ms at 1100 MHz).
+        crate::cpu_scheduling::note_interaction();
         let begun = (|| -> Result<Option<OutputId>, Box<dyn Error>> {
             let Some(manager) = manager.as_mut() else {
                 return Ok(None);
