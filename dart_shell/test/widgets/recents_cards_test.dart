@@ -56,6 +56,9 @@ void main() {
     WidgetTester tester, {
     DenialWindow? front,
     List<DenialWindow>? windows,
+    ShellThemeData theme = const ShellThemeData(
+      transparencyMode: ShellTransparencyMode.off,
+    ),
   }) async {
     tester.view
       ..physicalSize = tabletView
@@ -80,9 +83,7 @@ void main() {
           child: MediaQuery(
             data: const MediaQueryData(size: tabletView),
             child: ShellTheme(
-              data: const ShellThemeData(
-                transparencyMode: ShellTransparencyMode.off,
-              ),
+              data: theme,
               child: Directionality(
                 textDirection: TextDirection.ltr,
                 child: Stack(
@@ -121,6 +122,38 @@ void main() {
     await tester.pump();
     return (deck: deck, calls: calls);
   }
+
+  testWidgets('recents cards keep the shell roundness while apps sliding '
+      'side by side follow the windows', (tester) async {
+    WindowPose middle(AppDeck deck, {required double open, double row = 2}) =>
+        deck.geometry.pose(2, open: open, row: row, homeward: 0, attached: 1);
+    const card = 28 * 1.6;
+
+    // The tablet's owner: shell roundness 1.6, square windows.
+    final square = await recents(
+      tester,
+      theme: const ShellThemeData(
+        transparencyMode: ShellTransparencyMode.off,
+        cornerRadiusScale: 1.6,
+      ),
+    );
+    expect(middle(square.deck, open: 1).radius, closeTo(card, 1e-9));
+    expect(middle(square.deck, open: 0, row: 2.5).radius, 0);
+
+    final rounded = await recents(
+      tester,
+      theme: const ShellThemeData(
+        transparencyMode: ShellTransparencyMode.off,
+        cornerRadiusScale: 1.6,
+        roundedWindowFrame: true,
+        windowCornerRadiusScale: 0.5,
+      ),
+    );
+    expect(middle(rounded.deck, open: 1).radius, closeTo(card, 1e-9));
+    expect(middle(rounded.deck, open: 0, row: 2.5).radius, 9);
+    // At rest an app fills the screen with square corners either way.
+    expect(middle(rounded.deck, open: 0).radius, 0);
+  });
 
   testWidgets('cards of an app with several windows name their window', (
     tester,

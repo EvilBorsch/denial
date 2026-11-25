@@ -300,6 +300,14 @@ class DesktopWindowFrame extends ConsumerWidget {
         : placement.drawsLiveServerFrame;
     final theme = ShellTheme.of(context);
     final windowRadius = drawsServerFrame ? theme.windowRadius : 0.0;
+    // Square tiles of the full-screen apps layout meet edge to edge: no
+    // shadow falls on the neighbour, and a client-decorated tile gets the
+    // frame's edge over its own, so every seam is the same two frames.
+    final squareTile =
+        !theme.roundedWindowFrame &&
+        window.layoutScreen > 0 &&
+        !window.layoutScreenFloating &&
+        !placement.fullscreen;
     final windowOpacity = active
         ? theme.focusedWindowOpacity
         : theme.unfocusedWindowOpacity;
@@ -410,7 +418,7 @@ class DesktopWindowFrame extends ConsumerWidget {
                         windowOpacity: windowOpacity,
                       ),
                       child: DesktopWindowRepaintBoundary(
-                        outset: drawsServerFrame
+                        outset: drawsServerFrame && !squareTile
                             ? DesktopWindowShadowPainter.shadowOutset
                             : 0,
                         child: DesktopOverviewPreviewInteraction(
@@ -463,10 +471,31 @@ class DesktopWindowFrame extends ConsumerWidget {
                                 pixelGridOrigin: pixelGridOrigin,
                               );
                               if (!drawsServerFrame) {
-                                return client;
+                                if (!squareTile) {
+                                  return client;
+                                }
+                                return Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    client,
+                                    IgnorePointer(
+                                      child: CustomPaint(
+                                        painter: DesktopWindowFramePainter(
+                                          windowId: window.objectId,
+                                          devicePixelRatio: devicePixelRatio,
+                                          radius: 0,
+                                          frameColor: context
+                                              .shellColors
+                                              .windowFrameSurface,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
                               }
                               return DesktopWindowFrameLayers(
                                 drawFrame: false,
+                                drawShadow: !squareTile,
                                 windowId: window.objectId,
                                 devicePixelRatio: devicePixelRatio,
                                 radius: windowRadius,

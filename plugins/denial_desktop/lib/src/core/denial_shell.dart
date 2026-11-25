@@ -134,6 +134,8 @@ class DenialShell extends ConsumerWidget {
       focusedWindowBorderEnabled: appearance.focusedWindowBorderEnabled,
       focusedWindowOpacity: appearance.focusedWindowOpacity,
       unfocusedWindowOpacity: appearance.unfocusedWindowOpacity,
+      roundedWindowFrame: appearance.roundedWindowFrame,
+      windowCornerRadiusScale: appearance.windowCornerRadiusScale,
     );
     final bridge = ref.watch(denialBridgeProvider);
     final screenshotHidesCursor = ref.watch(

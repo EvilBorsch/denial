@@ -114,7 +114,7 @@ class _AppFlightLayerState extends ConsumerState<AppFlightLayer>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _padding = MediaQuery.paddingOf(context);
-    _windowRadius = context.shellTheme.windowRadius;
+    _windowRadius = context.shellTheme.windowCardRadius;
     final size = MediaQuery.sizeOf(context);
     if (size != _size) {
       _size = size;

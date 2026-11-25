@@ -61,7 +61,7 @@ class _ShellRuntimeBindingsState extends ConsumerState<ShellRuntimeBindings> {
     if (oldWidget.workArea != widget.workArea ||
         oldWidget.mobilePresentation != widget.mobilePresentation ||
         oldWidget.deskBeside != widget.deskBeside) {
-      _scheduleLayoutSync(ref.read(shellSettingsProvider).layout);
+      _scheduleLayoutSync(ref.read(shellSettingsProvider));
     }
     if (oldWidget.mobilePresentation != widget.mobilePresentation ||
         oldWidget.deskBeside != widget.deskBeside) {
@@ -75,8 +75,10 @@ class _ShellRuntimeBindingsState extends ConsumerState<ShellRuntimeBindings> {
     super.initState();
     _schedulePresentationSync();
     ref.listenManual(
-      shellSettingsProvider.select((settings) => settings.layout),
-      (_, layout) => _scheduleLayoutSync(layout),
+      shellSettingsProvider.select(
+        (settings) => (settings.layout, settings.appearance.roundedWindowFrame),
+      ),
+      (_, _) => _scheduleLayoutSync(ref.read(shellSettingsProvider)),
       fireImmediately: true,
     );
     ref.listenManual(
@@ -184,11 +186,12 @@ class _ShellRuntimeBindingsState extends ConsumerState<ShellRuntimeBindings> {
         );
   }
 
-  void _scheduleLayoutSync(ShellLayoutSettings layout) {
+  void _scheduleLayoutSync(ShellSettings settings) {
     scheduleMicrotask(() {
       if (!mounted) {
         return;
       }
+      final layout = settings.layout;
       final reservation = widget.workArea?.reserve(layout);
       ref
           .read(displayLayoutProvider.notifier)
@@ -196,7 +199,12 @@ class _ShellRuntimeBindingsState extends ConsumerState<ShellRuntimeBindings> {
             side: reservation?.edge ?? PanelEdge.hidden,
             outputNames: reservation?.outputNames ?? const [],
             systemBarThickness: reservation?.thickness ?? 0,
-            maximizePadding: widget.mobilePresentation && !widget.deskBeside
+            // Square windows use the whole work area: maximized ones and
+            // the tiles of managed layouts reach its edges, and tiles meet
+            // at their frames, the padding being their gap too.
+            maximizePadding:
+                (widget.mobilePresentation && !widget.deskBeside) ||
+                    !settings.appearance.roundedWindowFrame
                 ? 0
                 : layout.maximizePadding,
           );

@@ -8,6 +8,7 @@ import 'package:denial_flutter_sdk/input.dart';
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/models.dart';
 import 'package:denial_flutter_sdk/rendering.dart';
+import 'package:denial_flutter_sdk/shell_theme.dart';
 import 'package:denial_flutter_sdk/system_services.dart'
     show hapticsServiceProvider;
 import 'package:denial_flutter_sdk/tokens.dart';
@@ -20,9 +21,11 @@ import '../../state/split_view.dart';
 
 /// Sizes of Split View's controls, in logical pixels.
 abstract final class SplitViewMetrics {
-  /// The divider as drawn: deniald leaves this gap between the windows
-  /// (`SPLIT_VIEW_GAP` in `split_view.rs`).
+  /// The divider as drawn: deniald leaves this gap between rounded windows
+  /// (`SPLIT_VIEW_GAP` in `split_view.rs`), and [squareGap] between square
+  /// ones (`SQUARE_SPLIT_VIEW_GAP`).
   static const double gap = 10;
+  static const double squareGap = 2;
 
   /// The divider's touch zone, centred on the gap.
   static const double dividerZone = 44;
@@ -366,6 +369,12 @@ class _MobileSplitStageState extends ConsumerState<MobileSplitStage>
         ? (leftSpan.right + rightSpan.left) / 2 * width
         : share * width;
     const statusBar = ReferenceShellMetrics.statusBarHeight;
+    final theme = context.shellTheme;
+    final gap = theme.roundedWindowFrame
+        ? SplitViewMetrics.gap
+        : SplitViewMetrics.squareGap;
+    // A lifted app is a window, rounded as apps sliding side by side.
+    final liftedRadius = BorderRadius.circular(theme.scaledWindowRadius(18));
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -381,8 +390,8 @@ class _MobileSplitStageState extends ConsumerState<MobileSplitStage>
         // control's gesture across the covers coming and going.
         Positioned(
           key: const ValueKey('divider bar'),
-          left: dividerX - SplitViewMetrics.gap / 2,
-          width: SplitViewMetrics.gap,
+          left: dividerX - gap / 2,
+          width: gap,
           top: 0,
           bottom: 0,
           child: const ColoredBox(color: ShellMediaColors.darkness),
@@ -392,12 +401,12 @@ class _MobileSplitStageState extends ConsumerState<MobileSplitStage>
             const ValueKey('left cover'),
             pair.left,
             0,
-            dividerX - SplitViewMetrics.gap / 2,
+            dividerX - gap / 2,
           ),
           _cover(
             const ValueKey('right cover'),
             pair.right,
-            dividerX + SplitViewMetrics.gap / 2,
+            dividerX + gap / 2,
             width,
           ),
         ],
@@ -413,9 +422,9 @@ class _MobileSplitStageState extends ConsumerState<MobileSplitStage>
                   child: Transform.scale(
                     scale: SplitViewMetrics.liftScale,
                     child: DecoratedBox(
-                      decoration: const BoxDecoration(
-                        borderRadius: BorderRadius.all(Radius.circular(18)),
-                        boxShadow: [
+                      decoration: BoxDecoration(
+                        borderRadius: liftedRadius,
+                        boxShadow: const [
                           BoxShadow(
                             color: ShellMediaColors.shadow,
                             blurRadius: 24,
@@ -423,9 +432,7 @@ class _MobileSplitStageState extends ConsumerState<MobileSplitStage>
                         ],
                       ),
                       child: ClipRRect(
-                        borderRadius: const BorderRadius.all(
-                          Radius.circular(18),
-                        ),
+                        borderRadius: liftedRadius,
                         child: _window(window),
                       ),
                     ),

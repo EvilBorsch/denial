@@ -248,7 +248,7 @@ class _DesktopWorkspaceOverviewDeckState
                       place: place,
                       radius: workspaces.cards.isEmpty
                           ? 0.0
-                          : context.shellTheme.windowRadius *
+                          : context.shellTheme.windowCardRadius *
                                 workspaces.cards.first.scale,
                     ),
                     if (screens != null)
@@ -281,7 +281,7 @@ class _DesktopWorkspaceOverviewDeckState
     final colors = context.shellColors;
     final accent = theme.accent;
     final radius =
-        theme.windowRadius * card.scale +
+        theme.windowCardRadius * card.scale +
         DesktopWorkspaceOverviewLayout.cardInset;
     return Stack(
       fit: StackFit.expand,
@@ -360,7 +360,7 @@ class _DesktopWorkspaceOverviewDeckState
                 ? () =>
                       place(frames.viewport).shift(-place(frames.rect).topLeft)
                 : null,
-            viewportRadius: theme.windowRadius * card.scale,
+            viewportRadius: theme.windowCardRadius * card.scale,
             semanticLabel:
                 screen?.title ??
                 context.l10n.settingsShortcutActionSwitchWorkspace(

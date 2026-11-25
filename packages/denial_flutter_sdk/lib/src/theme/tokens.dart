@@ -66,7 +66,8 @@ abstract final class ShellRoundness {
 
 /// Base corner radii used throughout the shell at normal roundness.
 abstract final class ShellRadii {
-  /// Windows and panels are peer top-level surfaces and must share one shape.
+  /// Windows and panels are peer top-level surfaces and share one base shape;
+  /// each has its own roundness setting.
   static const double panel = 28.0;
   static const double window = panel;
   static const double notification = 18.0;

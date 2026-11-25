@@ -170,8 +170,8 @@ class _AppDeckLayerState extends State<AppDeckLayer> {
     final geometry = DeckGeometry(
       size: MediaQuery.sizeOf(context),
       padding: MediaQuery.paddingOf(context),
-      windowRadius: theme.windowRadius,
-      switchRadius: theme.scaledRadius(18),
+      windowRadius: theme.windowCardRadius,
+      switchRadius: theme.scaledWindowRadius(18),
       ltr: Directionality.of(context) == TextDirection.ltr,
     );
     if (geometry != widget.deck.geometry) {
