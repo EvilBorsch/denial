@@ -4,6 +4,8 @@ import 'dart:math' as math;
 import 'package:denial_desktop/src/state/reference_shell_controller.dart';
 import 'package:denial_flutter_sdk/applications.dart';
 import 'package:denial_flutter_sdk/diagnostics.dart';
+import 'package:denial_flutter_sdk/environment.dart'
+    show startupEnvironmentProvider;
 import 'package:denial_flutter_sdk/glass_configuration.dart';
 import 'package:denial_flutter_sdk/localization.dart';
 import 'package:denial_flutter_sdk/models.dart';
@@ -918,6 +920,8 @@ class _DesktopSurfaceTexture extends StatefulWidget {
     required this.frameWidth,
     required this.frameColor,
     required this.backdrop,
+    required this.translucentRegion,
+    required this.materialReach,
   });
 
   final DenialWindow window;
@@ -930,6 +934,8 @@ class _DesktopSurfaceTexture extends StatefulWidget {
   final double frameWidth;
   final Color frameColor;
   final ImageFilterConfig? backdrop;
+  final List<Rect>? translucentRegion;
+  final double materialReach;
 
   @override
   State<_DesktopSurfaceTexture> createState() => _DesktopSurfaceTextureState();
@@ -1003,6 +1009,29 @@ class _DesktopWindowContent extends ConsumerWidget {
         child: _buildContent(context),
       );
     }
+    // A client translucent only in parts, such as its rounded corners, shows
+    // the material only there, unless the shell makes the whole window
+    // translucent. DENIAL_LEAN_GLASS=0 evaluates it over the whole window,
+    // as before.
+    final translucentRegion =
+        ref
+                .watch(startupEnvironmentProvider)
+                .flag('DENIAL_LEAN_GLASS', defaultValue: true) &&
+            windowOpacity >= 1 &&
+            window.opacityClass == DenialWindowOpacityClass.borderAlphaOnly &&
+            window.translucentRects.isNotEmpty &&
+            window.contentWidth > 0 &&
+            window.contentHeight > 0
+        ? [
+            for (final part in window.translucentRects)
+              Rect.fromLTRB(
+                part.left / window.contentWidth,
+                part.top / window.contentHeight,
+                part.right / window.contentWidth,
+                part.bottom / window.contentHeight,
+              ),
+          ]
+        : null;
     return _DesktopSurfaceTexture(
       window: window,
       allowDirectLayers: allowDirectLayers,
@@ -1014,6 +1043,8 @@ class _DesktopWindowContent extends ConsumerWidget {
       frameWidth: frameWidth,
       frameColor: frameColor,
       backdrop: backdrop,
+      translucentRegion: translucentRegion,
+      materialReach: theme.windowMaterialReach,
     );
   }
 
@@ -1088,6 +1119,8 @@ class _DesktopSurfaceTextureState extends State<_DesktopSurfaceTexture> {
         frameWidth: widget.frameWidth,
         frameColor: widget.frameColor,
         backdrop: widget.backdrop,
+        translucentRegion: widget.translucentRegion,
+        materialReach: widget.materialReach,
         filterQuality: filterQuality,
         presentationScale: widget.presentationScale,
         pixelGridOrigin: widget.pixelGridOrigin,

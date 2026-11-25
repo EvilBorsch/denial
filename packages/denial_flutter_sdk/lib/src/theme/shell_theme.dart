@@ -170,6 +170,13 @@ class ShellThemeData {
   /// the blur material is its frost alone.
   WindowGlassShading? get windowGlassShading => _resolution.windowGlassShading;
 
+  /// How far from a pixel, in logical pixels of the surface that carries it,
+  /// the full-strength window material reads the scene behind it: the frost's
+  /// blur kernel and, for glass, the refraction's largest displacement. A
+  /// window evaluates its material only within this reach of the pixels that
+  /// can show it.
+  double get windowMaterialReach => _resolution.windowMaterialReach;
+
   Brightness get brightness => colors.brightness;
 
   /// Semantic text roles resolved once for this immutable theme value.
@@ -527,6 +534,24 @@ class _ShellThemeResolution {
           tileMode: ui.TileMode.clamp,
           downsampleScale: theme.backdropBlurDownsampleScale,
         );
+
+  // Mirrors Denial's engine: the Gaussian kernel ends at 1.73 of its sigma
+  // (GaussianBlurFilterContents, which also shrinks large sigmas, never
+  // widens them), and MaximumGlassDisplacement bounds the refraction.
+  late final double windowMaterialReach = () {
+    if (theme.transparencyMode != ShellTransparencyMode.glass) {
+      return 1.75 * theme.backdropBlurSigma;
+    }
+    final glass = theme.glass;
+    final index = 1 + glass.refraction.clamp(0.0, 1.0) * 0.2;
+    final displacement =
+        math.max(glass.thickness, 0.0) *
+        (glass.bevelWidthScale == 1 ? 8 : 9) *
+        glass.refractionDepthScale *
+        math.sqrt(math.max(index * index - 1, 0.0)) *
+        (1 + glass.dispersion.clamp(0.0, 1.0) * 0.5);
+    return 1.75 * glass.blurSigma + displacement;
+  }();
 
   late final WindowGlassShading? windowGlassShading =
       theme.transparencyMode == ShellTransparencyMode.glass

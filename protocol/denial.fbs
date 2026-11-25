@@ -577,6 +577,13 @@ table Window {
   // monitor beside the phone. A shell that switches presentations learns
   // from it that deniald laid the window out for the presentation shown.
   on_phone:bool;
+  // Appended for compatibility. With opacity_class BorderAlphaOnly: the
+  // parts of the content its opaque region leaves out, relative to the
+  // content's origin in logical pixels: the only places the client can be
+  // translucent, such as rounded corners (GTK 4 declares the bands above
+  // and below them). Absent when unknown or too many. The shell evaluates a
+  // window's backdrop material only where it can show.
+  translucent_rects:[WireRect];
 }
 
 table WindowSnapshot {

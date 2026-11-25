@@ -650,6 +650,19 @@ bool _validXkbOption(String value) {
   return _validXkbName(value.replaceAll(':', ''), emptyAllowed: false);
 }
 
+/// A window's translucent parts, or none when any of them is malformed: the
+/// whole window then keeps its material.
+List<Rect> _translucentRects(List<generated.WireRect>? rects) {
+  if (rects == null || rects.isEmpty) return const <Rect>[];
+  final parts = [
+    for (final rect in rects)
+      Rect.fromLTWH(rect.x, rect.y, rect.width, rect.height),
+  ];
+  return parts.every((part) => part.isFinite && !part.isEmpty)
+      ? List<Rect>.unmodifiable(parts)
+      : const <Rect>[];
+}
+
 bool _finiteWindow(DenialWindow window) {
   return (window.clientTexture == null ||
           (window.clientTexture!.isValid &&

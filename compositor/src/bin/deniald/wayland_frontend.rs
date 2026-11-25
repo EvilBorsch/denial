@@ -1173,6 +1173,114 @@ fn classify_window_opacity(
     }
 }
 
+/// Most parts of the content an opaque region may leave out for the shell to
+/// evaluate a window's glass around them one by one.
+#[cfg(feature = "flutter")]
+const MAX_TRANSLUCENT_RECTS: usize = 16;
+
+/// The parts of `content` the client's opaque region leaves out, relative to
+/// the content's origin in logical pixels: the only places the client can be
+/// translucent, such as the rounded corners of GTK and libadwaita windows
+/// (GTK 4 declares the bands above and below them). The shell evaluates the
+/// window's glass only around them. Empty when the region is unknown or
+/// leaves out more than MAX_TRANSLUCENT_RECTS parts.
+#[cfg(feature = "flutter")]
+fn translucent_rects(
+    content: Rectangle<i32, Logical>,
+    opaque_regions: Option<&[Rectangle<i32, Logical>]>,
+) -> Vec<WindowGeometry> {
+    let Some(opaque_regions) = opaque_regions else {
+        return Vec::new();
+    };
+    let missing = content.subtract_rects(opaque_regions.iter().copied());
+    if missing.len() > MAX_TRANSLUCENT_RECTS {
+        return Vec::new();
+    }
+    missing
+        .into_iter()
+        .map(|rect| WindowGeometry {
+            x: f64::from(rect.loc.x - content.loc.x),
+            y: f64::from(rect.loc.y - content.loc.y),
+            width: f64::from(rect.size.w),
+            height: f64::from(rect.size.h),
+        })
+        .collect()
+}
+
+#[cfg(all(test, feature = "flutter"))]
+mod window_opacity_tests {
+    use super::*;
+
+    fn rect(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Logical> {
+        Rectangle::new((x, y).into(), (w, h).into())
+    }
+
+    fn geometry(x: f64, y: f64, width: f64, height: f64) -> WindowGeometry {
+        WindowGeometry {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    fn sorted(mut rects: Vec<WindowGeometry>) -> Vec<WindowGeometry> {
+        rects.sort_by(|a, b| (a.y, a.x).partial_cmp(&(b.y, b.x)).unwrap());
+        rects
+    }
+
+    // A libadwaita window: 24 px of client-side shadow around an 800x600
+    // geometry.
+    fn content() -> Rectangle<i32, Logical> {
+        rect(24, 24, 800, 600)
+    }
+
+    #[test]
+    fn gtk4_declares_the_bands_above_and_below_its_rounded_corners() {
+        // GTK 4.16 and later: the largest rectangle the window, rounded by
+        // 15 px, covers.
+        let opaque = [rect(24, 39, 800, 570)];
+        assert_eq!(
+            classify_window_opacity(rect(0, 0, 848, 648), content(), Some(&opaque), 1.0),
+            WindowOpacityClass::BorderAlphaOnly
+        );
+        assert_eq!(
+            sorted(translucent_rects(content(), Some(&opaque))),
+            vec![
+                geometry(0.0, 0.0, 800.0, 15.0),
+                geometry(0.0, 585.0, 800.0, 15.0)
+            ]
+        );
+    }
+
+    #[test]
+    fn older_gtk_declares_only_its_corners() {
+        let opaque = [
+            rect(36, 24, 776, 12),
+            rect(24, 36, 800, 576),
+            rect(36, 612, 776, 12),
+        ];
+        assert_eq!(
+            sorted(translucent_rects(content(), Some(&opaque))),
+            vec![
+                geometry(0.0, 0.0, 12.0, 12.0),
+                geometry(788.0, 0.0, 12.0, 12.0),
+                geometry(0.0, 588.0, 12.0, 12.0),
+                geometry(788.0, 588.0, 12.0, 12.0)
+            ]
+        );
+    }
+
+    #[test]
+    fn unknown_or_scattered_translucency_is_not_described() {
+        assert!(translucent_rects(content(), None).is_empty());
+        // Seventeen gaps along the top: too many parts to treat one by one.
+        let mut opaque = vec![rect(24, 30, 800, 594)];
+        opaque.extend((0..17).map(|i| rect(24 + i * 40, 24, 39, 6)));
+        assert!(translucent_rects(content(), Some(&opaque)).is_empty());
+    }
+}
+
 #[cfg(feature = "flutter")]
 impl SurfaceCommitKind {
     const fn merge(self, next: Self) -> Self {

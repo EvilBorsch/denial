@@ -4985,6 +4985,7 @@ impl<'a> Window<'a> {
   pub const VT_SPLIT_VIEW_PARTNER_ID: flatbuffers::VOffsetT = 116;
   pub const VT_SPLIT_VIEW_RATIO: flatbuffers::VOffsetT = 118;
   pub const VT_ON_PHONE: flatbuffers::VOffsetT = 120;
+  pub const VT_TRANSLUCENT_RECTS: flatbuffers::VOffsetT = 122;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
@@ -5025,6 +5026,7 @@ impl<'a> Window<'a> {
     builder.add_window_id(args.window_id);
     builder.add_surface_id(args.surface_id);
     builder.add_object_id(args.object_id);
+    if let Some(x) = args.translucent_rects { builder.add_translucent_rects(x); }
     if let Some(x) = args.layout_screen_rect { builder.add_layout_screen_rect(x); }
     builder.add_layout_screen(args.layout_screen);
     if let Some(x) = args.client_texture { builder.add_client_texture(x); }
@@ -5472,6 +5474,13 @@ impl<'a> Window<'a> {
     // which contains a valid value in this slot
     unsafe { self._tab.get::<bool>(Window::VT_ON_PHONE, Some(false)).unwrap()}
   }
+  #[inline]
+  pub fn translucent_rects(&self) -> Option<flatbuffers::Vector<'a, WireRect>> {
+    // Safety:
+    // Created from valid Table for this object
+    // which contains a valid value in this slot
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'a, WireRect>>>(Window::VT_TRANSLUCENT_RECTS, None)}
+  }
 }
 
 impl flatbuffers::Verifiable for Window<'_> {
@@ -5540,6 +5549,7 @@ impl flatbuffers::Verifiable for Window<'_> {
      .visit_field::<u64>("split_view_partner_id", Self::VT_SPLIT_VIEW_PARTNER_ID, false)?
      .visit_field::<f64>("split_view_ratio", Self::VT_SPLIT_VIEW_RATIO, false)?
      .visit_field::<bool>("on_phone", Self::VT_ON_PHONE, false)?
+     .visit_field::<flatbuffers::ForwardsUOffset<flatbuffers::Vector<'_, WireRect>>>("translucent_rects", Self::VT_TRANSLUCENT_RECTS, false)?
      .finish();
     Ok(())
   }
@@ -5604,6 +5614,7 @@ pub struct WindowArgs<'a> {
     pub split_view_partner_id: u64,
     pub split_view_ratio: f64,
     pub on_phone: bool,
+    pub translucent_rects: Option<flatbuffers::WIPOffset<flatbuffers::Vector<'a, WireRect>>>,
 }
 impl<'a> Default for WindowArgs<'a> {
   #[inline]
@@ -5668,6 +5679,7 @@ impl<'a> Default for WindowArgs<'a> {
       split_view_partner_id: 0,
       split_view_ratio: 0.0,
       on_phone: false,
+      translucent_rects: None,
     }
   }
 }
@@ -5914,6 +5926,10 @@ impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> WindowBuilder<'a, 'b, A> {
     self.fbb_.push_slot::<bool>(Window::VT_ON_PHONE, on_phone, false);
   }
   #[inline]
+  pub fn add_translucent_rects(&mut self, translucent_rects: flatbuffers::WIPOffset<flatbuffers::Vector<'b , WireRect>>) {
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Window::VT_TRANSLUCENT_RECTS, translucent_rects);
+  }
+  #[inline]
   pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> WindowBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
     WindowBuilder {
@@ -5990,6 +6006,7 @@ impl core::fmt::Debug for Window<'_> {
       ds.field("split_view_partner_id", &self.split_view_partner_id());
       ds.field("split_view_ratio", &self.split_view_ratio());
       ds.field("on_phone", &self.on_phone());
+      ds.field("translucent_rects", &self.translucent_rects());
       ds.finish()
   }
 }

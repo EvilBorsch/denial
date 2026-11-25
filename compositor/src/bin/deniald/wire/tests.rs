@@ -1358,6 +1358,7 @@ fn scene_window(id: u64) -> WindowDescription {
         split_view_partner_id: 0,
         split_view_ratio: 0.0,
         on_phone: false,
+        translucent_rects: Vec::new(),
     }
 }
 
@@ -2470,6 +2471,46 @@ fn windows_say_whether_the_phone_lays_them_out() {
     let mut phone = scene_window(1);
     phone.on_phone = true;
     assert_ne!(desktop, phone);
+}
+
+#[test]
+fn windows_translucent_only_in_parts_say_where() {
+    let mut bridge = bridge();
+    let mut rounded = scene_window(1);
+    rounded.opacity_class = WindowOpacityClass::BorderAlphaOnly;
+    rounded.translucent_rects = vec![
+        WindowGeometry {
+            x: 0.0,
+            y: 0.0,
+            width: 800.0,
+            height: 15.0,
+        },
+        WindowGeometry {
+            x: 0.0,
+            y: 585.0,
+            width: 800.0,
+            height: 15.0,
+        },
+    ];
+    let (bytes, _) = bridge
+        .update_windows(1, vec![rounded, scene_window(2)], &BTreeSet::new())
+        .unwrap();
+    let snapshot = fb::root_as_envelope(bytes.unwrap())
+        .unwrap()
+        .payload_as_window_snapshot()
+        .unwrap();
+    let windows = snapshot.windows().unwrap();
+    assert_eq!(
+        windows.get(0).opacity_class(),
+        fb::WindowOpacityClass::BorderAlphaOnly
+    );
+    let rects = windows.get(0).translucent_rects().unwrap();
+    assert_eq!(rects.len(), 2);
+    assert_eq!(
+        (rects.get(1).y(), rects.get(1).width(), rects.get(1).height()),
+        (585.0, 800.0, 15.0)
+    );
+    assert!(windows.get(1).translucent_rects().is_none());
 }
 
 #[test]
