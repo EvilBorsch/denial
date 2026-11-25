@@ -16,6 +16,7 @@ import 'desktop_overview_layout.dart';
 import 'desktop_overview_motion.dart';
 import 'desktop_screens_overview_layout.dart';
 import 'desktop_workspace.dart';
+import 'eb20o_diag.dart';
 
 /// The overview of the full-screen apps layout as the desktop's hub: a
 /// search field over the screen cards, its results, and the screen cards
@@ -154,7 +155,7 @@ class _DesktopOverviewBackdropState
               child: ShellBackdropBlur(
                 // The blurred desktop fades in over the sharp one; the blur
                 // itself does not change per frame.
-                opacity: motion,
+                opacity: eb20oDiag().contains('nofade') ? null : motion,
                 blendMode: BlendMode.srcOver,
                 child: ColoredBox(
                   color: scrim.withValues(alpha: math.min(1.0, scrim.a * 0.8)),

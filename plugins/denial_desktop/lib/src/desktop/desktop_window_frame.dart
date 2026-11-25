@@ -31,6 +31,7 @@ import 'desktop_window_frame_painter.dart';
 import 'desktop_workspace.dart';
 import 'retained_animated_positioned.dart';
 import 'window_backdrop_blur_policy.dart';
+import 'eb20o_diag.dart';
 import '../state/phone_desk.dart';
 
 /// Keeps native glass in one compositing mode across minimized presentations.
@@ -985,6 +986,7 @@ class _DesktopWindowContent extends ConsumerWidget {
     );
     final available =
         wantsBackdrop &&
+        !(smooth && eb20oDiag().contains('nowinglass')) &&
         theme.backdropBlurEnabled &&
         (theme.transparencyMode == ShellTransparencyMode.glass ||
             theme.backdropBlurSigma > 0) &&
