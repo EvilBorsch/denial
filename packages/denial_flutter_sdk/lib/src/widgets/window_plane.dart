@@ -266,8 +266,7 @@ class RenderWindowPlane extends RenderShiftedBox {
               1,
             )..multiply(toGlobal),
             viewport:
-                Offset.zero &
-                view.size * view.configuration.devicePixelRatio,
+                Offset.zero & view.size * view.configuration.devicePixelRatio,
           )
         : null;
     if (pieces == null) {

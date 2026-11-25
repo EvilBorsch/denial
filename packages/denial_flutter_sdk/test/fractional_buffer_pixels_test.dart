@@ -8,10 +8,17 @@ import 'package:flutter_test/flutter_test.dart';
 const _scale = 2.25;
 const _target = Size(701, 400);
 
-WindowPlaneTextureGeometry _plane(double bufferWidth, {Offset at = Offset.zero}) {
+WindowPlaneTextureGeometry _plane(
+  double bufferWidth, {
+  Offset at = Offset.zero,
+}) {
   final buffer = Size(bufferWidth, _target.height * _scale);
   return windowPlaneTextureGeometry(
-    texture: WindowPlaneTexture(id: 7, bufferSize: buffer, source: Offset.zero & buffer),
+    texture: WindowPlaneTexture(
+      id: 7,
+      bufferSize: buffer,
+      source: Offset.zero & buffer,
+    ),
     target: Offset.zero & _target,
     requested: FilterQuality.none,
     presentationScale: _scale,
@@ -65,22 +72,31 @@ void main() {
   });
 
   for (final width in [1577, 1578]) {
-    testWidgets('a surface layer samples a $width-pixel buffer without filtering', (tester) async {
-      await tester.pumpWidget(
-        Directionality(
-          textDirection: TextDirection.ltr,
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: SizedBox.fromSize(
-              size: _target,
-              child: SurfaceLayerTexture(layer: _layer(width), presentationScale: _scale),
+    testWidgets(
+      'a surface layer samples a $width-pixel buffer without filtering',
+      (tester) async {
+        await tester.pumpWidget(
+          Directionality(
+            textDirection: TextDirection.ltr,
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: SizedBox.fromSize(
+                size: _target,
+                child: SurfaceLayerTexture(
+                  layer: _layer(width),
+                  presentationScale: _scale,
+                ),
+              ),
             ),
           ),
-        ),
-      );
-      final texture = tester.widget<Texture>(find.byType(Texture));
-      expect(texture.filterQuality, FilterQuality.none);
-      expect(tester.getSize(find.byType(Texture)).width * _scale, closeTo(width, 1e-9));
-    });
+        );
+        final texture = tester.widget<Texture>(find.byType(Texture));
+        expect(texture.filterQuality, FilterQuality.none);
+        expect(
+          tester.getSize(find.byType(Texture)).width * _scale,
+          closeTo(width, 1e-9),
+        );
+      },
+    );
   }
 }
