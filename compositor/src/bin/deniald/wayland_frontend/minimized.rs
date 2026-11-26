@@ -5,12 +5,16 @@
 //! buffer once they are suspended; that frame never reaches the scene. The
 //! callbacks a paused window asks for are parked and sent once it is
 //! restored, and the kept frame stays until the restored window shows a new
-//! one. The desktop shell lets minimized windows draw at the output's rate,
-//! and so do windows on a desk next to the phone.
+//! one, or for half a second at most: the kept frame holds the client's
+//! buffer, and a client may need that buffer back before it can draw again
+//! (Chrome acknowledges a frame only once the buffer of the frame before it is
+//! released), so waiting longer could freeze the window for good. The desktop
+//! shell lets minimized windows draw at the output's rate, and so do windows
+//! on a desk next to the phone.
 //!
-//! A restored window that keeps its kept frame for a second reports what its
-//! surfaces committed meanwhile: how many commits arrived, how many applied
-//! and how many applied while it still counted as minimized. For three
+//! A restored window that has not drawn when its kept frame goes reports what
+//! its surfaces committed meanwhile: how many commits arrived, how many
+//! applied and how many applied while it still counted as minimized. For three
 //! seconds after a restore, each of the window's surfaces reports the
 //! commits it applied and the buffers it published to the scene.
 //!
@@ -23,12 +27,16 @@ use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use smithay::desktop::Window;
+#[cfg(feature = "flutter")]
+use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::wayland_server::Resource;
 use smithay::reexports::wayland_server::backend::ObjectId;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 
 use tracing::{info, warn};
 
+#[cfg(feature = "flutter")]
+use super::RuntimeState;
 use super::WaylandFrontend;
 use super::managed_window::ManagedWindow;
 
@@ -42,8 +50,8 @@ enum FramePace {
     Paused,
 }
 
-/// How long a restored window may show its kept frame before it reports.
-const THAW_REPORT: Duration = Duration::from_secs(1);
+/// How long a restored window may show its kept frame without drawing.
+const THAW_LIMIT: Duration = Duration::from_millis(500);
 
 /// How long Denial follows a restored window's surfaces before it reports.
 const RESTORE_WATCH: Duration = Duration::from_secs(3);
@@ -77,17 +85,15 @@ struct Thaw {
     applied: u32,
     /// Applied commits with new content while the window was minimized.
     visual_while_minimized: u32,
-    reported: bool,
 }
 
 impl Thaw {
-    fn new() -> Self {
+    fn new(since: Instant) -> Self {
         Self {
-            since: Instant::now(),
+            since,
             arrived: 0,
             applied: 0,
             visual_while_minimized: 0,
-            reported: false,
         }
     }
 }
@@ -107,6 +113,26 @@ pub(super) struct MinimizedWindows {
     covered: bool,
     /// The calls app's window shown over the lock screen, by root surface.
     over_lock: Option<ObjectId>,
+}
+
+impl MinimizedWindows {
+    /// Ends the thaw that began at `since` once the restored window rooted at
+    /// `root` has shown its kept frame for [`THAW_LIMIT`] by `now`. A thaw
+    /// that ended or began again meanwhile, or a window minimized again,
+    /// keeps its state.
+    fn end_overdue_thaw(
+        &mut self,
+        root: &ObjectId,
+        since: Instant,
+        now: Instant,
+        minimized: bool,
+    ) -> Option<Thaw> {
+        let thaw = self.thawing.get(root)?;
+        if minimized || thaw.since != since || now.duration_since(since) < THAW_LIMIT {
+            return None;
+        }
+        self.thawing.remove(root)
+    }
 }
 
 impl WaylandFrontend {
@@ -137,27 +163,18 @@ impl WaylandFrontend {
             return;
         }
         if minimized {
-            if let Some(thaw) = self.minimized_windows.thawing.remove(root)
-                && !thaw.reported
-                && thaw.since.elapsed() >= THAW_REPORT
-            {
-                warn!(
-                    surface_id = ?root,
-                    frozen_ms = thaw.since.elapsed().as_millis() as u64,
-                    arrived = thaw.arrived,
-                    applied = thaw.applied,
-                    visual_while_minimized = thaw.visual_while_minimized,
-                    "restored window minimized again while still showing its kept frame"
-                );
-            }
+            self.minimized_windows.thawing.remove(root);
             if self.pending_frame_callback_windows.remove(root) {
                 self.minimized_windows.parked.insert(root.clone());
             }
         } else {
             self.keep_window_on_phone(root);
+            let since = Instant::now();
             self.minimized_windows
                 .thawing
-                .insert(root.clone(), Thaw::new());
+                .insert(root.clone(), Thaw::new(since));
+            #[cfg(feature = "flutter")]
+            self.limit_kept_frame(root.clone(), since);
             self.report_restore_watch();
             info!(surface_id = ?root, "window restored");
             self.minimized_windows.watch = Some(RestoreWatch {
@@ -279,7 +296,6 @@ impl WaylandFrontend {
         let root = root.id();
         if let Some(thaw) = self.minimized_windows.thawing.get_mut(&root) {
             thaw.arrived += 1;
-            self.report_long_thaw(&root);
         }
     }
 
@@ -311,12 +327,10 @@ impl WaylandFrontend {
         };
         thaw.applied += 1;
         if !visual {
-            self.report_long_thaw(&root);
             return;
         }
         if minimized {
             thaw.visual_while_minimized += 1;
-            self.report_long_thaw(&root);
             return;
         }
         let thaw = self
@@ -395,24 +409,17 @@ impl WaylandFrontend {
         }
     }
 
-    fn report_long_thaw(&mut self, root: &ObjectId) {
-        let minimized = self.surface_is_minimized(root);
-        let Some(thaw) = self.minimized_windows.thawing.get_mut(root) else {
-            return;
-        };
-        if thaw.reported || thaw.since.elapsed() < THAW_REPORT {
-            return;
+    /// Lets the window rooted at `root`, restored at `since`, show its
+    /// committed buffers [`THAW_LIMIT`] later even if it has not drawn.
+    #[cfg(feature = "flutter")]
+    fn limit_kept_frame(&self, root: ObjectId, since: Instant) {
+        let timer = Timer::from_deadline(since + THAW_LIMIT);
+        if let Err(error) = self.loop_handle.insert_source(timer, move |_, _, state| {
+            release_kept_frame(state, &root, since);
+            TimeoutAction::Drop
+        }) {
+            warn!(%error, "could not limit a restored window's kept frame");
         }
-        thaw.reported = true;
-        warn!(
-            surface_id = ?root,
-            frozen_ms = thaw.since.elapsed().as_millis() as u64,
-            arrived = thaw.arrived,
-            applied = thaw.applied,
-            visual_while_minimized = thaw.visual_while_minimized,
-            minimized,
-            "restored window still shows its kept frame"
-        );
     }
 
     pub(super) fn clear_kept_textures(&mut self) {
@@ -431,5 +438,88 @@ impl WaylandFrontend {
     pub(super) fn forget_minimized_window(&mut self, root: &ObjectId) {
         self.minimized_windows.parked.remove(root);
         self.minimized_windows.thawing.remove(root);
+    }
+}
+
+/// Shows the committed buffers of the window rooted at `root` when it has not
+/// drawn since its restore at `since`: the scene lets go of the kept frame
+/// and so of the client buffer under it.
+#[cfg(feature = "flutter")]
+fn release_kept_frame(state: &mut RuntimeState, root: &ObjectId, since: Instant) {
+    let Some(frontend) = state.wayland.as_mut() else {
+        return;
+    };
+    let minimized = frontend.surface_is_minimized(root);
+    let Some(thaw) =
+        frontend
+            .minimized_windows
+            .end_overdue_thaw(root, since, Instant::now(), minimized)
+    else {
+        return;
+    };
+    warn!(
+        surface_id = ?root,
+        arrived = thaw.arrived,
+        applied = thaw.applied,
+        visual_while_minimized = thaw.visual_while_minimized,
+        "restored window has not drawn: it shows its committed frame instead of the kept one"
+    );
+    let Some(window_id) = frontend.surface_ids.get(root).copied() else {
+        return;
+    };
+    let Some(surface) = frontend.surfaces_by_id.get(&window_id).cloned() else {
+        return;
+    };
+    let published = frontend.publish_surface_commits(&surface);
+    frontend.recycle_published_surface_ids(published.buffer_surface_ids);
+    state.scene_sync.mark_window_dirty(window_id);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn restored_at(since: Instant) -> (MinimizedWindows, ObjectId) {
+        let root = ObjectId::null();
+        let mut windows = MinimizedWindows::default();
+        windows.thawing.insert(root.clone(), Thaw::new(since));
+        (windows, root)
+    }
+
+    #[test]
+    fn a_restored_window_that_does_not_draw_shows_its_committed_frame_after_the_limit() {
+        let since = Instant::now();
+        let (mut windows, root) = restored_at(since);
+
+        let early = since + THAW_LIMIT / 2;
+        assert!(windows.end_overdue_thaw(&root, since, early, false).is_none());
+        assert!(windows.thawing.contains_key(&root), "the kept frame stays while the app may still draw");
+
+        let due = since + THAW_LIMIT;
+        assert!(windows.end_overdue_thaw(&root, since, due, false).is_some());
+        assert!(!windows.thawing.contains_key(&root), "the window no longer shows its kept frame");
+        assert!(windows.end_overdue_thaw(&root, since, due, false).is_none());
+    }
+
+    #[test]
+    fn the_limit_leaves_windows_that_drew_were_minimized_or_were_restored_again() {
+        let since = Instant::now();
+        let due = since + THAW_LIMIT;
+
+        // Minimized again before the limit: the kept frame is what the shell
+        // shows of a minimized window.
+        let (mut windows, root) = restored_at(since);
+        assert!(windows.end_overdue_thaw(&root, since, due, true).is_none());
+        assert!(windows.thawing.contains_key(&root));
+
+        // Restored again: the newer restore has its own limit.
+        let (mut windows, root) = restored_at(since + THAW_LIMIT / 4);
+        assert!(windows.end_overdue_thaw(&root, since, due, false).is_none());
+        assert!(windows.thawing.contains_key(&root));
+
+        // Drew in time: the thaw already ended.
+        let (mut windows, root) = restored_at(since);
+        windows.thawing.remove(&root);
+        assert!(windows.end_overdue_thaw(&root, since, due, false).is_none());
     }
 }
