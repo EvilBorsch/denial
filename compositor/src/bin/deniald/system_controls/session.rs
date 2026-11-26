@@ -65,6 +65,7 @@ pub(super) fn run_sleep_monitor(shared: Arc<SleepMonitorShared>) {
             // Without logind nobody holds an inhibitor; the next connection
             // reads them again.
             shared.set_blocks(LogindBlocks::default());
+            shared.set_logind_lid_closed(None);
             future::race(shared.stopped(), async {
                 async_io::Timer::after(SLEEP_MONITOR_RECONNECT_DELAY).await;
             })
@@ -114,6 +115,7 @@ async fn monitor_sleep_transitions(shared: &Arc<SleepMonitorShared>) -> Result<(
     let mut changes = match properties.receive_signal("PropertiesChanged").await {
         Ok(changes) => {
             refresh_blocks(&properties, shared).await;
+            refresh_lid_closed(&properties, shared).await;
             Some(changes)
         }
         Err(error) => {
@@ -156,6 +158,9 @@ async fn monitor_sleep_transitions(shared: &Arc<SleepMonitorShared>) -> Result<(
                     change.ok_or_else(|| "logind property change stream ended".to_owned())?;
                 if changes_block_inhibitors(&change) {
                     refresh_blocks(&properties, shared).await;
+                }
+                if changes_lid_closed(&change) {
+                    refresh_lid_closed(&properties, shared).await;
                 }
                 continue;
             }
@@ -202,6 +207,38 @@ fn changes_block_inhibitors(message: &zbus::Message) -> bool {
 
 fn names_block_inhibitors(property: &str) -> bool {
     matches!(property, "BlockInhibited" | "BlockWeakInhibited")
+}
+
+/// Whether a PropertiesChanged signal of logind's object concerns `LidClosed`.
+fn changes_lid_closed(message: &zbus::Message) -> bool {
+    let Ok((interface, changed, invalidated)) = message.body().deserialize::<(
+        String,
+        std::collections::HashMap<String, zbus::zvariant::OwnedValue>,
+        Vec<String>,
+    )>() else {
+        return false;
+    };
+    interface == LOGIND_MANAGER
+        && changed
+            .keys()
+            .map(String::as_str)
+            .chain(invalidated.iter().map(String::as_str))
+            .any(|property| property == "LidClosed")
+}
+
+async fn refresh_lid_closed(properties: &zbus::Proxy<'_>, shared: &SleepMonitorShared) {
+    match read_lid_closed(properties).await {
+        Ok(closed) => shared.set_logind_lid_closed(Some(closed)),
+        Err(error) => warn!(%error, "could not read logind LidClosed"),
+    }
+}
+
+async fn read_lid_closed(properties: &zbus::Proxy<'_>) -> Result<bool, String> {
+    let value: zbus::zvariant::OwnedValue = properties
+        .call("Get", &(LOGIND_MANAGER, "LidClosed"))
+        .await
+        .map_err(|error| error.to_string())?;
+    bool::try_from(value).map_err(|error| error.to_string())
 }
 
 /// Publishes logind's block inhibitors as they are now. A failed read keeps

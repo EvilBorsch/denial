@@ -114,7 +114,15 @@ pub(super) fn synchronize_sleep_transition(scanouts: &[Scanout], events: &mut Ru
             // no toggle on resume.
             events.lid.request_reading();
             events.idle_policy.note_resume(Instant::now());
-            let requests = events.sleep_transition.resume();
+            let mut requests = events.sleep_transition.resume();
+            if events.lid.closed() && !events.idle_policy.stay_awake() {
+                requests.retain(|request| {
+                    !scanouts.iter().any(|scanout| {
+                        scanout.output.id == request.output
+                            && output_policy::is_internal_panel(&scanout.output.name)
+                    })
+                });
+            }
             events.queue_idle_power_requests(requests);
             info!("queued display restoration after system sleep");
         }

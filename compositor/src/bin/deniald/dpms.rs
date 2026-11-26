@@ -264,17 +264,28 @@ pub(super) fn synchronize_power_button(scanouts: &[Scanout], events: &mut Runtim
     // Stay awake keeps the screen on: the press neither suspends nor powers
     // off, whatever the button is set to do, and leaves a lit screen lit.
     let stay_awake = events.idle_policy.stay_awake();
-    if action != idle_policy::PowerButtonAction::Dpms && !stay_awake {
-        if events
-            .system_controls
-            .as_ref()
-            .is_some_and(|controls| controls.power_button_action(action))
-        {
-            info!(?action, "power button requested system power action");
+    if lit && action != idle_policy::PowerButtonAction::Dpms && !stay_awake {
+        let sleep_inhibited = action == idle_policy::PowerButtonAction::Suspend
+            && events
+                .system_controls
+                .as_ref()
+                .is_some_and(|controls| controls.logind_blocks().sleep);
+        if sleep_inhibited {
+            info!(
+                "power button suspend is held off by a logind sleep inhibitor; turning the screen off instead"
+            );
         } else {
-            warn!(?action, "could not request power-button system action");
+            if events
+                .system_controls
+                .as_ref()
+                .is_some_and(|controls| controls.power_button_action(action))
+            {
+                info!(?action, "power button requested system power action");
+            } else {
+                warn!(?action, "could not request power-button system action");
+            }
+            return;
         }
-        return;
     }
     if toggle_screen(scanouts, events) {
         info!("power button requested compositor-owned display power toggle");
@@ -442,18 +453,9 @@ pub(super) fn synchronize_idle_dpms_configuration(
     runtime: &mut flutter_runtime::FlutterRuntime,
     events: &mut RuntimeState,
 ) {
-    let Some(mut configuration) = runtime.take_idle_policy() else {
+    let Some(configuration) = runtime.take_idle_policy() else {
         return;
     };
-    // A phone's power button turns the screen off and on; it is pressed far
-    // too often to suspend or power off.
-    if events
-        .wayland
-        .as_ref()
-        .is_some_and(|frontend| frontend.mobile_shell())
-    {
-        configuration.power_button_action = idle_policy::PowerButtonAction::Dpms;
-    }
     if events
         .system_controls
         .as_ref()

@@ -1924,6 +1924,9 @@ fn lid_device_traits(device: &LibinputDevice) -> lid_switch::InputDeviceTraits {
         touch: Device::has_capability(device, DeviceCapability::Touch),
         tablet: Device::has_capability(device, DeviceCapability::TabletTool)
             || Device::has_capability(device, DeviceCapability::TabletPad),
+        keyboard: Device::has_capability(device, DeviceCapability::Keyboard)
+            && is_typing_keyboard(device),
+        touchpad: is_touchpad_device(device),
     }
 }
 
@@ -2898,6 +2901,22 @@ fn process_input_event(
         && SwitchToggleEvent::switch(event) == Some(Switch::Lid)
     {
         let closed = SwitchToggleEvent::state(event) == SwitchState::On;
+        if !closed
+            && state
+                .system_controls
+                .as_ref()
+                .and_then(crate::system_controls::SystemControls::logind_lid_closed)
+                == Some(true)
+        {
+            // libinput synthesizes LIBINPUT_SWITCH_LID=OFF whenever a paired
+            // internal keyboard sends a key event, even though the hardware
+            // Hall switch is still closed. Re-check with logind in case the
+            // property signal is still in flight, without waking the display
+            // or re-enabling covered input prematurely.
+            state.lid.request_reading();
+            info!("ignored libinput lid-open while logind still reports the lid closed");
+            return false;
+        }
         let was_closed = state.lid.closed();
         state.lid.note_toggle(closed);
         if closed && !was_closed {
@@ -2911,7 +2930,7 @@ fn process_input_event(
                     touch: true,
                 },
             );
-            info!("the lid closed: the touchscreen and pen are ignored until it opens");
+            info!("the lid closed: covered built-in inputs are ignored until it opens");
             return true;
         }
         if !closed {

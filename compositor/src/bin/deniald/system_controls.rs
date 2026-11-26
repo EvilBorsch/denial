@@ -371,12 +371,19 @@ struct SleepMonitorShared {
     lid_switch_wake: crate::wakeup::Wakeup,
     /// `LogindBlocks` as last read from logind.
     blocks: AtomicU8,
+    /// `LidClosed` as last read from logind: 0 = unknown, 1 = open, 2 = closed.
+    lid_closed: AtomicU8,
+    lid_closed_dirty: AtomicBool,
     stop: AtomicBool,
     stop_wake: crate::wakeup::Wakeup,
 }
 
 #[cfg(feature = "flutter")]
 impl SleepMonitorShared {
+    const LID_UNKNOWN: u8 = 0;
+    const LID_OPEN: u8 = 1;
+    const LID_CLOSED: u8 = 2;
+
     fn new() -> io::Result<Self> {
         Ok(Self {
             transitions: Mutex::default(),
@@ -388,6 +395,8 @@ impl SleepMonitorShared {
             lid_switch_held: AtomicBool::new(false),
             lid_switch_wake: crate::wakeup::Wakeup::new()?,
             blocks: AtomicU8::new(0),
+            lid_closed: AtomicU8::new(Self::LID_UNKNOWN),
+            lid_closed_dirty: AtomicBool::new(false),
             stop: AtomicBool::new(false),
             stop_wake: crate::wakeup::Wakeup::new()?,
         })
@@ -441,6 +450,43 @@ impl SleepMonitorShared {
 
     fn blocks(&self) -> LogindBlocks {
         LogindBlocks::from_bits(self.blocks.load(Ordering::Acquire))
+    }
+
+    /// Publishes logind's hardware `LidClosed` property; a known change wakes
+    /// the compositor so its lid policy follows logind directly even if
+    /// libinput synthesizes a lid-open from a paired keyboard.
+    fn set_logind_lid_closed(&self, closed: Option<bool>) {
+        let encoded = match closed {
+            None => Self::LID_UNKNOWN,
+            Some(false) => Self::LID_OPEN,
+            Some(true) => Self::LID_CLOSED,
+        };
+        let previous = self.lid_closed.swap(encoded, Ordering::AcqRel);
+        if previous == encoded {
+            return;
+        }
+        if let Some(closed) = closed {
+            self.lid_closed_dirty.store(true, Ordering::Release);
+            info!(closed, "logind lid state changed");
+            crate::loop_wake::wake();
+        } else {
+            self.lid_closed_dirty.store(false, Ordering::Release);
+        }
+    }
+
+    fn logind_lid_closed(&self) -> Option<bool> {
+        match self.lid_closed.load(Ordering::Acquire) {
+            Self::LID_OPEN => Some(false),
+            Self::LID_CLOSED => Some(true),
+            _ => None,
+        }
+    }
+
+    fn take_logind_lid_closed(&self) -> Option<bool> {
+        if !self.lid_closed_dirty.swap(false, Ordering::AcqRel) {
+            return None;
+        }
+        self.logind_lid_closed()
     }
 
     fn install_delay_inhibitor(&self, inhibitor: OwnedFd) {
@@ -806,6 +852,19 @@ impl SystemControls {
         self.sleep_monitor.blocks()
     }
 
+    /// Hardware lid state last reported by logind, or `None` while logind is
+    /// unreachable.
+    #[cfg(feature = "flutter")]
+    pub(super) fn logind_lid_closed(&self) -> Option<bool> {
+        self.sleep_monitor.logind_lid_closed()
+    }
+
+    /// Consumes a fresh logind `LidClosed` transition, if one arrived.
+    #[cfg(feature = "flutter")]
+    pub(super) fn take_logind_lid_closed(&self) -> Option<bool> {
+        self.sleep_monitor.take_logind_lid_closed()
+    }
+
     /// Takes logind's handling of the lid switch while `held`, with a
     /// `handle-lid-switch` block inhibitor: closing the cover then neither
     /// suspends nor locks the system, and the panel stays lit (Stay awake).
@@ -1092,6 +1151,30 @@ mod sleep_readiness_tests {
         let (fd, logind) = inhibitor();
         assert!(!monitor.install_lid_switch_inhibitor(fd));
         assert!(closed(&logind));
+    }
+
+    #[test]
+    fn logind_lid_state_tracks_changes_and_clears_on_disconnect() {
+        let monitor = SleepMonitorShared::new().unwrap();
+        assert_eq!(monitor.logind_lid_closed(), None);
+        assert_eq!(monitor.take_logind_lid_closed(), None);
+
+        monitor.set_logind_lid_closed(Some(true));
+        assert_eq!(monitor.logind_lid_closed(), Some(true));
+        assert_eq!(monitor.take_logind_lid_closed(), Some(true));
+        assert_eq!(monitor.take_logind_lid_closed(), None);
+
+        // Repeated identical updates do not re-dirty the pending transition.
+        monitor.set_logind_lid_closed(Some(true));
+        assert_eq!(monitor.take_logind_lid_closed(), None);
+
+        monitor.set_logind_lid_closed(Some(false));
+        assert_eq!(monitor.logind_lid_closed(), Some(false));
+        assert_eq!(monitor.take_logind_lid_closed(), Some(false));
+
+        monitor.set_logind_lid_closed(None);
+        assert_eq!(monitor.logind_lid_closed(), None);
+        assert_eq!(monitor.take_logind_lid_closed(), None);
     }
 
     #[test]
