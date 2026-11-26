@@ -198,13 +198,48 @@ class T3CodeClient {
     }
   }
 
+  /// Resolves the Wayland/D-Bus environment needed to launch Electron GUI apps
+  /// from inside `deniald` (whose own process environment omits `WAYLAND_DISPLAY`).
+  static Map<String, String> _guiEnvironment() {
+    final env = Map<String, String>.of(Platform.environment);
+    var runtimeDir = env['XDG_RUNTIME_DIR']?.trim() ?? '';
+    if (runtimeDir.isEmpty) {
+      runtimeDir = '/run/user/1000';
+      env['XDG_RUNTIME_DIR'] = runtimeDir;
+    }
+    if ((env['WAYLAND_DISPLAY']?.trim().isEmpty ?? true) &&
+        Directory(runtimeDir).existsSync()) {
+      try {
+        final sockets = Directory(runtimeDir)
+            .listSync(followLinks: false)
+            .map((entry) => entry.path.split('/').last)
+            .where(
+              (name) =>
+                  name.startsWith('wayland-') && !name.endsWith('.lock'),
+            )
+            .toList()
+          ..sort();
+        if (sockets.isNotEmpty) {
+          env['WAYLAND_DISPLAY'] = sockets.first;
+        }
+      } catch (_) {}
+    }
+    if ((env['DBUS_SESSION_BUS_ADDRESS']?.trim().isEmpty ?? true) &&
+        File('$runtimeDir/bus').existsSync()) {
+      env['DBUS_SESSION_BUS_ADDRESS'] = 'unix:path=$runtimeDir/bus';
+    }
+    env['ELECTRON_OZONE_PLATFORM_HINT'] = 'auto';
+    return env;
+  }
+
   /// Launches T3 Code Desktop (or server) when installed but not yet running.
   Future<bool> launchT3Code(T3InstallPaths paths) async {
     try {
       if (paths.launchPath != null) {
         await Process.start(
           paths.launchPath!,
-          const <String>[],
+          const <String>['--ozone-platform=wayland'],
+          environment: _guiEnvironment(),
           mode: ProcessStartMode.detached,
         );
       } else {
@@ -212,19 +247,22 @@ class T3CodeClient {
           paths.nodeRuntimePath,
           <String>[
             paths.serverBinPath,
-            'start',
-            '--no-browser',
+            'serve',
             '--base-dir',
             paths.stateDir,
+            '--port',
+            '$_defaultPort',
           ],
-          environment: paths.nodeIsElectron
-              ? const <String, String>{'ELECTRON_RUN_AS_NODE': '1'}
-              : null,
+          environment: <String, String>{
+            ...Platform.environment,
+            'T3CODE_HOME': paths.stateDir,
+            if (paths.nodeIsElectron) 'ELECTRON_RUN_AS_NODE': '1',
+          },
           mode: ProcessStartMode.detached,
         );
       }
-      // Wait up to 15 s for the local server to bind.
-      for (var attempt = 0; attempt < 30; attempt++) {
+      // Wait up to 20 s for the local server to bind.
+      for (var attempt = 0; attempt < 40; attempt++) {
         await Future<void>.delayed(const Duration(milliseconds: 500));
         if (await discoverRunningOrigin(paths) != null) {
           return true;
@@ -242,11 +280,13 @@ class T3CodeClient {
     if (paths.launchPath == null) return;
     try {
       final args = <String>[
+        '--ozone-platform=wayland',
         if (workspaceRoot != null && workspaceRoot.isNotEmpty) workspaceRoot,
       ];
       await Process.start(
         paths.launchPath!,
         args,
+        environment: _guiEnvironment(),
         mode: ProcessStartMode.detached,
       );
     } catch (_) {}
@@ -429,7 +469,7 @@ class T3CodeClient {
         .replaceFirst('https://', 'wss://')
         .replaceFirst('http://', 'ws://');
     final wsUrl =
-        '$wsOrigin/ws?orchestrationProtocol=$_protocolVersion&ticket=${Uri.encodeQueryComponent(ticket)}';
+        '$wsOrigin/ws?orchestrationProtocol=$_protocolVersion&wsTicket=${Uri.encodeQueryComponent(ticket)}';
     final socket = await WebSocket.connect(
       wsUrl,
     ).timeout(const Duration(seconds: 8));
@@ -865,7 +905,7 @@ class T3CodeClient {
         .replaceFirst('https://', 'wss://')
         .replaceFirst('http://', 'ws://');
     final wsUrl =
-        '$wsOrigin/ws/voice?ticket=${Uri.encodeQueryComponent(ticket)}';
+        '$wsOrigin/ws/voice?wsTicket=${Uri.encodeQueryComponent(ticket)}';
 
     final readyCompleter = Completer<void>();
     _voiceReady = false;
@@ -942,10 +982,11 @@ class T3CodeClient {
 
     await readyCompleter.future.timeout(const Duration(seconds: 15));
 
-    // Spawn PipeWire microphone capture (16 kHz mono Float32 LE).
+    // Spawn PipeWire microphone capture (raw 16 kHz mono Float32 LE PCM).
     Process proc;
     try {
       proc = await Process.start('pw-record', const <String>[
+        '--raw',
         '--format=f32',
         '--rate=$_speechSampleRate',
         '--channels=1',

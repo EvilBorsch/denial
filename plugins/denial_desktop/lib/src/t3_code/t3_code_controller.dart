@@ -17,7 +17,7 @@ class T3CodeController extends Notifier<T3IslandState> {
   Timer? _reconnectTimer;
   Timer? _noticeTimer;
   T3InstallPaths? _paths;
-  bool _connecting = false;
+  Future<bool>? _connectFuture;
   final Set<String> _denialCreatedThreadIds = <String>{};
   final Map<String, T3ThreadStatus> _previousStatuses =
       <String, T3ThreadStatus>{};
@@ -66,8 +66,23 @@ class T3CodeController extends Notifier<T3IslandState> {
 
   Future<bool> _connectIfAvailable({bool launchIfStopped = false}) async {
     if (!_settings.enabled) return false;
-    if (_connecting) return _client.rpcConnected;
-    _connecting = true;
+    final inFlight = _connectFuture;
+    if (inFlight != null) {
+      final ok = await inFlight;
+      if (ok || !launchIfStopped) return ok;
+    }
+    final future = _connectOnce(launchIfStopped: launchIfStopped);
+    _connectFuture = future;
+    try {
+      return await future;
+    } finally {
+      if (identical(_connectFuture, future)) {
+        _connectFuture = null;
+      }
+    }
+  }
+
+  Future<bool> _connectOnce({required bool launchIfStopped}) async {
     try {
       final paths = T3CodeClient.discoverInstall(_settings);
       _paths = paths;
@@ -145,8 +160,6 @@ class T3CodeController extends Notifier<T3IslandState> {
       );
       _scheduleReconnect(const Duration(seconds: 8));
       return false;
-    } finally {
-      _connecting = false;
     }
   }
 
@@ -524,9 +537,12 @@ class T3CodeController extends Notifier<T3IslandState> {
             if (info != null) _projectById[info.id] = info;
           }
         }
-        _threadById.clear();
         final rawThreads = snapshot['threads'];
-        if (rawThreads is List) {
+        // T3 Code sends a follow-up project-metadata enrichment snapshot with
+        // an empty `threads: []` list; keep existing threads when that arrives.
+        if (rawThreads is List &&
+            (rawThreads.isNotEmpty || _threadById.isEmpty)) {
+          _threadById.clear();
           for (final t in rawThreads) {
             if (t is! Map) continue;
             final summary = _parseThreadShell(Map<String, dynamic>.from(t));
@@ -774,6 +790,18 @@ class T3CodeController extends Notifier<T3IslandState> {
         ? (threadMap['title'] as String).trim()
         : (_threadById[threadId]?.title ?? 'T3 Code');
 
+    final messageTextById = <String, String>{};
+    if (proj['messages'] is List) {
+      for (final m in proj['messages'] as List) {
+        if (m is! Map) continue;
+        final id = m['id']?.toString() ?? '';
+        final text = m['text']?.toString() ?? '';
+        if (id.isNotEmpty && text.isNotEmpty) {
+          messageTextById[id] = text;
+        }
+      }
+    }
+
     final activities = <T3TurnActivity>[];
     final visible = proj['visibleTurnItems'];
     final turnItems = proj['turnItems'];
@@ -785,7 +813,7 @@ class T3CodeController extends Notifier<T3IslandState> {
       final inner = entry['item'] is Map
           ? Map<String, dynamic>.from(entry['item'] as Map)
           : Map<String, dynamic>.from(entry);
-      final parsed = _parseTurnItem(inner);
+      final parsed = _parseTurnItem(inner, messageTextById: messageTextById);
       if (parsed != null) activities.add(parsed);
     }
 
@@ -817,22 +845,32 @@ class T3CodeController extends Notifier<T3IslandState> {
     );
   }
 
-  T3TurnActivity? _parseTurnItem(Map<String, dynamic> item) {
+  T3TurnActivity? _parseTurnItem(
+    Map<String, dynamic> item, {
+    Map<String, String> messageTextById = const <String, String>{},
+  }) {
     final id = item['id']?.toString() ?? item['itemId']?.toString() ?? '';
     final type = item['type']?.toString() ?? '';
     if (type.isEmpty) return null;
+    String resolveMessageText() {
+      final direct = item['text']?.toString() ?? '';
+      if (direct.isNotEmpty) return direct;
+      final msgId = item['messageId']?.toString() ?? '';
+      return messageTextById[msgId] ?? '';
+    }
+
     switch (type) {
       case 'user_message':
         return T3TurnActivity(
           id: id.isEmpty ? 'u-${item['messageId']}' : id,
           kind: T3ActivityKind.user,
-          text: item['text']?.toString() ?? '',
+          text: resolveMessageText(),
         );
       case 'assistant_message':
         return T3TurnActivity(
           id: id.isEmpty ? 'a-${item['messageId']}' : id,
           kind: T3ActivityKind.assistant,
-          text: item['text']?.toString() ?? '',
+          text: resolveMessageText(),
           streaming: item['streaming'] == true,
         );
       case 'reasoning':
