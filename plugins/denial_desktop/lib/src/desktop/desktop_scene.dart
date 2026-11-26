@@ -1113,9 +1113,13 @@ class _DesktopSceneState extends ConsumerState<DesktopScene> {
                         ),
                       ),
                     );
+                    final t3Enabled = ref.watch(
+                      shellSettingsProvider.select((s) => s.t3Code.enabled),
+                    );
                     return DesktopSearchOverlay(
                       viewSize: viewSize,
                       displayLayout: displayLayout,
+                      aiEnabled: t3Enabled,
                       keyboardTop:
                           viewSize.height -
                           ReferenceShellMetrics.edgePanelHeight(

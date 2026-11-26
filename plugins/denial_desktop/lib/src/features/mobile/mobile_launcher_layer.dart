@@ -1,5 +1,6 @@
 import 'package:denial_desktop/src/state/reference_shell_controller.dart';
 import 'package:denial_desktop/src/state/reference_shell_state.dart';
+import 'package:denial_flutter_sdk/settings.dart';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
@@ -39,6 +40,9 @@ class MobileLauncherLayer extends ConsumerWidget {
       }),
     );
     final shade = ref.watch(shadeProgressProvider);
+    final t3Enabled = ref.watch(
+      shellSettingsProvider.select((s) => s.t3Code.enabled),
+    );
     final showsHome = ref.read(referenceShellProvider.notifier).deck.showsHome;
     final opacity = _HomeContentOpacity(
       first: contentOpacity,
@@ -66,6 +70,7 @@ class MobileLauncherLayer extends ConsumerWidget {
             active: flags.active || showsHome,
             interactive: flags.interactive,
             contentOpacity: opacity,
+            aiSearchEnabled: t3Enabled,
           ),
         ),
       ),

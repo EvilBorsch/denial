@@ -2,6 +2,12 @@
 library;
 
 export 'src/settings/input_deck_settings.dart' show InputDeckSettings;
+export 'src/settings/t3_code_settings.dart'
+    show
+        ShellT3CodeSettings,
+        defaultT3CodeBranch,
+        defaultT3CodeRepoUrl,
+        defaultT3CodeVoiceModelId;
 
 export 'src/settings/color_format.dart'
     show formatOpaqueColorHex, opaqueColorRgb, parseOpaqueColorHex;

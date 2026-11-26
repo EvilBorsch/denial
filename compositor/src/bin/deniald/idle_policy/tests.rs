@@ -350,6 +350,74 @@ fn power_alone_toggles_on_release_with_chords_and_volume_stays_volume() {
 }
 
 #[test]
+fn volume_down_double_press_requests_t3_voice_toggle_when_enabled() {
+    let mut button = PowerButton::default();
+    let t0 = Instant::now();
+    assert_eq!(
+        button.note_volume_down_with_double_press(true, false, true, t0),
+        VolumeDownRoute::Deliver
+    );
+    assert_eq!(
+        button.note_volume_down_with_double_press(
+            false,
+            false,
+            true,
+            t0 + Duration::from_millis(60),
+        ),
+        VolumeDownRoute::Deliver
+    );
+    assert!(!button.take_t3_voice_toggle());
+
+    // Second press within 380 ms is absorbed and triggers voice toggle.
+    assert_eq!(
+        button.note_volume_down_with_double_press(
+            true,
+            false,
+            true,
+            t0 + Duration::from_millis(200),
+        ),
+        VolumeDownRoute::Take
+    );
+    assert!(button.take_t3_voice_toggle());
+    assert!(!button.take_t3_voice_toggle());
+    assert_eq!(
+        button.note_volume_down_with_double_press(
+            false,
+            false,
+            true,
+            t0 + Duration::from_millis(240),
+        ),
+        VolumeDownRoute::Take
+    );
+
+    // Slow repeat outside the 380 ms window does not trigger voice toggle.
+    let t1 = t0 + Duration::from_secs(2);
+    assert_eq!(
+        button.note_volume_down_with_double_press(true, false, true, t1),
+        VolumeDownRoute::Deliver
+    );
+    assert_eq!(
+        button.note_volume_down_with_double_press(
+            false,
+            false,
+            true,
+            t1 + Duration::from_millis(50),
+        ),
+        VolumeDownRoute::Deliver
+    );
+    assert_eq!(
+        button.note_volume_down_with_double_press(
+            true,
+            false,
+            true,
+            t1 + Duration::from_millis(500),
+        ),
+        VolumeDownRoute::Deliver
+    );
+    assert!(!button.take_t3_voice_toggle());
+}
+
+#[test]
 fn power_button_wakes_double_tap_and_external_blank_and_resets_idle() {
     let now = Instant::now();
     let mut policy = IdlePolicy::default();

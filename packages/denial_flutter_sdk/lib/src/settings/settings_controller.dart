@@ -614,6 +614,11 @@ class ShellSettingsController extends Notifier<ShellSettings> {
     _update(state.copyWith(power: state.power.copyWith(stayAwake: value)));
   }
 
+  /// Updates T3 Code integration settings; see [ShellT3CodeSettings].
+  void updateT3Code(ShellT3CodeSettings Function(ShellT3CodeSettings) update) {
+    _update(state.copyWith(t3Code: update(state.t3Code)));
+  }
+
   /// Whether the presentation follows a physical keyboard; see
   /// [ShellPresentationSettings.followKeyboard].
   void setFollowKeyboard(bool value) {

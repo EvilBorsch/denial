@@ -71,6 +71,7 @@ class _DesktopSystemBarContent extends ConsumerWidget {
       ),
     );
     final trayVisible = ref.watch(context.trayServices.trayVisible);
+    final t3Visible = ref.watch(context.t3Services.t3Visible);
     final horizontal = side.isHorizontal;
     final modules = Flex(
       direction: horizontal ? Axis.horizontal : Axis.vertical,
@@ -151,6 +152,21 @@ class _DesktopSystemBarContent extends ConsumerWidget {
             cpuVisible: cpuVisible,
           ),
         if (cpuVisible) _CpuStatusCard(accent: accent, horizontal: horizontal),
+        if (t3Visible)
+          _SystemBarEntrance(
+            key: const ValueKey('system-bar-t3-voice'),
+            index: 1,
+            horizontal: horizontal,
+            child: Padding(
+              padding: horizontal
+                  ? const EdgeInsets.only(right: _cardGap)
+                  : const EdgeInsets.only(bottom: _cardGap),
+              child: context.t3Services.buildT3VoiceButton(
+                context,
+                horizontal: horizontal,
+              ),
+            ),
+          ),
         // As on macOS, the control center's icon sits just before the clock.
         _SystemBarEntrance(
           key: const ValueKey('system-bar-control-center'),
@@ -198,14 +214,31 @@ class _DesktopSystemBarContent extends ConsumerWidget {
         fit: StackFit.expand,
         children: [
           modules,
-          if (workspacesEnabled)
+          if (workspacesEnabled || t3Visible)
             Center(
               child: DesktopSystemBarIndicatorSlot(
                 horizontal: horizontal,
-                child: _WorkspaceIndicator(
-                  monitorId: monitorId,
-                  horizontal: horizontal,
-                  accent: accent,
+                child: Flex(
+                  direction: horizontal ? Axis.horizontal : Axis.vertical,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (workspacesEnabled)
+                      _WorkspaceIndicator(
+                        monitorId: monitorId,
+                        horizontal: horizontal,
+                        accent: accent,
+                      ),
+                    if (workspacesEnabled && t3Visible)
+                      SizedBox(
+                        width: horizontal ? _cardGap : 0,
+                        height: horizontal ? 0 : _cardGap,
+                      ),
+                    if (t3Visible)
+                      context.t3Services.buildT3Island(
+                        context,
+                        horizontal: horizontal,
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -354,5 +387,6 @@ extension _PluginContext on BuildContext {
   ShellPresentationServices get presentationServices =>
       ShellServicesScope.of(this);
   ShellTrayServices get trayServices => ShellServicesScope.of(this);
+  ShellT3Services get t3Services => ShellServicesScope.of(this);
   ShellStrings get pluginStrings => presentationServices.strings(this);
 }

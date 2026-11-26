@@ -2,6 +2,8 @@ import 'dart:ui';
 
 import 'input_deck_settings.dart';
 export 'input_deck_settings.dart';
+import 't3_code_settings.dart';
+export 't3_code_settings.dart';
 
 import 'package:flutter/foundation.dart';
 
@@ -1233,6 +1235,7 @@ class ShellSettings {
     this.sound = const ShellSoundSettings(),
     this.presentation = const ShellPresentationSettings(),
     this.applicationEnvironment = const ShellApplicationEnvironmentSettings(),
+    this.t3Code = const ShellT3CodeSettings(),
   });
 
   // Blur levels are additive in schema 9. Keep emitting the derived legacy
@@ -1251,6 +1254,7 @@ class ShellSettings {
   final ShellSoundSettings sound;
   final ShellPresentationSettings presentation;
   final ShellApplicationEnvironmentSettings applicationEnvironment;
+  final ShellT3CodeSettings t3Code;
 
   ShellSettings copyWith({
     InputDeckSettings? inputDeck,
@@ -1265,6 +1269,7 @@ class ShellSettings {
     ShellSoundSettings? sound,
     ShellPresentationSettings? presentation,
     ShellApplicationEnvironmentSettings? applicationEnvironment,
+    ShellT3CodeSettings? t3Code,
   }) {
     return ShellSettings(
       inputDeck: inputDeck ?? this.inputDeck,
@@ -1280,6 +1285,7 @@ class ShellSettings {
       presentation: presentation ?? this.presentation,
       applicationEnvironment:
           applicationEnvironment ?? this.applicationEnvironment,
+      t3Code: t3Code ?? this.t3Code,
     );
   }
 
@@ -1599,6 +1605,28 @@ class ShellSettings {
       patch['applicationEnvironment'] = applicationEnvironment.toJson();
     }
 
+    if (t3Code != previous.t3Code) {
+      final before = previous.t3Code;
+      patch['t3Code'] = <String, Object?>{
+        if (t3Code.enabled != before.enabled) 'enabled': t3Code.enabled,
+        if (t3Code.installDir != before.installDir)
+          'installDir': t3Code.installDir,
+        if (t3Code.repoUrl != before.repoUrl) 'repoUrl': t3Code.repoUrl,
+        if (t3Code.branch != before.branch) 'branch': t3Code.branch,
+        if (t3Code.providerInstanceId != before.providerInstanceId)
+          'providerInstanceId': t3Code.providerInstanceId,
+        if (t3Code.providerDriver != before.providerDriver)
+          'providerDriver': t3Code.providerDriver,
+        if (t3Code.model != before.model) 'model': t3Code.model,
+        if (t3Code.workspaceRoot != before.workspaceRoot)
+          'workspaceRoot': t3Code.workspaceRoot,
+        if (t3Code.voiceModelId != before.voiceModelId)
+          'voiceModelId': t3Code.voiceModelId,
+        if (t3Code.volumeDownDoublePress != before.volumeDownDoublePress)
+          'volumeDownDoublePress': t3Code.volumeDownDoublePress,
+      };
+    }
+
     return patch;
   }
 
@@ -1699,6 +1727,7 @@ class ShellSettings {
       'presentation': presentation.toJson(),
       'inputDeck': inputDeck.toJson(),
       'applicationEnvironment': applicationEnvironment.toJson(),
+      't3Code': t3Code.toJson(),
     };
   }
 
@@ -2124,6 +2153,7 @@ class ShellSettings {
       applicationEnvironment: ShellApplicationEnvironmentSettings.fromJson(
         json['applicationEnvironment'],
       ),
+      t3Code: ShellT3CodeSettings.fromJson(json['t3Code']),
     );
   }
 
@@ -2141,7 +2171,8 @@ class ShellSettings {
         other.notifications == notifications &&
         other.sound == sound &&
         other.presentation == presentation &&
-        other.applicationEnvironment == applicationEnvironment;
+        other.applicationEnvironment == applicationEnvironment &&
+        other.t3Code == t3Code;
   }
 
   @override
@@ -2158,6 +2189,7 @@ class ShellSettings {
     sound,
     presentation,
     applicationEnvironment,
+    t3Code,
   );
 }
 

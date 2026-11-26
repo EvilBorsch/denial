@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart' show VelocityTracker;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +12,7 @@ import 'package:denial_flutter_sdk/tokens.dart';
 
 import '../../search/shell_search_backend.dart';
 import '../../search/shell_search_view.dart';
+import '../../t3_code/t3_code_controller.dart';
 
 /// Every app, in a full-screen glass sheet that rises from the bottom as
 /// [openness] goes from 0 to 1: the shell's one search sized for fingers
@@ -27,6 +30,7 @@ class HomeAppDrawer extends ConsumerStatefulWidget {
     required this.onDrag,
     required this.onDragEnd,
     this.keyboardInset = 0,
+    this.aiEnabled = true,
   });
 
   final Animation<double> openness;
@@ -46,6 +50,7 @@ class HomeAppDrawer extends ConsumerStatefulWidget {
 
   /// How much of the bottom the on-screen keyboard covers.
   final double keyboardInset;
+  final bool aiEnabled;
 
   @override
   ConsumerState<HomeAppDrawer> createState() => _HomeAppDrawerState();
@@ -56,6 +61,7 @@ class _HomeAppDrawerState extends ConsumerState<HomeAppDrawer> {
   late final ShellSearchSession _session =
       ShellSearchSession(debugLabel: 'home drawer search')
         ..onActivate = _activate
+        ..onAskAi = _askAi
         ..fieldIconRect = _fieldIconRect;
 
   /// The finger that moves the list, or the sheet once it pulls.
@@ -99,6 +105,14 @@ class _HomeAppDrawerState extends ConsumerState<HomeAppDrawer> {
   }
 
   void _focusChanged() => setState(() {});
+
+  void _askAi(String prompt) {
+    _session.focus.unfocus();
+    _session.query.clear();
+    unawaited(
+      ref.read(t3CodeControllerProvider.notifier).sendTextPrompt(prompt),
+    );
+  }
 
   /// Closed, the drawer forgets its search, and the keyboard goes with the
   /// field's focus.
@@ -210,13 +224,22 @@ class _HomeAppDrawerState extends ConsumerState<HomeAppDrawer> {
                     SizedBox(height: padding.top + 56),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: ShellSearchField(
-                        key: _field,
-                        style: ShellSearchStyle.touch,
-                        controller: _session.query,
-                        focusNode: _session.focus,
-                        hint: context.l10n.homeSearchHint,
-                        onSubmitted: _session.submit,
+                      child: ListenableBuilder(
+                        listenable: _session,
+                        builder: (context, _) {
+                          return ShellSearchField(
+                            key: _field,
+                            style: ShellSearchStyle.touch,
+                            controller: _session.query,
+                            focusNode: _session.focus,
+                            hint: context.l10n.homeSearchHint,
+                            onSubmitted: _session.submit,
+                            aiMode: _session.aiMode,
+                            onAskAi: widget.aiEnabled
+                                ? _session.toggleAiMode
+                                : null,
+                          );
+                        },
                       ),
                     ),
                     Expanded(

@@ -25,6 +25,7 @@ import 'desktop_audio_device_dropdown.dart';
 import 'desktop_dashboard_bluetooth.dart';
 import 'desktop_dashboard_controls.dart';
 import 'desktop_dashboard_power_modes.dart';
+import 'desktop_quick_toggles_card.dart';
 import 'desktop_workspace.dart';
 import '../state/phone_desk.dart';
 
@@ -331,6 +332,7 @@ class _DesktopDashboardState extends ConsumerState<DesktopDashboard>
                     },
                     child: DesktopDashboardCardLayout(
                       volume: const _DashboardVolumeCard(),
+                      quickToggles: const DesktopQuickTogglesSection(),
                       powerModes: const DesktopPowerModesSection(),
                       bluetooth: const _DashboardBluetoothCard(),
                     ),
@@ -362,12 +364,14 @@ class _DashboardDetailClipper extends CustomClipper<RRect> {
 class DesktopDashboardCardLayout extends StatelessWidget {
   const DesktopDashboardCardLayout({
     required this.volume,
+    this.quickToggles,
     required this.powerModes,
     required this.bluetooth,
     super.key,
   });
 
   final Widget volume;
+  final Widget? quickToggles;
   final Widget powerModes;
   final Widget bluetooth;
 
@@ -380,6 +384,7 @@ class DesktopDashboardCardLayout extends StatelessWidget {
         children: [
           volume,
           const SizedBox(height: 12),
+          ?quickToggles,
           powerModes,
           SizedBox(height: _dashboardBluetoothMaxHeight, child: bluetooth),
         ],

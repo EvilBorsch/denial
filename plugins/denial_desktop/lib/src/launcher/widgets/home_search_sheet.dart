@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart' show VelocityTracker;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +12,7 @@ import 'package:denial_flutter_sdk/tokens.dart';
 
 import '../../search/shell_search_backend.dart';
 import '../../search/shell_search_view.dart';
+import '../../t3_code/t3_code_controller.dart';
 
 /// Search over home, pulled down from the middle of home as on iPadOS: a
 /// glass sheet that comes down from the top as [openness] goes from 0 to 1,
@@ -32,6 +35,7 @@ class HomeSearchSheet extends ConsumerStatefulWidget {
     required this.onDrag,
     required this.onDragEnd,
     this.keyboardInset = 0,
+    this.aiEnabled = true,
   });
 
   final Animation<double> openness;
@@ -48,6 +52,7 @@ class HomeSearchSheet extends ConsumerStatefulWidget {
 
   /// How much of the bottom the on-screen keyboard covers.
   final double keyboardInset;
+  final bool aiEnabled;
 
   @override
   ConsumerState<HomeSearchSheet> createState() => _HomeSearchSheetState();
@@ -59,6 +64,7 @@ class _HomeSearchSheetState extends ConsumerState<HomeSearchSheet> {
       ShellSearchSession(debugLabel: 'home search')
         ..onActivate = _activate
         ..onDismiss = _dismiss
+        ..onAskAi = _askAi
         ..fieldIconRect = _fieldIconRect;
   final _field = GlobalKey();
 
@@ -99,6 +105,13 @@ class _HomeSearchSheetState extends ConsumerState<HomeSearchSheet> {
 
   /// Esc with nothing typed closes the search, as Cancel does.
   void _dismiss() => widget.onClose();
+
+  void _askAi(String prompt) {
+    widget.onClose();
+    unawaited(
+      ref.read(t3CodeControllerProvider.notifier).sendTextPrompt(prompt),
+    );
+  }
 
   /// Open, the field takes the focus and the keyboard comes up; on the way
   /// out the keyboard goes, and closed the search starts afresh.
@@ -218,13 +231,22 @@ class _HomeSearchSheetState extends ConsumerState<HomeSearchSheet> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Flexible(
-                              child: ShellSearchField(
-                                key: _field,
-                                style: ShellSearchStyle.touch,
-                                controller: _session.query,
-                                focusNode: _session.focus,
-                                hint: context.l10n.homeSearchHint,
-                                onSubmitted: _session.submit,
+                              child: ListenableBuilder(
+                                listenable: _session,
+                                builder: (context, _) {
+                                  return ShellSearchField(
+                                    key: _field,
+                                    style: ShellSearchStyle.touch,
+                                    controller: _session.query,
+                                    focusNode: _session.focus,
+                                    hint: context.l10n.homeSearchHint,
+                                    onSubmitted: _session.submit,
+                                    aiMode: _session.aiMode,
+                                    onAskAi: widget.aiEnabled
+                                        ? _session.toggleAiMode
+                                        : null,
+                                  );
+                                },
                               ),
                             ),
                             const SizedBox(width: 8),

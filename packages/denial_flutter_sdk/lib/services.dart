@@ -172,6 +172,13 @@ abstract interface class ShellTrayServices {
   });
 }
 
+/// T3 Code Dynamic Island and voice trigger widgets supplied by the host shell.
+abstract interface class ShellT3Services {
+  ProviderListenable<bool> get t3Visible;
+  Widget buildT3Island(BuildContext context, {required bool horizontal});
+  Widget buildT3VoiceButton(BuildContext context, {required bool horizontal});
+}
+
 /// The complete host bundle supplied to composed surfaces and actions.
 /// Feature widgets/helpers should request the focused capability they need.
 /// Existing plugin calls remain available through this aggregate interface.
@@ -186,7 +193,8 @@ abstract interface class ShellServices
         ShellConnectivityServices,
         ShellMediaServices,
         ShellPresentationServices,
-        ShellTrayServices {}
+        ShellTrayServices,
+        ShellT3Services {}
 
 /// Localized platform labels/formatters; implementations depend on the locale.
 abstract interface class ShellStrings {

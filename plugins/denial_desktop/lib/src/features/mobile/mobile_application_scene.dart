@@ -10,13 +10,19 @@ import 'package:denial_flutter_sdk/motion.dart' show SelectedListenable;
 import 'package:denial_flutter_sdk/rendering.dart';
 import 'package:denial_flutter_sdk/state.dart' show denialBridgeProvider;
 
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:denial_flutter_sdk/actions.dart';
+import 'package:denial_flutter_sdk/shell.dart';
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/shell_plugin_services.dart';
+import '../../t3_code/t3_code_controller.dart';
+import '../../t3_code/t3_voice_action.dart';
 import '../../widgets/app_flight_layer.dart';
 import '../../widgets/back_gesture_layer.dart';
 import '../../widgets/bottom_gesture_handle.dart';
@@ -102,44 +108,60 @@ class _MobileApplicationSceneState
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: context.shellColors.background,
-      child: MobileKeyboardViewport(
-        appScene: true,
-        child: ValueListenableBuilder<FrostedBackdrop?>(
-          valueListenable: _wallpaperGlass,
-          // Layers that move windows add their motion below.
-          builder: (context, backdrop, scene) => WindowBackdropCache(
-            backdrop: backdrop,
-            motion: const AlwaysStoppedAnimation<double>(0),
-            child: scene!,
+    return ShellActionsBinding(
+      actions: <ShellAction>[
+        T3VoiceToggleAction(
+          () => unawaited(
+            ref.read(t3CodeControllerProvider.notifier).toggleVoice(),
           ),
-          child: Stack(
-            key: _wallpaperGlass.frame,
-            fit: StackFit.expand,
-            children: [
-              _MobileSceneWallpaper(
-                overviewPresentationActive: _overviewPresentationActive,
-                onPainted: _wallpaperGlass.painted,
-              ),
-              RepaintBoundary(
-                child: MobileLauncherLayer(
-                  contentOpacity: _homeContentOpacity,
+        ),
+      ],
+      services: DesktopShellServices(
+        ref: ref,
+        onOpenPowerSettings: () {},
+        onToggleLauncher: () {},
+        onOpenDashboard: () {},
+        onToggleDashboard: () {},
+      ),
+      child: ColoredBox(
+        color: context.shellColors.background,
+        child: MobileKeyboardViewport(
+          appScene: true,
+          child: ValueListenableBuilder<FrostedBackdrop?>(
+            valueListenable: _wallpaperGlass,
+            // Layers that move windows add their motion below.
+            builder: (context, backdrop, scene) => WindowBackdropCache(
+              backdrop: backdrop,
+              motion: const AlwaysStoppedAnimation<double>(0),
+              child: scene!,
+            ),
+            child: Stack(
+              key: _wallpaperGlass.frame,
+              fit: StackFit.expand,
+              children: [
+                _MobileSceneWallpaper(
                   overviewPresentationActive: _overviewPresentationActive,
+                  onPainted: _wallpaperGlass.painted,
                 ),
-              ),
-              const MobilePrimaryWindowLayer(),
-              MobileAppDeckLayer(
-                backdrop: _wallpaperGlass,
-                onPresentationChanged: (active) =>
-                    _overviewPresentationActive.value = active,
-                onProgressChanged: (progress) =>
-                    _overviewProgress.value = progress,
-              ),
-              // Above recents: a card leaving recents for home keeps
-              // flying over the cards that settle away.
-              const AppFlightLayer(),
-            ],
+                RepaintBoundary(
+                  child: MobileLauncherLayer(
+                    contentOpacity: _homeContentOpacity,
+                    overviewPresentationActive: _overviewPresentationActive,
+                  ),
+                ),
+                const MobilePrimaryWindowLayer(),
+                MobileAppDeckLayer(
+                  backdrop: _wallpaperGlass,
+                  onPresentationChanged: (active) =>
+                      _overviewPresentationActive.value = active,
+                  onProgressChanged: (progress) =>
+                      _overviewProgress.value = progress,
+                ),
+                // Above recents: a card leaving recents for home keeps
+                // flying over the cards that settle away.
+                const AppFlightLayer(),
+              ],
+            ),
           ),
         ),
       ),

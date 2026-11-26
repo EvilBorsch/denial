@@ -225,6 +225,19 @@ pub(super) fn synchronize_power_button(scanouts: &[Scanout], events: &mut Runtim
         .as_ref()
         .is_some_and(|frontend| frontend.mobile_shell());
     let lit = power_button_screen_lit(phone, scanouts, events);
+    if events.power_button.take_t3_voice_toggle() && lit && !events.secure_session_locked() {
+        if let Some(controls) = events.system_controls.as_ref() {
+            controls.adjust_audio(0.05);
+        }
+        if !events
+            .plugin_actions
+            .queue(crate::plugin_actions::T3_VOICE_TOGGLE_ACTION.to_owned(), None)
+        {
+            warn!("the shell has no T3 Code voice action registered");
+        } else {
+            info!("volume down double-press requested T3 Code voice toggle");
+        }
+    }
     // Holding the button opens the mobile shell's power menu; on the desktop
     // it does what the user chose, nothing unless asked.
     let long_press = if mobile {

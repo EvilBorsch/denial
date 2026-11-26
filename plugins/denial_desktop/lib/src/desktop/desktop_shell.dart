@@ -34,6 +34,8 @@ import 'desktop_panel_hover_controller.dart';
 import 'settings_application.dart';
 import '../color_tuning/color_tuning_action.dart';
 import '../color_tuning/color_tuning_controller.dart';
+import '../t3_code/t3_code_controller.dart';
+import '../t3_code/t3_voice_action.dart';
 import 'desktop_scene.dart';
 import 'desktop_scene_selection.dart';
 import 'desktop_screens_overview_layout.dart';
@@ -1435,6 +1437,11 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
       actions: <ShellAction>[
         ...ref.watch(desktopActionsProvider),
         ColorTuningAction(ref.read(colorTuningProvider.notifier).toggle),
+        T3VoiceToggleAction(
+          () => unawaited(
+            ref.read(t3CodeControllerProvider.notifier).toggleVoice(),
+          ),
+        ),
       ],
       services: DesktopShellServices(
         ref: ref,

@@ -27,6 +27,7 @@ import 'package:denial_flutter_sdk/wallpaper.dart';
 
 import '../widgets/notification_media.dart';
 import '../state/phone_desk.dart';
+import '../t3_code/t3_dynamic_island.dart';
 
 final _monitorBounds = Provider.autoDispose.family<Rect?, int>((ref, id) {
   for (final output in ref.watch(deskDisplayLayoutProvider)?.outputs ?? []) {
@@ -315,6 +316,15 @@ final class DesktopShellServices implements ShellServices {
   ProviderListenable<bool> get trayVisible => _trayVisible;
   @override
   ProviderListenable<List<String>> get trayItemIds => _trayItemIds;
+  @override
+  ProviderListenable<bool> get t3Visible =>
+      shellSettingsProvider.select((settings) => settings.t3Code.enabled);
+  @override
+  Widget buildT3Island(BuildContext context, {required bool horizontal}) =>
+      T3DynamicIslandPill(compact: false, horizontal: horizontal);
+  @override
+  Widget buildT3VoiceButton(BuildContext context, {required bool horizontal}) =>
+      T3TopBarVoiceButton(horizontal: horizontal);
   @override
   ProviderListenable<WorkspaceStatus> workspace(int monitorId) =>
       _workspace(monitorId);

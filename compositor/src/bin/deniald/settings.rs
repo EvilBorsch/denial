@@ -1005,6 +1005,20 @@ impl SettingsManager {
             .unwrap_or(false)
     }
 
+    /// Whether double-pressing Volume Down while awake toggles T3 Code voice
+    /// dictation (`t3Code.enabled` && `t3Code.volumeDownDoublePress`).
+    pub(super) fn t3_volume_down_double_press(&self) -> bool {
+        let Some(t3) = self.document.get("t3Code").and_then(Value::as_object) else {
+            return true;
+        };
+        let enabled = t3.get("enabled").and_then(Value::as_bool).unwrap_or(true);
+        let trigger = t3
+            .get("volumeDownDoublePress")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        enabled && trigger
+    }
+
     /// The keys the shell uses (`shortcuts.preset`): "standard", or "mac"
     /// for "Like a Mac". The section is new in eb18 and no earlier
     /// `deniald` reads it, so a rollback keeps the file and just runs the

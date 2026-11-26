@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:denial_flutter_sdk/applications.dart';
@@ -12,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../search/shell_search_backend.dart';
 import '../search/shell_search_view.dart';
+import '../t3_code/t3_code_controller.dart';
 import 'desktop_shell_search.dart';
 
 /// The one search over the desktop: a bare Super, Super+S, Alt+F in the Mac
@@ -32,12 +34,14 @@ class DesktopSearchOverlay extends ConsumerStatefulWidget {
     required this.onLaunchApplication,
     required this.onLaunchLocalApplication,
     this.keyboardTop = double.infinity,
+    this.aiEnabled = true,
   });
 
   final Size viewSize;
 
   /// The top of the on-screen keyboard in the view, as it slides.
   final double keyboardTop;
+  final bool aiEnabled;
   final DisplayLayout? displayLayout;
   final ValueChanged<DenialWindow> onActivateWindow;
   final ValueChanged<DesktopApp> onLaunchApplication;
@@ -75,7 +79,8 @@ class _DesktopSearchOverlayState extends ConsumerState<DesktopSearchOverlay>
   late final ShellSearchSession _session =
       ShellSearchSession(debugLabel: 'desktop-search')
         ..onDismiss = _close
-        ..onActivate = _activate;
+        ..onActivate = _activate
+        ..onAskAi = _askAi;
   late final AnimationController _presence = AnimationController(
     vsync: this,
     duration: Motion.desktopPanelOpen,
@@ -136,6 +141,13 @@ class _DesktopSearchOverlayState extends ConsumerState<DesktopSearchOverlay>
   }
 
   void _close() => ref.read(desktopSearchOverlayProvider.notifier).close();
+
+  void _askAi(String prompt) {
+    _close();
+    unawaited(
+      ref.read(t3CodeControllerProvider.notifier).sendTextPrompt(prompt),
+    );
+  }
 
   /// An app starts, or comes to the front when it runs; a window comes to
   /// the front.
@@ -267,13 +279,22 @@ class _DesktopSearchOverlayState extends ConsumerState<DesktopSearchOverlay>
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
                                   children: [
-                                    ShellSearchField(
-                                      style: ShellSearchStyle.desktop,
-                                      controller: _session.query,
-                                      focusNode: _session.focus,
-                                      hint: context.l10n.homeSearchHint,
-                                      onSubmitted: _session.submit,
-                                      onClear: _session.clear,
+                                    ListenableBuilder(
+                                      listenable: _session,
+                                      builder: (context, _) {
+                                        return ShellSearchField(
+                                          style: ShellSearchStyle.desktop,
+                                          controller: _session.query,
+                                          focusNode: _session.focus,
+                                          hint: context.l10n.homeSearchHint,
+                                          onSubmitted: _session.submit,
+                                          onClear: _session.clear,
+                                          aiMode: _session.aiMode,
+                                          onAskAi: widget.aiEnabled
+                                              ? _session.toggleAiMode
+                                              : null,
+                                        );
+                                      },
                                     ),
                                     Expanded(
                                       child: ShellSearchResults(

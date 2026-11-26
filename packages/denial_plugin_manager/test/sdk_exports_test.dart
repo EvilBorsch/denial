@@ -189,6 +189,7 @@ void main() {
       'ShellMediaServices',
       'ShellPresentationServices',
       'ShellTrayServices',
+      'ShellT3Services',
     ];
     await namespace('services', available: ['ShellServices', ...capabilities]);
     final exports = (await library('services')).exportNamespace;

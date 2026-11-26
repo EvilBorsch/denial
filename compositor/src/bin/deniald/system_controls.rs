@@ -881,7 +881,7 @@ impl SystemControls {
         }
     }
 
-    fn adjust_audio(&self, delta: f64) {
+    pub(super) fn adjust_audio(&self, delta: f64) {
         let _ = self.audio_commands.try_send(AudioCommand::Adjust(delta));
     }
 

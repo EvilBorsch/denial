@@ -2809,10 +2809,17 @@ fn process_input_event(
         if key_event.key_code().raw() == 114 + 8 {
             use super::super::idle_policy::VolumeDownRoute;
             let keycode = key_event.key_code();
-            match state
-                .power_button
-                .note_volume_down(key_event.state() == KeyState::Pressed, chords)
-            {
+            let allow_double_press = !state.secure_session_locked()
+                && state
+                    .wayland
+                    .as_ref()
+                    .is_some_and(|frontend| frontend.settings.t3_volume_down_double_press());
+            match state.power_button.note_volume_down_with_double_press(
+                key_event.state() == KeyState::Pressed,
+                chords,
+                allow_double_press,
+                std::time::Instant::now(),
+            ) {
                 VolumeDownRoute::Deliver => {}
                 VolumeDownRoute::Take => return false,
                 VolumeDownRoute::HoldBack => {

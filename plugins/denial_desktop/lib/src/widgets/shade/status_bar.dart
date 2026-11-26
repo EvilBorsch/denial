@@ -17,6 +17,7 @@ import 'package:denial_flutter_sdk/tokens.dart';
 import 'shade_expansion_motion.dart';
 import 'shade_reference_geometry.dart';
 import 'status_glyphs.dart';
+import '../../t3_code/t3_dynamic_island.dart';
 
 /// The status row's geometry and its path into the shade header, shared by
 /// [ShadeStatusBar] and [ShadeHeaderStatusLayer].
@@ -200,7 +201,18 @@ class ShadeStatusBar extends ConsumerWidget {
                 : Stack(
                     fit: StackFit.expand,
                     clipBehavior: Clip.none,
-                    children: geometry.foreground(context, 0, foreground),
+                    children: [
+                      ...geometry.foreground(context, 0, foreground),
+                      Positioned(
+                        top: geometry.collapsedTop - 2,
+                        left: 96,
+                        right: 120,
+                        height: _StatusGeometry.collapsedHeight + 4,
+                        child: const Center(
+                          child: T3DynamicIslandPill(compact: true),
+                        ),
+                      ),
+                    ],
                   ),
           ),
         ),

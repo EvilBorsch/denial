@@ -39,6 +39,8 @@ class _QuietServices implements ShellServices {
   @override
   ProviderListenable<bool> get trayVisible => _off;
   @override
+  ProviderListenable<bool> get t3Visible => _off;
+  @override
   ProviderListenable<bool> get workspacesEnabled => _off;
   @override
   MouseCursor get linkCursor => SystemMouseCursors.click;

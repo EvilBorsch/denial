@@ -41,6 +41,7 @@ class HomeSurface extends ConsumerStatefulWidget {
     this.active = true,
     this.interactive = true,
     this.contentOpacity,
+    this.aiSearchEnabled = true,
   });
 
   /// Whether home is part of the visible shell scene. Its laid-out subtree
@@ -55,6 +56,9 @@ class HomeSurface extends ConsumerStatefulWidget {
   /// Fades icons, widgets and page indicators independently of the backdrop.
   /// The animation updates composited opacity without rebuilding the grid.
   final Animation<double>? contentOpacity;
+
+  /// Whether the T3 Code AI button is offered in home search and the app drawer.
+  final bool aiSearchEnabled;
 
   @override
   ConsumerState<HomeSurface> createState() => _HomeSurfaceState();
@@ -790,6 +794,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
                     onDrag: _moveDrawer,
                     onDragEnd: _settleDrawer,
                     keyboardInset: keyboardInset,
+                    aiEnabled: widget.aiSearchEnabled,
                   ),
                 if (apps != null && _geometry != null)
                   HomeSearchSheet(
@@ -801,6 +806,7 @@ class _HomeSurfaceState extends ConsumerState<HomeSurface>
                     onDrag: _moveSearch,
                     onDragEnd: _settleSearch,
                     keyboardInset: keyboardInset,
+                    aiEnabled: widget.aiSearchEnabled,
                   ),
                 // Back closes an open sheet: home has no app to go back in.
                 ListenableBuilder(

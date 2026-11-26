@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:denial_flutter_sdk/actions.dart';
 import 'package:denial_flutter_sdk/surfaces.dart';
 import 'package:denial_flutter_sdk/launcher.dart';
@@ -18,6 +20,8 @@ import '../../state/desktop_window_switcher.dart';
 import 'package:denial_flutter_sdk/wallpaper.dart';
 
 import '../../wallpaper/widgets/mobile_wallpaper_selector_layer.dart';
+import '../../t3_code/t3_code_controller.dart';
+import '../../t3_code/t3_dynamic_island.dart';
 import '../../widgets/connectivity/bluetooth_detail_surface.dart';
 import '../../widgets/lock/lock_screen_layer.dart' show LockScreenEditorLayer;
 import '../../widgets/notification_banner.dart';
@@ -63,6 +67,7 @@ class DenialShellApp extends StatelessWidget {
           chrome: MobileShellChrome(),
           overlays: <Widget>[
             NotificationBannerLayer(mobile: true),
+            T3DynamicIslandOverlay(mobile: true),
             MobileWallpaperSelectorLayer(),
             LockScreenEditorLayer(),
             MobileFrameTimingOverlay(),
@@ -73,7 +78,11 @@ class DenialShellApp extends StatelessWidget {
           content: DesktopShell(),
           overlays: desktopWindowsOnly
               ? <Widget>[]
-              : <Widget>[SystemLevelHudLayer(), NotificationBannerLayer()],
+              : <Widget>[
+                  SystemLevelHudLayer(),
+                  NotificationBannerLayer(),
+                  T3DynamicIslandOverlay(mobile: false),
+                ],
         ),
         pairingSurfaceBuilder: _buildPairingSurface,
         onLocked: _closeFeatureSurfaces,
@@ -90,4 +99,7 @@ void _closeFeatureSurfaces(WidgetRef ref) {
   ref.read(desktopWindowSwitcherProvider.notifier).cancel();
   ref.read(desktopWorkspaceProvider.notifier).closeOverview();
   ref.read(wallpaperControllerProvider.notifier).closeSelector();
+  final t3 = ref.read(t3CodeControllerProvider.notifier);
+  t3.collapse();
+  unawaited(t3.cancelVoice());
 }

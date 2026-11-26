@@ -162,6 +162,39 @@ class ShellSearchSession extends ChangeNotifier {
   /// Enter: the surface acts on [target].
   void Function(ShellSearchTarget target, Rect iconRect)? onActivate;
 
+  /// Sends the typed prompt to T3 Code AI (`full-access` in `~`).
+  void Function(String prompt)? onAskAi;
+
+  bool _aiMode = false;
+
+  /// When true, Enter sends directly to T3 Code AI instead of launching an app.
+  bool get aiMode => _aiMode;
+
+  void setAiMode(bool value) {
+    if (_aiMode == value) return;
+    _aiMode = value;
+    notifyListeners();
+  }
+
+  void toggleAiMode() {
+    if (typing && onAskAi != null) {
+      askAi();
+      return;
+    }
+    setAiMode(!_aiMode);
+    focusSoon();
+  }
+
+  void askAi() {
+    final text = query.text.trim();
+    if (text.isEmpty) {
+      setAiMode(true);
+      focusSoon();
+      return;
+    }
+    onAskAi?.call(text);
+  }
+
   /// Where the field's magnifier is, for Enter's [onActivate].
   Rect Function()? fieldIconRect;
 
@@ -209,6 +242,7 @@ class ShellSearchSession extends ChangeNotifier {
       query.clear();
     }
     _chosen = null;
+    _aiMode = false;
     if (focusField) {
       focusSoon();
     }
@@ -245,6 +279,10 @@ class ShellSearchSession extends ChangeNotifier {
 
   /// Enter: the chosen result, the best one unless the arrows chose another.
   void submit() {
+    if (_aiMode && typing && onAskAi != null) {
+      askAi();
+      return;
+    }
     if (!typing && onSubmitWithoutQuery != null) {
       onSubmitWithoutQuery!();
       return;
@@ -326,6 +364,16 @@ class ShellSearchSession extends ChangeNotifier {
     }
     final key = event.logicalKey;
     final shift = HardwareKeyboard.instance.isShiftPressed;
+    final ctrl = HardwareKeyboard.instance.isControlPressed;
+    if (event is KeyDownEvent &&
+        (key == LogicalKeyboardKey.enter ||
+            key == LogicalKeyboardKey.numpadEnter) &&
+        (shift || ctrl) &&
+        typing &&
+        onAskAi != null) {
+      askAi();
+      return KeyEventResult.handled;
+    }
     // Enter submits through the field (onSubmitted), as typed text does.
     if (!typing &&
         key != LogicalKeyboardKey.escape &&
@@ -384,6 +432,8 @@ class ShellSearchField extends StatelessWidget {
     required this.hint,
     required this.onSubmitted,
     this.onClear,
+    this.onAskAi,
+    this.aiMode = false,
     this.elevated = false,
   });
 
@@ -393,6 +443,8 @@ class ShellSearchField extends StatelessWidget {
   final String hint;
   final VoidCallback onSubmitted;
   final VoidCallback? onClear;
+  final VoidCallback? onAskAi;
+  final bool aiMode;
 
   /// Desktop: drawn on its own over the overview, with a glass of its own;
   /// inside a panel it is a well of that panel.
@@ -434,7 +486,11 @@ class ShellSearchField extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(
           children: [
-            Icon(Icons.search_rounded, size: 24, color: colors.textSecondary),
+            Icon(
+              aiMode ? Icons.auto_awesome_rounded : Icons.search_rounded,
+              size: 24,
+              color: aiMode ? theme.accentPalette.primary : colors.textSecondary,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: ListenableBuilder(
@@ -445,7 +501,7 @@ class ShellSearchField extends StatelessWidget {
                     if (controller.text.isEmpty)
                       IgnorePointer(
                         child: Text(
-                          hint,
+                          aiMode ? 'Спросить T3 Code AI...' : hint,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: textStyle.copyWith(color: colors.textTertiary),
@@ -497,6 +553,61 @@ class ShellSearchField extends StatelessWidget {
                       ),
                     ),
             ),
+            if (onAskAi != null)
+              Padding(
+                padding: const EdgeInsetsDirectional.only(start: 8),
+                child: Semantics(
+                  button: true,
+                  label: 'Спросить T3 Code AI',
+                  child: MouseRegion(
+                    cursor: ShellMouseCursors.link,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: onAskAi,
+                      child: AnimatedContainer(
+                        duration: Motion.pill,
+                        height: 30,
+                        padding: const EdgeInsets.symmetric(horizontal: 11),
+                        decoration: BoxDecoration(
+                          color: aiMode
+                              ? theme.accentPalette.primary
+                              : theme.accentPalette.container,
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: theme.accentPalette.primary.withValues(
+                              alpha: aiMode ? 0.9 : 0.45,
+                            ),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.auto_awesome_rounded,
+                              size: 15,
+                              color: aiMode
+                                  ? Colors.white
+                                  : theme.accentPalette.onContainer,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              'AI',
+                              style: TextStyle(
+                                color: aiMode
+                                    ? Colors.white
+                                    : theme.accentPalette.onContainer,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
@@ -507,7 +618,9 @@ class ShellSearchField extends StatelessWidget {
             ? theme.panelColor(colors.panelBackground)
             : theme.cardColor(colors.surfaceContainerHigh),
         borderRadius: radius,
-        border: Border.all(color: colors.hairline),
+        border: Border.all(
+          color: aiMode ? theme.accentPalette.primary : colors.hairline,
+        ),
       ),
       child: field,
     );
@@ -555,10 +668,12 @@ class ShellSearchField extends StatelessWidget {
             child: Row(
               children: [
                 const SizedBox(width: 18),
-                const Icon(
-                  Icons.search_rounded,
+                Icon(
+                  aiMode ? Icons.auto_awesome_rounded : Icons.search_rounded,
                   size: 26,
-                  color: ShellMediaColors.lightForegroundSecondary,
+                  color: aiMode
+                      ? context.shellTheme.accentPalette.primary
+                      : ShellMediaColors.lightForegroundSecondary,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -577,7 +692,7 @@ class ShellSearchField extends StatelessWidget {
                       inputFormatters: _inputFormatters,
                       onSubmitted: (_) => onSubmitted(),
                       decoration: InputDecoration.collapsed(
-                        hintText: hint,
+                        hintText: aiMode ? 'Спросить T3 Code AI...' : hint,
                         hintStyle: _touchStyle.copyWith(
                           color: ShellMediaColors.lightForegroundTertiary,
                         ),
@@ -588,7 +703,7 @@ class ShellSearchField extends StatelessWidget {
                 ValueListenableBuilder<TextEditingValue>(
                   valueListenable: controller,
                   builder: (context, value, _) => value.text.isEmpty
-                      ? const SizedBox(width: 18)
+                      ? const SizedBox.shrink()
                       : Semantics(
                           button: true,
                           label: l10n.homeSearchClear,
@@ -596,7 +711,7 @@ class ShellSearchField extends StatelessWidget {
                             behavior: HitTestBehavior.opaque,
                             onTap: _clear,
                             child: SizedBox(
-                              width: metrics.fieldHeight,
+                              width: metrics.fieldHeight - 6,
                               height: metrics.fieldHeight,
                               child: const Icon(
                                 Icons.cancel_rounded,
@@ -608,6 +723,55 @@ class ShellSearchField extends StatelessWidget {
                           ),
                         ),
                 ),
+                if (onAskAi != null)
+                  Padding(
+                    padding: const EdgeInsetsDirectional.only(end: 8, start: 4),
+                    child: Semantics(
+                      button: true,
+                      label: 'Спросить T3 Code AI',
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: onAskAi,
+                        child: Container(
+                          height: 36,
+                          padding: const EdgeInsets.symmetric(horizontal: 13),
+                          decoration: BoxDecoration(
+                            color: aiMode
+                                ? context.shellTheme.accentPalette.primary
+                                : const Color(0x38FFFFFF),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: aiMode
+                                  ? Colors.white.withValues(alpha: 0.7)
+                                  : ShellMediaColors.lightOutline,
+                            ),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.auto_awesome_rounded,
+                                size: 17,
+                                color: Colors.white,
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'AI',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700,
+                                  decoration: TextDecoration.none,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  const SizedBox(width: 14),
               ],
             ),
           ),

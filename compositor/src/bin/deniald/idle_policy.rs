@@ -424,6 +424,9 @@ fn decode_timeout(
 /// Releases and duplicate presses must never reverse the requested transition.
 /// With `chords` (the mobile shell), Power and Volume Down together, in
 /// either order, take a screenshot instead.
+/// Maximum gap between two Volume Down presses to trigger T3 Code voice input.
+const VOLUME_DOWN_DOUBLE_PRESS_WINDOW: Duration = Duration::from_millis(380);
+
 #[derive(Default)]
 pub(super) struct PowerButton {
     held_devices: BTreeSet<String>,
@@ -434,6 +437,10 @@ pub(super) struct PowerButton {
     /// Volume Down's press went to a screenshot, so its release does too.
     volume_down_taken: bool,
     screenshot_requested: bool,
+    /// Timestamp of the previous standalone Volume Down press for double-press detection.
+    last_volume_down_press: Option<Instant>,
+    /// Double-press of Volume Down asked to toggle T3 Code voice input.
+    t3_voice_toggle_requested: bool,
     /// When the press still held becomes a long press. It counts only while
     /// its toggle still waits for the release.
     long_press_at: Option<Instant>,
@@ -475,7 +482,18 @@ impl PowerButton {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn note_volume_down(&mut self, pressed: bool, chords: bool) -> VolumeDownRoute {
+        self.note_volume_down_with_double_press(pressed, chords, false, Instant::now())
+    }
+
+    pub(super) fn note_volume_down_with_double_press(
+        &mut self,
+        pressed: bool,
+        chords: bool,
+        allow_double_press: bool,
+        now: Instant,
+    ) -> VolumeDownRoute {
         if !pressed {
             self.volume_down_held = false;
             if std::mem::take(&mut self.volume_down_taken) {
@@ -487,16 +505,31 @@ impl PowerButton {
             return VolumeDownRoute::Deliver;
         }
         self.volume_down_held = true;
-        if !chords {
-            return VolumeDownRoute::Deliver;
-        }
-        if !self.held_devices.is_empty() {
+        if chords && !self.held_devices.is_empty() {
             // Power's toggle waits for its release; the chord cancels it.
             self.toggle_pending = false;
             self.long_press_at = None;
+            self.last_volume_down_press = None;
             self.screenshot_requested = true;
             self.volume_down_taken = true;
             return VolumeDownRoute::Take;
+        }
+        if allow_double_press && self.held_devices.is_empty() {
+            if let Some(prev) = self.last_volume_down_press
+                && now.saturating_duration_since(prev) <= VOLUME_DOWN_DOUBLE_PRESS_WINDOW
+            {
+                self.last_volume_down_press = None;
+                self.volume_down_held_back = false;
+                self.volume_down_taken = true;
+                self.t3_voice_toggle_requested = true;
+                return VolumeDownRoute::Take;
+            }
+            self.last_volume_down_press = Some(now);
+        } else {
+            self.last_volume_down_press = None;
+        }
+        if !chords {
+            return VolumeDownRoute::Deliver;
         }
         self.volume_down_held_back = true;
         VolumeDownRoute::HoldBack
@@ -554,6 +587,10 @@ impl PowerButton {
 
     pub(super) fn take_screenshot(&mut self) -> bool {
         std::mem::take(&mut self.screenshot_requested)
+    }
+
+    pub(super) fn take_t3_voice_toggle(&mut self) -> bool {
+        std::mem::take(&mut self.t3_voice_toggle_requested)
     }
 }
 
