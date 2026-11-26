@@ -492,12 +492,22 @@ mod tests {
         let (mut windows, root) = restored_at(since);
 
         let early = since + THAW_LIMIT / 2;
-        assert!(windows.end_overdue_thaw(&root, since, early, false).is_none());
-        assert!(windows.thawing.contains_key(&root), "the kept frame stays while the app may still draw");
+        assert!(
+            windows
+                .end_overdue_thaw(&root, since, early, false)
+                .is_none()
+        );
+        assert!(
+            windows.thawing.contains_key(&root),
+            "the kept frame stays while the app may still draw"
+        );
 
         let due = since + THAW_LIMIT;
         assert!(windows.end_overdue_thaw(&root, since, due, false).is_some());
-        assert!(!windows.thawing.contains_key(&root), "the window no longer shows its kept frame");
+        assert!(
+            !windows.thawing.contains_key(&root),
+            "the window no longer shows its kept frame"
+        );
         assert!(windows.end_overdue_thaw(&root, since, due, false).is_none());
     }
 
