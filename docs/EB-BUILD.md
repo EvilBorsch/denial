@@ -167,7 +167,8 @@ On `eb/mode-follow` 709 of 714 pass with the same 4 failing. On `eb/power-tiles`
 runs and passes alone. `eb/screens-layout` (eb17) passes 796 of 801 against
 764 of 769 on its base `ccadf12`, the same 4 failing; at `2faae0b` (eb18)
 888 of 893, the same 4 failing; at `6807c15` (eb19) 922 of 927, the same 4 failing. `eb/window-corners` (eb20,
-square windows) passes 925 of 930, the same 4 failing.
+square windows) passes 925 of 930, the same 4 failing. `eb/kept-frame-limit`
+(eb22) passes 928 of 933, the same 4 failing.
 
 The portal's tests and the protocol's run the same way, the D-Bus ones on a
 private session bus:

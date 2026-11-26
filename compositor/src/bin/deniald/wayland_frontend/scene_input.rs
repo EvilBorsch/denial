@@ -324,9 +324,17 @@ impl WaylandFrontend {
 
     /// Whether an output tick would deliver anything to clients: a frame
     /// callback, a grant to an armed frame timeline, or a screencopy.
+    ///
+    /// Callbacks queued for a surface that is no window on an output wait
+    /// without ticks: a tick would not send them. Firefox, for one, commits
+    /// its content surface before it makes it a subsurface, and an Xwayland
+    /// surface may commit before its window maps; the window that later
+    /// takes them in ticks again.
     #[cfg(feature = "flutter")]
     pub fn wants_frame_ticks(&self) -> bool {
-        !self.pending_frame_callback_windows.is_empty()
+        self.pending_frame_callback_windows
+            .iter()
+            .any(|root| self.output_window_membership.contains(root))
             || !self.pending_layer_frame_callback_roots.is_empty()
             || !self.pending_cursor_frame_callback_roots.is_empty()
             || !self.pending_drag_frame_callback_roots.is_empty()

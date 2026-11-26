@@ -396,6 +396,10 @@ impl<K: Clone + Eq + Hash, V> OutputWindowMembership<K, V> {
             .flatten()
             .map(|(_, window)| window)
     }
+
+    fn contains(&self, key: &K) -> bool {
+        self.output_by_window.contains_key(key)
+    }
 }
 
 #[cfg(feature = "flutter")]
