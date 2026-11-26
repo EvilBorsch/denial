@@ -35,6 +35,9 @@ pub(super) enum Verification {
     NoMatch,
     Cancelled,
     Unavailable,
+    /// fprintd answered `GetDevices` with an empty list: this host currently
+    /// has no fingerprint reader, so stop polling until the next lock cycle.
+    NoDevices,
 }
 
 pub(super) trait FingerprintBackend {
@@ -140,6 +143,9 @@ fn verify_connection(
         "net.reactivated.Fprint.Manager",
     )?;
     let devices: Vec<OwnedObjectPath> = manager.call("GetDevices", &())?;
+    if devices.is_empty() {
+        return Ok((Verification::NoDevices, None));
+    }
     for path in devices {
         if cancelled() {
             return Ok((Verification::Cancelled, None));
@@ -378,12 +384,25 @@ pub(super) fn run_worker(
         }
         // A rejected scan, or a reader that listened before it failed (a
         // finger lifted too early), arms again at once: the user retries
-        // without a cooldown. Only a reader that fails before listening backs
-        // off, so a host without a usable one is not polled continuously.
+        // without a cooldown. If fprintd reports zero readers, wait until this
+        // lock cycle ends instead of waking fprintd every 30 seconds forever.
         let delay = match result {
             Verification::NoMatch => {
                 publish_no_match(shared, epoch);
                 unavailable_attempts = 0;
+                continue;
+            }
+            Verification::NoDevices => {
+                let mut state = lock_unpoisoned(&shared.state);
+                while !state.stopping
+                    && state.lock_epoch == epoch
+                    && shared.locked.load(Ordering::Acquire)
+                {
+                    state = shared
+                        .condition
+                        .wait(state)
+                        .unwrap_or_else(|error| error.into_inner());
+                }
                 continue;
             }
             _ if healthy => {
@@ -432,6 +451,7 @@ fn finish_app_scan(
             AppFingerprintEvent::Rejected
         }
         Verification::Match => AppFingerprintEvent::Done(AppFingerprintResult::Match),
+        Verification::NoDevices => AppFingerprintEvent::Done(AppFingerprintResult::Unavailable),
         Verification::Unavailable if !healthy => {
             AppFingerprintEvent::Done(AppFingerprintResult::Unavailable)
         }

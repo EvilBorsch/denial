@@ -675,6 +675,13 @@ impl Session<'_, '_> {
             events,
             ..
         } = self;
+        if let Some(closed) = events
+            .system_controls
+            .as_ref()
+            .and_then(system_controls::SystemControls::take_logind_lid_closed)
+        {
+            events.lid.note_logind_state(closed);
+        }
         let Some(closed) = events.lid.take_pending() else {
             return;
         };

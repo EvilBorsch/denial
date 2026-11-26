@@ -133,6 +133,17 @@ impl LidSwitch {
         }
     }
 
+    /// Applies an authoritative hardware lid state transition from logind.
+    /// Advances `generation` so any earlier in-flight reading cannot overwrite
+    /// it.
+    pub(super) fn note_logind_state(&mut self, closed: bool) {
+        self.generation = self.generation.wrapping_add(1);
+        if self.closed != closed {
+            self.pending = Some(closed);
+            self.closed = closed;
+        }
+    }
+
     pub(super) fn take_pending(&mut self) -> Option<bool> {
         self.pending.take()
     }
@@ -187,20 +198,25 @@ pub(super) struct InputDeviceTraits {
     pub(super) touch: bool,
     /// A pen, or a drawing tablet's pad.
     pub(super) tablet: bool,
+    /// A typing keyboard (not power/volume/lid buttons).
+    pub(super) keyboard: bool,
+    /// A touchpad.
+    pub(super) touchpad: bool,
 }
 
-/// Whether a device is ignored while the lid is closed: a touchscreen or a
-/// pen built into the machine. On the OnePlus Pad 3 these are
-/// NVTCapacitiveTouchScreen and NVTCapacitivePen on SPI, which register
-/// touches through the closed cover. A touchscreen or pen plugged in or
-/// paired (USB, Bluetooth) or a virtual one, and every keyboard, touchpad or
-/// mouse, including the keyboard cover's, goes on working; so do the power
-/// and volume keys and the lid switch. A touchscreen whose bus could not be
-/// read counts as built in.
+/// Whether a device is ignored while the lid is closed: a built-in
+/// touchscreen, pen, typing keyboard or touchpad (anything not on USB,
+/// Bluetooth or uinput). On the OnePlus Pad 3 these include
+/// NVTCapacitiveTouchScreen, NVTCapacitivePen (SPI) and the folded pogo
+/// keyboard cover and touchpad (BUS_HOST), which can register spurious
+/// presses against the glass or inside a bag. USB/Bluetooth keyboards, mice,
+/// touchscreens or pens, virtual devices, and the power/volume/lid buttons
+/// keep working. A covered device whose bus could not be read counts as built
+/// in.
 #[cfg(feature = "flutter")]
 pub(super) fn ignored_under_closed_lid(device: InputDeviceTraits) -> bool {
     let attached = matches!(device.bus, Some(BUS_USB | BUS_BLUETOOTH | BUS_VIRTUAL));
-    !attached && (device.touch || device.tablet)
+    !attached && (device.touch || device.tablet || device.keyboard || device.touchpad)
 }
 
 #[cfg(all(test, feature = "flutter"))]
@@ -270,7 +286,7 @@ mod tests {
     }
 
     #[test]
-    fn the_closed_lid_silences_the_built_in_touchscreen_and_pen() {
+    fn the_closed_lid_silences_the_built_in_touchscreen_pen_and_cover() {
         // NVTCapacitiveTouchScreen and NVTCapacitivePen.
         assert!(ignored_under_closed_lid(InputDeviceTraits {
             touch: true,
@@ -279,6 +295,17 @@ mod tests {
         assert!(ignored_under_closed_lid(InputDeviceTraits {
             tablet: true,
             ..device(BUS_SPI)
+        }));
+        // The folded keyboard cover and its touchpad (oneplus-pogo-keyboard,
+        // BUS_HOST): keys/touchpad pressed against the glass in a bag must not
+        // wake the screen.
+        assert!(ignored_under_closed_lid(InputDeviceTraits {
+            keyboard: true,
+            ..device(BUS_HOST)
+        }));
+        assert!(ignored_under_closed_lid(InputDeviceTraits {
+            touchpad: true,
+            ..device(BUS_HOST)
         }));
         // An unreadable bus counts as built in.
         assert!(ignored_under_closed_lid(InputDeviceTraits {
@@ -290,11 +317,10 @@ mod tests {
 
     #[test]
     fn every_other_device_works_under_the_closed_lid() {
-        // The keyboard cover's keyboard and touchpad (oneplus-pogo-keyboard,
-        // BUS_HOST), gpio-keys (volume keys, the lid) and pmic_pwrkey: no
-        // touchscreen or pen.
+        // gpio-keys (volume keys, the lid) and pmic_pwrkey: neither a typing
+        // keyboard nor a touchpad, touchscreen or pen.
         assert!(!ignored_under_closed_lid(device(BUS_HOST)));
-        // A Bluetooth or USB keyboard, mouse, touchscreen or pen.
+        // A Bluetooth or USB keyboard, touchpad, mouse, touchscreen or pen.
         for bus in [BUS_USB, BUS_BLUETOOTH] {
             assert!(!ignored_under_closed_lid(device(bus)));
             assert!(!ignored_under_closed_lid(InputDeviceTraits {
@@ -305,11 +331,48 @@ mod tests {
                 tablet: true,
                 ..device(bus)
             }));
+            assert!(!ignored_under_closed_lid(InputDeviceTraits {
+                keyboard: true,
+                ..device(bus)
+            }));
+            assert!(!ignored_under_closed_lid(InputDeviceTraits {
+                touchpad: true,
+                ..device(bus)
+            }));
         }
-        // uinput, such as a remote session's virtual touchscreen.
+        // uinput, such as a remote session's virtual touchscreen or keyboard.
         assert!(!ignored_under_closed_lid(InputDeviceTraits {
             touch: true,
             ..device(BUS_VIRTUAL)
         }));
+        assert!(!ignored_under_closed_lid(InputDeviceTraits {
+            keyboard: true,
+            ..device(BUS_VIRTUAL)
+        }));
+    }
+
+    #[test]
+    fn logind_lid_state_updates_and_invalidates_older_readings() {
+        let mut lid = LidSwitch::default();
+        let requested_at = lid.generation;
+        lid.note_logind_state(true);
+        assert!(lid.closed());
+        assert_eq!(lid.take_pending(), Some(true));
+
+        // An older in-flight reading saying open cannot undo the close.
+        lid.note_reading(LidReading {
+            generation: requested_at,
+            closed: false,
+        });
+        assert!(lid.closed());
+        assert_eq!(lid.take_pending(), None);
+
+        // Repeating the same state queues nothing.
+        lid.note_logind_state(true);
+        assert_eq!(lid.take_pending(), None);
+
+        lid.note_logind_state(false);
+        assert!(!lid.closed());
+        assert_eq!(lid.take_pending(), Some(false));
     }
 }
