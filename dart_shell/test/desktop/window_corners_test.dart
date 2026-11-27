@@ -2,7 +2,6 @@ import 'dart:ui' as ui;
 
 import 'package:denial_desktop/src/desktop/desktop_window_frame_painter.dart';
 import 'package:denial_flutter_sdk/settings.dart';
-import 'package:denial_flutter_sdk/shell_theme.dart';
 import 'package:denial_flutter_sdk/theme.dart';
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,7 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 ShellThemeData themeOf(Map<String, dynamic> document) {
   final appearance = ShellSettings.fromJson(document).appearance;
   return ShellThemeData(
-    cornerRadiusScale: appearance.cornerRadiusScale,
+    cornerRadiusScale: appearance.interfaceCornerRadiusScale,
     focusedWindowBorderEnabled: appearance.focusedWindowBorderEnabled,
     roundedWindowFrame: appearance.roundedWindowFrame,
     windowCornerRadiusScale: appearance.windowCornerRadiusScale,
@@ -38,7 +37,8 @@ void main() {
     // eb19's document on the tablet: roundness 1.6, focus border off.
     final theme = themeOf(<String, dynamic>{
       'appearance': <String, dynamic>{
-        'cornerRadiusScale': 1.6,
+        'interfaceCornerRadiusScale': 1.6,
+        'windowCornerRadiusScale': 1.6,
         'focusedWindowBorderEnabled': false,
       },
     });
@@ -75,7 +75,7 @@ void main() {
   test('rounded windows take their own roundness and bring the frame back', () {
     final theme = themeOf(<String, dynamic>{
       'appearance': <String, dynamic>{
-        'cornerRadiusScale': 1.6,
+        'interfaceCornerRadiusScale': 1.6,
         'roundedWindowFrame': true,
         'windowCornerRadiusScale': 0.5,
       },

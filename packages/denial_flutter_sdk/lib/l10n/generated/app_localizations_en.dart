@@ -3696,6 +3696,9 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get callVolumeTitle => 'In-call volume';
+
+  @override
   String get volumeTitle => 'Volume';
 
   @override
@@ -5694,4 +5697,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get screensOverviewNewScreen => 'New screen';
+
+  @override
+  String get triggerPointsTile => 'Trigger points';
+
+  @override
+  String get triggerPointsHint =>
+      'Drag L and R to where each shoulder trigger should touch. Hold one to clear it.';
+
+  @override
+  String get triggerPointsReset => 'Clear both';
 }

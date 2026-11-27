@@ -4941,6 +4941,8 @@
       }
     }
   },
+  "callVolumeTitle": "In-call volume",
+  "@callVolumeTitle": {"description": "Playback volume of a phone call, shown when the volume buttons adjust it."},
   "volumeTitle": "Volume",
   "@volumeTitle": {
     "description": "English UI text for volumeTitle."
@@ -7263,5 +7265,11 @@
   "screensOverviewStackExpand": "Show each window of {app}",
   "@screensOverviewStackExpand": {"description": "Accessible label of the count badge that expands a stack of screens of one app.", "placeholders": {"app": {"type": "String"}}},
   "screensOverviewNewScreen": "New screen",
-  "@screensOverviewNewScreen": {"description": "Placeholder card in the screens overview where a window dragged out of a split screen becomes a full-screen screen of its own."}
+  "@screensOverviewNewScreen": {"description": "Placeholder card in the screens overview where a window dragged out of a split screen becomes a full-screen screen of its own."},
+  "triggerPointsTile": "Trigger points",
+  "@triggerPointsTile": {"description": "Quick settings tile that places where the phone's shoulder triggers touch in the app in front."},
+  "triggerPointsHint": "Drag L and R to where each shoulder trigger should touch. Hold one to clear it.",
+  "@triggerPointsHint": {"description": "Hint at the top of the shoulder trigger editor, shown over the app."},
+  "triggerPointsReset": "Clear both",
+  "@triggerPointsReset": {"description": "Shoulder trigger editor button that removes both touch spots for this app."}
 }

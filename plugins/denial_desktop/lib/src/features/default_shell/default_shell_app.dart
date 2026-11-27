@@ -4,6 +4,7 @@ import 'package:denial_flutter_sdk/actions.dart';
 import 'package:denial_flutter_sdk/surfaces.dart';
 import 'package:denial_flutter_sdk/launcher.dart';
 import 'package:denial_flutter_sdk/pets.dart';
+import 'package:denial_flutter_sdk/window_frames.dart';
 
 import '../../core/denial_shell.dart';
 
@@ -25,6 +26,7 @@ import '../../t3_code/t3_dynamic_island.dart';
 import '../../widgets/connectivity/bluetooth_detail_surface.dart';
 import '../../widgets/lock/lock_screen_layer.dart' show LockScreenEditorLayer;
 import '../../widgets/notification_banner.dart';
+import '../../widgets/phone_trigger_points_layer.dart';
 import '../../widgets/system_level_hud.dart';
 import '../mobile/mobile_application_scene.dart';
 import '../mobile/mobile_frame_timing_overlay.dart';
@@ -40,6 +42,7 @@ class DenialShellApp extends StatelessWidget {
     this.actions = const [],
     this.desktopPetHolds,
     this.desktopPetShadows,
+    this.desktopWindowFrame,
     super.key,
   });
 
@@ -49,6 +52,7 @@ class DenialShellApp extends StatelessWidget {
   final List<ShellAction> actions;
   final ShellPetHolds? desktopPetHolds;
   final ShellPetShadows? desktopPetShadows;
+  final ShellWindowFrame? desktopWindowFrame;
 
   @override
   Widget build(BuildContext context) {
@@ -59,6 +63,7 @@ class DenialShellApp extends StatelessWidget {
         desktopActionsProvider.overrideWithValue(actions),
         desktopPetHoldsProvider.overrideWithValue(desktopPetHolds),
         desktopPetShadowsProvider.overrideWithValue(desktopPetShadows),
+        pluginWindowFrameProvider.overrideWithValue(desktopWindowFrame),
       ],
       child: DenialShell(
         desktopWorkArea: desktopWorkArea,
@@ -70,6 +75,7 @@ class DenialShellApp extends StatelessWidget {
             T3DynamicIslandOverlay(mobile: true),
             MobileWallpaperSelectorLayer(),
             LockScreenEditorLayer(),
+            PhoneTriggerPointsLayer(),
             MobileFrameTimingOverlay(),
             GlassBenchmarkLayer(),
           ],

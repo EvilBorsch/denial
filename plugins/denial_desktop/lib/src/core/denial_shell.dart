@@ -124,7 +124,8 @@ class DenialShell extends ConsumerWidget {
       colors: colors,
       accent: accent,
       fontFamily: appearance.fontFamily,
-      cornerRadiusScale: appearance.cornerRadiusScale,
+      cornerRadiusScale: appearance.interfaceCornerRadiusScale,
+      windowCornerRadiusScale: appearance.windowCornerRadiusScale,
       panelOpacity: appearance.panelOpacity,
       cardOpacity: appearance.cardOpacity,
       transparencyMode: appearance.transparencyMode,
@@ -135,9 +136,7 @@ class DenialShell extends ConsumerWidget {
       focusedWindowOpacity: appearance.focusedWindowOpacity,
       unfocusedWindowOpacity: appearance.unfocusedWindowOpacity,
       roundedWindowFrame: appearance.roundedWindowFrame,
-      windowCornerRadiusScale: appearance.windowCornerRadiusScale,
     );
-    final bridge = ref.watch(denialBridgeProvider);
     final screenshotHidesCursor = ref.watch(
       screenshotSelectionProvider.select(
         (session) => session?.hidesCursor ?? false,
@@ -165,23 +164,18 @@ class DenialShell extends ConsumerWidget {
       scene: fingerprint,
       locked: locked,
       onLaidOut: ref.read(fingerprintSceneProvider.notifier).laidOut,
-      child: ShellCursorHost(
+      child: StagecraftCursor(
         theme:
             effectivePresentation == ReferenceShellProfile.desktop ||
                 split != null
             ? cursorTheme
             : ShellCursorThemes.bibataModernIce,
-        platformCursorShapes: bridge.cursorShapes,
-        platformCursorStates: bridge.cursorStates,
-        platformCursorPositions: bridge.cursorPositions,
-        platformDragIcons: bridge.dragIcons,
-        hideCursor: hideCursor,
-        displayLayout: displayLayout,
-        cursorSize: appearance.cursorSize,
-        onCursorStatePresented: bridge.acknowledgeCursorPresented,
+        layout: displayLayout,
         benchmarkSocket: ref.watch(
           startupEnvironmentProvider,
         )['DENIAL_CURSOR_BENCHMARK_SOCKET'],
+        hidden: hideCursor,
+        size: appearance.cursorSize,
         // The tablet and the desktop presentations of one screen dissolve
         // into each other once the windows have their new sizes.
         child: PresentationSwitchCover(
@@ -247,11 +241,6 @@ class _PhoneDeskScene extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final split = this.split;
     final active = ref.read(activeShellPartProvider.notifier);
-    final monitorCornerRadiusScale = ref.watch(
-      shellSettingsProvider.select(
-        (settings) => settings.appearance.monitorCornerRadiusScale,
-      ),
-    );
     Widget part(ShellPart part, Widget child) => Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (_) => active.note(part),
@@ -266,17 +255,11 @@ class _PhoneDeskScene extends ConsumerWidget {
             key: const ValueKey(ShellPart.desk),
             child: part(
               ShellPart.desk,
-              // The desk keeps its own corners; the phone's are tuned for the
-              // mobile shell.
-              ShellTheme(
-                data: ShellTheme.of(context)
-                    .copyWith(cornerRadiusScale: monitorCornerRadiusScale),
-                child: _ProfileScene(
-                  profile: ReferenceShellProfile.desktop,
-                  policyProfile: policyProfile,
-                  scene: desktop,
-                  besidePhone: true,
-                ),
+              _ProfileScene(
+                profile: ReferenceShellProfile.desktop,
+                policyProfile: policyProfile,
+                scene: desktop,
+                besidePhone: true,
               ),
             ),
           ),

@@ -9,6 +9,8 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:denial_flutter_sdk/platform.dart';
+import 'package:denial_flutter_sdk/models.dart'
+    show DenialKeyboardConfiguration;
 import 'package:denial_flutter_sdk/settings.dart';
 import 'package:denial_flutter_sdk/system_services.dart';
 import 'package:denial_flutter_sdk/state.dart';
@@ -16,6 +18,7 @@ import 'package:denial_flutter_sdk/motion.dart';
 import 'package:denial_flutter_sdk/shell_theme.dart';
 
 import 'liquid_pill.dart';
+import 'osk/osk_layouts.dart';
 import 'osk/shell_osk_panel.dart';
 import '../state/input_deck.dart';
 
@@ -745,13 +748,14 @@ class _EdgePanelContent extends ConsumerWidget {
       referenceShellProvider.select((state) => state.oskShortcuts),
     );
     final controller = ref.read(referenceShellProvider.notifier);
+    final keyboard =
+        ref.watch(
+          keyboardConfigurationProvider.select((state) => state.configuration),
+        ) ??
+        const DenialKeyboardConfiguration.defaults();
+    final layout = keyboard.active;
+    final switches = keyboard.layouts.length > 1;
     final theme = ShellTheme.of(context);
-    final languages = ShellOskLanguages.of(
-      ref.watch(
-        keyboardConfigurationProvider.select((state) => state.configuration),
-      ),
-      shellLanguage: Localizations.maybeLocaleOf(context)?.languageCode ?? '',
-    );
     // The keys sit beside the clipped glass, not in it: key popups rise
     // above the panel's top edge.
     return Stack(
@@ -779,6 +783,9 @@ class _EdgePanelContent extends ConsumerWidget {
           // editor before its command is delivered.
           child: TextFieldTapRegion(
             child: ShellOskPanel(
+              layout: oskLetterLayout(layout.layout, layout.variant),
+              layoutName: layout.label,
+              onNextLayout: switches ? bridge.nextKeyboardLayout : null,
               onKeyDown: vibrate ? haptics.pulse : null,
               onKey: (intent) => _sendOskIntent(bridge, intent),
               shortcuts: shortcuts,
@@ -792,9 +799,6 @@ class _EdgePanelContent extends ConsumerWidget {
                 touchY: word.touchY,
                 manualCapital: word.manualCapital,
               ),
-              languages: languages,
-              onSelectLayout: bridge.selectKeyboardLayout,
-              onTypingLayouts: bridge.setKeyboardTypingLayouts,
             ),
           ),
         ),

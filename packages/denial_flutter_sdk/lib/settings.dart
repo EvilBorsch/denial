@@ -2,6 +2,7 @@
 library;
 
 export 'src/settings/input_deck_settings.dart' show InputDeckSettings;
+export 'src/settings/shell_scale.dart' show ShellScale;
 export 'src/settings/t3_code_settings.dart'
     show
         ShellT3CodeSettings,
@@ -83,10 +84,12 @@ export 'src/settings/shell_settings.dart'
         ShellLockScreenSettings,
         ShellOverlaySettings,
         ShellOverlaySurface,
+        ShellPhoneTriggerSettings,
         ShellPowerSettings,
         ShellPresentationMode,
         ShellPresentationSettings,
         ShellSettings,
+        ShellTriggerPoints,
         WorkspaceSwitchingOrientation,
         applicationEnvironmentMaximumDesktopFileIdBytes,
         applicationEnvironmentMaximumNameBytes,

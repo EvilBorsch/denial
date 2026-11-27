@@ -4,9 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
 import 'package:path/path.dart' as p;
 
-/// The saved cursor size is in logical pixels, like `XCURSOR_SIZE`: cursor
-/// artwork keeps its look at every display scale, `size × scale` physical
-/// pixels on each output.
+/// The saved cursor size is in logical pixels, as `XCURSOR_SIZE` is for apps:
+/// on each display the cursor is this size times the display's scale, drawn
+/// from the smallest rendition at least that large.
 const double shellCursorMinimumSize = 16;
 const double shellCursorDefaultSize = 32;
 const double shellCursorMaximumSize = 64;
@@ -46,6 +46,17 @@ class ShellCursorFrameData {
   final Offset hotspot;
 }
 
+/// A larger rendering of a role's artwork, drawn for its own size rather
+/// than scaled up. Its frames live in `SIZE/` inside the role directory.
+@immutable
+class ShellCursorRenditionData {
+  const ShellCursorRenditionData(this.extent, this.hotspot);
+
+  /// Longest edge in pixels, and the name of its directory.
+  final int extent;
+  final Offset hotspot;
+}
+
 @immutable
 class ShellCursorRoleData {
   const ShellCursorRoleData({
@@ -55,6 +66,7 @@ class ShellCursorRoleData {
     this.frameCount = 1,
     this.frameDuration = Duration.zero,
     this.frames = const <ShellCursorFrameData>[],
+    this.renditions = const <ShellCursorRenditionData>[],
   }) : assert(frameCount > 0);
 
   final String assetDirectory;
@@ -67,6 +79,31 @@ class ShellCursorRoleData {
   final int frameCount;
   final Duration frameDuration;
   final List<ShellCursorFrameData> frames;
+
+  /// Larger renderings, smallest first. Only for numbered frames: explicit
+  /// [frames] come in one size.
+  final List<ShellCursorRenditionData> renditions;
+
+  double get nativeExtent =>
+      size.width > size.height ? size.width : size.height;
+
+  /// The smallest rendition whose longest edge reaches [pixels], the largest
+  /// if none does, or null when the native artwork is large enough.
+  ShellCursorRenditionData? renditionFor(double pixels) {
+    // Half a pixel of slack keeps a 32 px cursor at a 1.0000001 scale on
+    // the 32 px artwork.
+    if (frames.isNotEmpty ||
+        renditions.isEmpty ||
+        pixels <= nativeExtent + 0.5) {
+      return null;
+    }
+    for (final rendition in renditions) {
+      if (pixels <= rendition.extent + 0.5) {
+        return rendition;
+      }
+    }
+    return renditions.last;
+  }
 
   int get effectiveFrameCount => frames.isEmpty ? frameCount : frames.length;
 
@@ -92,11 +129,14 @@ class ShellCursorRoleData {
     return hotspot;
   }
 
-  String relativeFramePath(int frame) {
+  String relativeFramePath(int frame, [ShellCursorRenditionData? rendition]) {
     if (frames.isNotEmpty) {
       return frames[frame % frames.length].path;
     }
     final frameName = (frame % frameCount).toString().padLeft(2, '0');
+    if (rendition != null) {
+      return '$assetDirectory/${rendition.extent}/$frameName.png';
+    }
     return '$assetDirectory/$frameName.png';
   }
 }
@@ -110,7 +150,6 @@ class ShellCursorThemeData {
     required this.assetRoot,
     this.fileRoot,
     required this.roles,
-    this.assetScales = const <double>[1],
   });
 
   final String id;
@@ -122,25 +161,6 @@ class ShellCursorThemeData {
   final String? fileRoot;
   final Map<ShellCursorKind, ShellCursorRoleData> roles;
 
-  /// Pixel densities the bundled frames come in, ascending: a frame of
-  /// density 2 is `2.0x/00.png` beside `00.png`, twice its size in pixels.
-  final List<double> assetScales;
-
-  /// The density of frames drawn at [pixelScale] device pixels per native
-  /// pixel: the smallest that is not lower, so frames are reduced rather
-  /// than enlarged, or the highest there is.
-  double assetScaleFor(double pixelScale) {
-    if (assetRoot == null) {
-      return 1;
-    }
-    for (final scale in assetScales) {
-      if (scale >= pixelScale - 0.001) {
-        return scale;
-      }
-    }
-    return assetScales.last;
-  }
-
   bool get usesImageFrames => assetRoot != null || fileRoot != null;
   bool get isImported => fileRoot != null;
 
@@ -148,33 +168,26 @@ class ShellCursorThemeData {
     return roles[kind] ?? roles[ShellCursorKind.normal]!;
   }
 
-  String assetPath(ShellCursorKind kind, int frame) {
+  String assetPath(
+    ShellCursorKind kind,
+    int frame, [
+    ShellCursorRenditionData? rendition,
+  ]) {
     final root = assetRoot;
     assert(root != null, 'The vector cursor has no asset path.');
     final role = roleFor(kind);
-    return '$root/${role.relativeFramePath(frame)}';
+    return '$root/${role.relativeFramePath(frame, rendition)}';
   }
 
-  /// The frame drawn at [pixelScale] device pixels per native pixel.
   ImageProvider<Object>? imageProvider(
     ShellCursorKind kind,
-    int frame, {
-    double pixelScale = 1,
-  }) {
+    int frame, [
+    ShellCursorRenditionData? rendition,
+  ]) {
     final role = roleFor(kind);
-    final relativePath = role.relativeFramePath(frame);
+    final relativePath = role.relativeFramePath(frame, rendition);
     if (assetRoot case final root?) {
-      // Exact keys: AssetImage would pick its own variant by the display's
-      // ratio alone, and enlarge the 2x frames at 2.25.
-      final scale = assetScaleFor(pixelScale);
-      final path = scale == 1
-          ? relativePath
-          : p.posix.join(
-              p.posix.dirname(relativePath),
-              '${scale}x',
-              p.posix.basename(relativePath),
-            );
-      return ExactAssetImage('$root/$path', scale: scale);
+      return AssetImage('$root/$relativePath');
     }
     if (fileRoot case final root?) {
       return FileImage(File(p.join(root, relativePath)));
@@ -182,22 +195,19 @@ class ShellCursorThemeData {
     return null;
   }
 
-  /// Every frame, as drawn for a cursor [longestEdge] logical pixels long on
-  /// a display of [devicePixelRatio].
-  Iterable<ImageProvider<Object>> imageProviders({
-    double longestEdge = 0,
-    double devicePixelRatio = 1,
-  }) sync* {
+  /// Every role's native frames.
+  Iterable<ImageProvider<Object>> get imageProviders => imageProvidersFor(0);
+
+  /// The frames of the rendition a cursor [pixels] wide draws from.
+  Iterable<ImageProvider<Object>> imageProvidersFor(double pixels) sync* {
     if (!usesImageFrames) {
       return;
     }
     for (final kind in ShellCursorKind.values) {
       final role = roleFor(kind);
-      final pixelScale = longestEdge > 0
-          ? longestEdge / role.size.longestSide * devicePixelRatio
-          : 1.0;
+      final rendition = role.renditionFor(pixels);
       for (var frame = 0; frame < role.effectiveFrameCount; frame += 1) {
-        yield imageProvider(kind, frame, pixelScale: pixelScale)!;
+        yield imageProvider(kind, frame, rendition)!;
       }
     }
   }
@@ -211,6 +221,9 @@ class ShellCursorThemeData {
       final role = roleFor(kind);
       for (var frame = 0; frame < role.effectiveFrameCount; frame += 1) {
         yield assetPath(kind, frame);
+        for (final rendition in role.renditions) {
+          yield assetPath(kind, frame, rendition);
+        }
       }
     }
   }
@@ -219,90 +232,146 @@ class ShellCursorThemeData {
 abstract final class ShellCursorThemes {
   static const _bibataSize = Size(32, 32);
 
+  /// Bibata's 48, 64 and 96 px renderings of a cursor centred on its canvas.
+  static const _bibataCentred = <ShellCursorRenditionData>[
+    ShellCursorRenditionData(48, Offset(24, 24)),
+    ShellCursorRenditionData(64, Offset(32, 32)),
+    ShellCursorRenditionData(96, Offset(48, 48)),
+  ];
+
   static const _bibataNormal = ShellCursorRoleData(
     assetDirectory: 'normal',
     size: _bibataSize,
     hotspot: Offset(6, 2),
+    renditions: <ShellCursorRenditionData>[
+      ShellCursorRenditionData(48, Offset(10, 3)),
+      ShellCursorRenditionData(64, Offset(13, 4)),
+      ShellCursorRenditionData(96, Offset(20, 6)),
+    ],
   );
   static const _bibataHelp = ShellCursorRoleData(
     assetDirectory: 'help',
     size: _bibataSize,
     hotspot: Offset(5, 10),
+    renditions: <ShellCursorRenditionData>[
+      ShellCursorRenditionData(48, Offset(7, 16)),
+      ShellCursorRenditionData(64, Offset(10, 21)),
+      ShellCursorRenditionData(96, Offset(15, 32)),
+    ],
   );
   static const _bibataWorking = ShellCursorRoleData(
     assetDirectory: 'working',
     size: _bibataSize,
     hotspot: Offset(6, 2),
+    renditions: <ShellCursorRenditionData>[
+      ShellCursorRenditionData(48, Offset(10, 3)),
+      ShellCursorRenditionData(64, Offset(13, 4)),
+      ShellCursorRenditionData(96, Offset(20, 6)),
+    ],
   );
   static const _bibataText = ShellCursorRoleData(
     assetDirectory: 'text',
     size: _bibataSize,
     hotspot: Offset(16, 16),
+    renditions: _bibataCentred,
   );
   static const _bibataLink = ShellCursorRoleData(
     assetDirectory: 'link',
     size: _bibataSize,
     hotspot: Offset(14, 2),
+    renditions: <ShellCursorRenditionData>[
+      ShellCursorRenditionData(48, Offset(21, 3)),
+      ShellCursorRenditionData(64, Offset(28, 4)),
+      ShellCursorRenditionData(96, Offset(42, 6)),
+    ],
   );
   static const _bibataBusy = ShellCursorRoleData(
     assetDirectory: 'busy',
     size: _bibataSize,
     hotspot: Offset(16, 16),
+    renditions: _bibataCentred,
   );
   static const _bibataPrecision = ShellCursorRoleData(
     assetDirectory: 'precision',
     size: _bibataSize,
     hotspot: Offset(16, 16),
+    renditions: _bibataCentred,
   );
   static const _bibataHandwriting = ShellCursorRoleData(
     assetDirectory: 'handwriting',
     size: _bibataSize,
     hotspot: Offset(5, 26),
+    renditions: <ShellCursorRenditionData>[
+      ShellCursorRenditionData(48, Offset(8, 39)),
+      ShellCursorRenditionData(64, Offset(11, 52)),
+      ShellCursorRenditionData(96, Offset(17, 79)),
+    ],
   );
   static const _bibataUnavailable = ShellCursorRoleData(
     assetDirectory: 'unavailable',
     size: _bibataSize,
     hotspot: Offset(16, 16),
+    renditions: _bibataCentred,
   );
   static const _bibataVerticalResize = ShellCursorRoleData(
     assetDirectory: 'vertical_resize',
     size: _bibataSize,
     hotspot: Offset(16, 16),
+    renditions: _bibataCentred,
   );
   static const _bibataHorizontalResize = ShellCursorRoleData(
     assetDirectory: 'horizontal_resize',
     size: _bibataSize,
     hotspot: Offset(16, 16),
+    renditions: _bibataCentred,
   );
   static const _bibataDiagonalNwSeResize = ShellCursorRoleData(
     assetDirectory: 'diagonal_nwse',
     size: _bibataSize,
     hotspot: Offset(16, 16),
+    renditions: _bibataCentred,
   );
   static const _bibataDiagonalNeSwResize = ShellCursorRoleData(
     assetDirectory: 'diagonal_nesw',
     size: _bibataSize,
     hotspot: Offset(16, 16),
+    renditions: _bibataCentred,
   );
   static const _bibataMove = ShellCursorRoleData(
     assetDirectory: 'move',
     size: _bibataSize,
     hotspot: Offset(16, 16),
+    renditions: _bibataCentred,
   );
   static const _bibataAlternate = ShellCursorRoleData(
     assetDirectory: 'alternate',
     size: _bibataSize,
     hotspot: Offset(12, 8),
+    renditions: <ShellCursorRenditionData>[
+      ShellCursorRenditionData(48, Offset(18, 12)),
+      ShellCursorRenditionData(64, Offset(25, 16)),
+      ShellCursorRenditionData(96, Offset(37, 24)),
+    ],
   );
   static const _bibataPerson = ShellCursorRoleData(
     assetDirectory: 'person',
     size: _bibataSize,
     hotspot: Offset(4, 1),
+    renditions: <ShellCursorRenditionData>[
+      ShellCursorRenditionData(48, Offset(6, 2)),
+      ShellCursorRenditionData(64, Offset(9, 2)),
+      ShellCursorRenditionData(96, Offset(13, 4)),
+    ],
   );
   static const _bibataPin = ShellCursorRoleData(
     assetDirectory: 'pin',
     size: _bibataSize,
     hotspot: Offset(4, 1),
+    renditions: <ShellCursorRenditionData>[
+      ShellCursorRenditionData(48, Offset(6, 2)),
+      ShellCursorRenditionData(64, Offset(9, 2)),
+      ShellCursorRenditionData(96, Offset(13, 4)),
+    ],
   );
 
   static const bibataModernIce = ShellCursorThemeData(
@@ -310,7 +379,6 @@ abstract final class ShellCursorThemes {
     label: 'Bibata Modern Ice',
     author: 'Abdulkaiz Khatri',
     assetRoot: 'packages/denial_flutter_sdk/assets/cursors/bibata_modern_ice',
-    assetScales: <double>[1, 2, 3],
     roles: <ShellCursorKind, ShellCursorRoleData>{
       ShellCursorKind.normal: _bibataNormal,
       ShellCursorKind.help: _bibataHelp,
