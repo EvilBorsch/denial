@@ -1,11 +1,11 @@
-# Building Denial 0.6.8 parts for the tablet (EvilBorsch fork)
+# Building Denial 0.6.10 parts for the tablet (EvilBorsch fork)
 
 This fork changes Denial's Flutter shell (`dart_shell`, `plugins/*`,
 `packages/*`), the compositor `deniald` and its portal `denial-portal`; the
 fork [EvilBorsch/denial-apps](https://github.com/EvilBorsch/denial-apps)
-changes Settings. The Flutter engine package (`denial-flutter-engine`
-0.6.8-1, ABI `3.47.5.denial1`), `denialctl`, the polkit agent and Settings'
-Wi-Fi country helper stay the signed v0.6.8 release builds. A change is
+changes Settings. The signed v0.6.10 provides `denialctl`, the polkit agent and Settings'
+Wi-Fi country helper. The shell can use the signed Flutter engine or our
+rebuilt engine with ABI `3.47.5.denial2`. A change is
 installed as a `denial` package made from the release's, in which only these
 differ:
 
@@ -23,16 +23,16 @@ The AOT shell must fit the installed engine exactly: the same Dart VM
 `product … arm64 linux no-compressed-pointers`) and the same `dart:ui`, which
 Denial's Flutter fork extends (glass filters, window surfaces). Denial ships
 both in its signed release: the plugin build kit inside
-`denial-plugin-manager_0.6.8-1_arm64.deb` carries the fork's
+`denial-plugin-manager_0.6.10-1_arm64.deb` carries the fork's
 `flutter_patched_sdk` (product `dart:ui`) and the arm64 `gen_snapshot`,
 `impellerc` and `font-subset` of the very engine build in
-`denial-flutter-engine_0.6.8-1`.
+`denial-flutter-engine_0.6.10-1`.
 
 `tools/eb-build-shell` puts those tools behind a Flutter local-engine view,
 runs the arm64 ones under qemu-user, and assembles the shell with the fork's
 `flutter` tool at the revision in `prebuilt/flutter-engine/SOURCE_LOCK.json`
 and the same defines as `tools/denial-pc build_bundle`. It fails unless the
-result carries the 0.6.8 engine's snapshot identity.
+result carries the release engine's snapshot identity.
 
 Verified on 22.11.2026: built from the untouched `v0.6.8` tag, the bundle is
 bit-identical to the release's (`libapp.so` SHA-256
@@ -41,7 +41,7 @@ bit-identical to the release's (`libapp.so` SHA-256
 
 `deniald` loads the engine with `dlopen` and talks to it through the
 embedder API of the same ABI, so a rebuilt `deniald` runs with the release's
-engine package as long as `FLUTTER_ENGINE_ABI` stays `3.47.5.denial1`.
+engine package as long as `FLUTTER_ENGINE_ABI` stays `3.47.5.denial2`.
 
 ## Prerequisites
 
@@ -64,7 +64,7 @@ extracted build kit. Downloads are pinned by SHA-256 or Git revision.
 ```sh
 git clone https://github.com/EvilBorsch/denial ~/androidlinux/components/denial
 cd ~/androidlinux/components/denial
-git checkout eb/compositor-inhibit-keyboard   # or the branch to build
+git switch eb/main
 EB_JOBS=4 tools/eb-build-shell ~/work-denial-shell/out
 ```
 
@@ -78,7 +78,7 @@ data/flutter_assets/...
 ```
 
 The bundle keeps the release's `.denial-ui-source.json` on the device: plugin
-bundles built with the 0.6.8 kit keep loading.
+bundles built with the v0.6.10 kit keep loading.
 
 ## Build deniald
 
@@ -111,7 +111,7 @@ EB_JOBS=8 tools/eb-build-deniald build ~/work-denial-sysroot ~/work-denial-denia
 
 About 8 minutes with 8 jobs. The Cargo target directory is
 `~/work-denial-deniald/target` (`EB_WORK`). The binary names the fork's
-commit as its build (`deniald --version`: `deniald 0.6.8 (build
+commit as its build (`deniald --version`: `deniald 0.6.10 (build
 eb.g<commit>; …)` once installed); `out/deniald.txt` lists its SHA-256, the
 libraries it links and the glibc symbol versions it needs.
 
@@ -187,10 +187,8 @@ Settings and Welcome are one program, `/usr/lib/denial-apps/settings`: the
 GPUI application `apps/settings` of
 [denial-apps](https://github.com/denialwm/denial-apps), built against
 [gpui-touch](https://github.com/denialwm/gpui-touch). `settings/SOURCE_LOCK.json`
-names the commits the release built: denial-apps `17c3912`, gpui-touch
-`c6d8562`. In the fork `EvilBorsch/denial-apps`, `eb/main` is that
-denial-apps commit and changes are on `eb/<topic>` branches; gpui-touch is
-not changed and is built at the locked commit.
+names the upstream release pins. The tablet's package uses the app fork's
+`eb/main` or `mainforme` and gpui-touch `859cd0cf98`.
 
 denial-apps finds gpui-touch beside itself (`../../../gpui-touch` from
 `apps/settings`), so the two checkouts sit side by side:
@@ -199,9 +197,9 @@ denial-apps finds gpui-touch beside itself (`../../../gpui-touch` from
 cd ~/androidlinux/components
 git clone https://github.com/EvilBorsch/denial-apps
 git -C denial-apps remote add upstream https://github.com/denialwm/denial-apps
-git -C denial-apps switch eb/wifi-join          # or the branch to build
+git -C denial-apps switch eb/main
 git clone https://github.com/denialwm/gpui-touch
-git -C gpui-touch checkout --detach c6d856299c3206311045e5135abb4dc0455e97d2
+git -C gpui-touch checkout --detach 859cd0cf989a5fe4d2f2bb0cf5442940fc4aba6
 ```
 
 Build as the release does (`tools/denial-settings build`: `cargo build
@@ -292,10 +290,10 @@ other.
 
 ```sh
 EB_PORTAL=~/work-denial-deniald/out/denial-portal \
-  tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb3 ~/debs ~/work-denial-deniald/out/deniald
+  tools/eb-repack-deb ~/work-denial-shell/out 0.6.10-1+eb1 ~/debs ~/work-denial-deniald/out/deniald
 ```
 
-It takes the signed `denial_0.6.8-1_arm64.deb`, replaces the two shell paths
+It takes the signed `denial_0.6.10-1_arm64.deb`, replaces the two shell paths
 and, with the fourth argument, `/usr/bin/deniald` (with `EB_PORTAL` also
 `/usr/bin/denial-portal`, which needs the `deniald` built with it), and sets
 the version and maintainer. If the new `deniald` needs a newer glibc than the package's
@@ -305,8 +303,8 @@ symbol version a new binary imports (`deniald` since `eb/touchpad`: 1.26). Every
 conffiles (`/etc/denial/session.conf` stays as packaged) and the maintainer
 scripts are the release's, except that the postinst gives `deniald`
 `cap_sys_nice` (the package depends on `libcap2-bin` for `setcap`). It
-installs over 0.6.8-1 and earlier `+ebN` builds with the release's engine
-package, `denial-flutter-engine (= 0.6.8-1)`.
+installs over 0.6.10-1 and earlier `+ebN` builds. It defaults to the release's
+engine package, `denial-flutter-engine (= 0.6.10-1)`.
 
 A fifth argument, a `settings` from `tools/eb-build-settings`, replaces
 `/usr/lib/denial-apps/settings` and nothing else of Settings: the Wi-Fi
@@ -316,7 +314,7 @@ commits) stay the release's. `''` as the fourth argument keeps the release's
 `deniald`:
 
 ```sh
-tools/eb-repack-deb ~/work-denial-shell/out 0.6.8-1+eb11 ~/debs \
+tools/eb-repack-deb ~/work-denial-shell/out 0.6.10-1+eb1 ~/debs \
     ~/work-denial-deniald/out/deniald ~/work-denial-settings/out/settings
 ```
 
@@ -394,7 +392,7 @@ bit-identical to the one in `denial-flutter-engine_0.6.8-1_arm64.deb`
 
 `build` makes the engine library only. A changed engine is built from the
 trees as they are on disk by `prepare-app-build` with the same environment
-(Denial's development path; not run here yet), which also builds the arm64
+(Denial's development path), which also builds the arm64
 `gen_snapshot`, `impellerc`, `font-subset` and `flutter_patched_sdk` and the
 build machine's Dart SDK. A change to Impeller or Skia leaves the Dart VM and
 `dart:ui` alone, so the shell from `tools/eb-build-shell` stays valid for it:
@@ -403,41 +401,33 @@ in `libapp.so`.
 
 ### A changed engine as a package
 
-eb20 ships the first changed engine: `eb/snapshot-attachments` of the Flutter
-fork (`f0c7fcb2350e`), where a picture snapshot keeps the multisample colour
-and depth/stencil attachments of the previous snapshot of the same size
-instead of allocating 260 MB anew. It was built from that commit checked out
-in `~/androidlinux/components/flutter` with `prepare-app-build` and the
-environment above, which stages the engine in
+The Flutter fork's `eb/main` carries the tablet's 0.6.10 engine changes.
+Check out that branch in the Flutter tree and build it with
+`prepare-app-build` and the environment above. It stages
+`libflutter_engine.so` in
 `~/.cache/denial/flutter-engine/build/out/denial_linux_arm64_release`.
-`tools/eb-repack-engine-deb` puts it into the signed release's engine
-package; it refuses an engine without the release's snapshot identity:
+The repacker verifies the signed upstream package's hash and checks that
+the rebuilt engine carries the matching Dart snapshot identity.
 
 ```sh
-tools/eb-repack-engine-deb     ~/.cache/denial/flutter-engine/build/out/denial_linux_arm64_release/libflutter_engine.so     0.6.8-1+eb1 ~/debs f0c7fcb2350e
-EB_ENGINE=0.6.8-1+eb1 EB_PORTAL=... tools/eb-repack-deb ...
+engine_dir=$HOME/.cache/denial/flutter-engine/build/out/denial_linux_arm64_release
+flutter_commit=$(git -C ~/androidlinux/components/flutter rev-parse --short=12 HEAD)
+tools/eb-repack-engine-deb "$engine_dir/libflutter_engine.so" \
+    0.6.10-1+eb2 ~/debs "$flutter_commit"
+EB_ENGINE=0.6.10-1+eb2 EB_PORTAL=~/work-denial-deniald/out/denial-portal \
+  tools/eb-repack-deb ~/work-denial-shell/out 0.6.10-1+eb3 ~/debs \
+    ~/work-denial-deniald/out/deniald ~/work-denial-settings/out/settings
 ```
 
-With `EB_ENGINE` the `denial` package depends on exactly that engine
-version instead of the release's `0.6.8-1`.
-
-Denial renders with Impeller GLES only: the engine is built with
-`shell_enable_vulkan = false`, and `deniald` hands the engine an OpenGL
-renderer configuration (`FlutterRendererType_kOpenGL` in
-`compositor/flutter-engine/src/host.rs`); no setting or environment variable
-selects another. Impeller Vulkan would need both an engine and a `deniald`
-change. The engine without the three Vulkan-off arguments does not compile
-in a Slimpeller build: the embedder still compiles its Skia Vulkan surface
-(`embedder_surface_vulkan.{h,cc}`), whose `ContextType` Slimpeller leaves
-out; everything else compiles (`ninja -k 0`). It needs the `!slimpeller`
-gate the GL Skia surface has. `deniald` would have to supply a `FlutterVulkanRendererConfig` and
-Vulkan backing stores, and the embedder API has no Vulkan external textures,
-through which Denial shows client windows today.
+The exact `EB_ENGINE` dependency keeps both packages on the same engine
+generation. Denial 0.6.10 uses Stagecraft Vulkan and Impeller Vulkan when
+the Vulkan path is available.
 
 ## Another Denial release
 
-The pins in `tools/eb-build-shell` and `tools/eb-repack-deb` (kit and package
-SHA-256, snapshot identity) belong to v0.6.8. For another release, take that
+The pins in `tools/eb-build-shell`, `tools/eb-repack-deb` and
+`tools/eb-repack-engine-deb` (package SHA-256 and snapshot identity) belong to
+v0.6.10. For another release, take that
 release's `denial-plugin-manager_*_arm64.deb` and `denial_*_arm64.deb`, check
 them against its signed `SHA256SUMS`, read the snapshot identity of its
 `libapp.so`, update the pins, and first rebuild the untouched release tag to
