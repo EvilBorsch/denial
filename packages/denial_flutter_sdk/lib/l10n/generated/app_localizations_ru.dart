@@ -3739,6 +3739,9 @@ class AppLocalizationsRu extends AppLocalizations {
   }
 
   @override
+  String get callVolumeTitle => 'In-call volume';
+
+  @override
   String get volumeTitle => 'Громкость';
 
   @override
@@ -5752,4 +5755,14 @@ class AppLocalizationsRu extends AppLocalizations {
 
   @override
   String get screensOverviewNewScreen => 'Новый экран';
+
+  @override
+  String get triggerPointsTile => 'Точки триггеров';
+
+  @override
+  String get triggerPointsHint =>
+      'Перетащите L и R туда, куда должны нажимать триггеры. Удерживайте, чтобы очистить.';
+
+  @override
+  String get triggerPointsReset => 'Очистить оба';
 }

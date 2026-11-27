@@ -3524,6 +3524,9 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get callVolumeTitle => '通话音量';
+
+  @override
   String get volumeTitle => '音量';
 
   @override
@@ -5426,4 +5429,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get screensOverviewNewScreen => '新屏幕';
+
+  @override
+  String get triggerPointsTile => '肩键触点';
+
+  @override
+  String get triggerPointsHint => '将 L 和 R 拖到每个肩键要点按的位置。长按可清除。';
+
+  @override
+  String get triggerPointsReset => '全部清除';
 }

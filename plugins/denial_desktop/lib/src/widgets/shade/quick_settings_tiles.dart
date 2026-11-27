@@ -54,6 +54,7 @@ class QuickSettingsTiles extends StatelessWidget {
     this.volumeControl,
     this.expansionProgress,
     this.footerTiles = const [],
+    this.spareTile,
     this.heightFactor = 1,
     required this.wifi,
     required this.wifiSubtitle,
@@ -81,8 +82,13 @@ class QuickSettingsTiles extends StatelessWidget {
 
   /// Rows below the grid, aligned with its columns: a square tile takes one
   /// column and a wide one two, four columns to a row
-  /// ([quickSettingsFooterCells]).
+  /// ([quickSettingsFooterCells]). A tile that does not fit beside the ones
+  /// before it starts the next row.
   final List<QuickTile> footerTiles;
+
+  /// A square tile for the cell the power tile leaves free beside Silent.
+  /// With a power tile there is no free cell, and it ends the footer.
+  final QuickTile? spareTile;
 
   /// How much taller than the reference the tiles are; their labels and the
   /// gaps between rows keep their size.
@@ -99,7 +105,7 @@ class QuickSettingsTiles extends StatelessWidget {
   final bool dndReady;
 
   /// The power profile, or null when no power-profile service answers: no
-  /// power tile, and Silent takes its cell.
+  /// power tile, Silent takes its cell, and the spare tile Silent's.
   final String? profile;
   final VoidCallback onToggleWifi;
   final VoidCallback onOpenWifi;
@@ -143,7 +149,12 @@ class QuickSettingsTiles extends StatelessWidget {
         final wide = column * 2 + gutter;
         final tall = capsule * 2 + gutter;
         final silentColumn = profile == null ? 2 : 3;
-        final footerCells = quickSettingsFooterCells(footerTiles);
+        final spare = profile == null ? spareTile : null;
+        final footer = [
+          ...footerTiles,
+          if (profile != null && spareTile != null) spareTile!,
+        ];
+        final footerCells = quickSettingsFooterCells(footer);
         final footerRows = footerCells.isEmpty ? 0 : footerCells.last.$1 + 1;
         // A row with a square tile is as tall as the grid's labelled row;
         // one of wide capsules only, a capsule. Rows keep a gutter apart.
@@ -151,7 +162,7 @@ class QuickSettingsTiles extends StatelessWidget {
         var footerBottom = row * 3;
         for (var footerRow = 0; footerRow < footerRows; footerRow += 1) {
           final top = footerBottom + gutter;
-          final square = footerTiles.indexed.any(
+          final square = footer.indexed.any(
             (entry) => footerCells[entry.$1].$1 == footerRow && !entry.$2.wide,
           );
           footerTops.add(top);
@@ -270,7 +281,15 @@ class QuickSettingsTiles extends StatelessWidget {
                   cell: (2, silentColumn),
                 ),
               ),
-              for (final (index, tile) in footerTiles.indexed)
+              if (spare != null)
+                Positioned(
+                  left: pitch * 3,
+                  top: row * 2,
+                  width: column,
+                  height: row,
+                  child: reveal(5, spare, cell: (2, 3)),
+                ),
+              for (final (index, tile) in footer.indexed)
                 Positioned(
                   left: pitch * footerCells[index].$2,
                   top: footerTops[footerCells[index].$1],
@@ -424,9 +443,14 @@ class _QuickTileState extends State<QuickTile>
           behavior: HitTestBehavior.opaque,
           onTapUp: widget.enabled ? _noteTap : null,
           onTap: widget.enabled ? widget.onTap : null,
-          child: widget.wide
-              ? _buildWide(off, on, radius)
-              : _buildSmall(off, on, radius),
+          // A tile repaints every frame its liquid moves. On its own layer
+          // the other tiles keep their recorded pictures, and the engine
+          // reuses what it rendered for them.
+          child: RepaintBoundary(
+            child: widget.wide
+                ? _buildWide(off, on, radius)
+                : _buildSmall(off, on, radius),
+          ),
         ),
       ),
     );

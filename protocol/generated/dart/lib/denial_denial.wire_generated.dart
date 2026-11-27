@@ -170,10 +170,15 @@ enum WindowRequestKind {
   MinimizeWindow(9),
   NavigateBack(10),
   MoveWindowToOutput(11),
-  JoinScreen(12),
-  MoveToScreen(13),
-  SplitView(14),
-  LeaveSplitView(15);
+  PlaceWindow(12),
+  ResolveWindowPlace(13),
+  BeginWindowMove(14),
+  BeginWindowResize(15),
+  ConfigureWindowFrame(16),
+  JoinScreen(17),
+  MoveToScreen(18),
+  SplitView(19),
+  LeaveSplitView(20);
 
   final int value;
   const WindowRequestKind(this.value);
@@ -192,10 +197,15 @@ enum WindowRequestKind {
       case 9: return WindowRequestKind.MinimizeWindow;
       case 10: return WindowRequestKind.NavigateBack;
       case 11: return WindowRequestKind.MoveWindowToOutput;
-      case 12: return WindowRequestKind.JoinScreen;
-      case 13: return WindowRequestKind.MoveToScreen;
-      case 14: return WindowRequestKind.SplitView;
-      case 15: return WindowRequestKind.LeaveSplitView;
+      case 12: return WindowRequestKind.PlaceWindow;
+      case 13: return WindowRequestKind.ResolveWindowPlace;
+      case 14: return WindowRequestKind.BeginWindowMove;
+      case 15: return WindowRequestKind.BeginWindowResize;
+      case 16: return WindowRequestKind.ConfigureWindowFrame;
+      case 17: return WindowRequestKind.JoinScreen;
+      case 18: return WindowRequestKind.MoveToScreen;
+      case 19: return WindowRequestKind.SplitView;
+      case 20: return WindowRequestKind.LeaveSplitView;
       default: throw StateError('Invalid value $value for bit flag enum');
     }
   }
@@ -204,7 +214,7 @@ enum WindowRequestKind {
       value == null ? null : WindowRequestKind.fromValue(value);
 
   static const int minValue = 0;
-  static const int maxValue = 15;
+  static const int maxValue = 20;
   static const fb.Reader<WindowRequestKind> reader = _WindowRequestKindReader();
 }
 
@@ -221,7 +231,8 @@ class _WindowRequestKindReader extends fb.Reader<WindowRequestKind> {
 
 enum WindowResponseKind {
   Windows(0),
-  DisplayLayout(1);
+  DisplayLayout(1),
+  Place(2);
 
   final int value;
   const WindowResponseKind(this.value);
@@ -230,6 +241,7 @@ enum WindowResponseKind {
     switch (value) {
       case 0: return WindowResponseKind.Windows;
       case 1: return WindowResponseKind.DisplayLayout;
+      case 2: return WindowResponseKind.Place;
       default: throw StateError('Invalid value $value for bit flag enum');
     }
   }
@@ -238,7 +250,7 @@ enum WindowResponseKind {
       value == null ? null : WindowResponseKind.fromValue(value);
 
   static const int minValue = 0;
-  static const int maxValue = 1;
+  static const int maxValue = 2;
   static const fb.Reader<WindowResponseKind> reader = _WindowResponseKindReader();
 }
 
@@ -251,6 +263,80 @@ class _WindowResponseKindReader extends fb.Reader<WindowResponseKind> {
   @override
   WindowResponseKind read(fb.BufferContext bc, int offset) =>
       WindowResponseKind.fromValue(const fb.Uint8Reader().read(bc, offset));
+}
+
+enum WindowPlaceKind {
+  Free(0),
+  Area(1),
+  Fullscreen(2),
+  Restore(3);
+
+  final int value;
+  const WindowPlaceKind(this.value);
+
+  factory WindowPlaceKind.fromValue(int value) {
+    switch (value) {
+      case 0: return WindowPlaceKind.Free;
+      case 1: return WindowPlaceKind.Area;
+      case 2: return WindowPlaceKind.Fullscreen;
+      case 3: return WindowPlaceKind.Restore;
+      default: throw StateError('Invalid value $value for bit flag enum');
+    }
+  }
+
+  static WindowPlaceKind? _createOrNull(int? value) =>
+      value == null ? null : WindowPlaceKind.fromValue(value);
+
+  static const int minValue = 0;
+  static const int maxValue = 3;
+  static const fb.Reader<WindowPlaceKind> reader = _WindowPlaceKindReader();
+}
+
+class _WindowPlaceKindReader extends fb.Reader<WindowPlaceKind> {
+  const _WindowPlaceKindReader();
+
+  @override
+  int get size => 1;
+
+  @override
+  WindowPlaceKind read(fb.BufferContext bc, int offset) =>
+      WindowPlaceKind.fromValue(const fb.Uint8Reader().read(bc, offset));
+}
+
+enum WindowPlaceStatus {
+  Applied(0),
+  Adjusted(1),
+  Refused(2);
+
+  final int value;
+  const WindowPlaceStatus(this.value);
+
+  factory WindowPlaceStatus.fromValue(int value) {
+    switch (value) {
+      case 0: return WindowPlaceStatus.Applied;
+      case 1: return WindowPlaceStatus.Adjusted;
+      case 2: return WindowPlaceStatus.Refused;
+      default: throw StateError('Invalid value $value for bit flag enum');
+    }
+  }
+
+  static WindowPlaceStatus? _createOrNull(int? value) =>
+      value == null ? null : WindowPlaceStatus.fromValue(value);
+
+  static const int minValue = 0;
+  static const int maxValue = 2;
+  static const fb.Reader<WindowPlaceStatus> reader = _WindowPlaceStatusReader();
+}
+
+class _WindowPlaceStatusReader extends fb.Reader<WindowPlaceStatus> {
+  const _WindowPlaceStatusReader();
+
+  @override
+  int get size => 1;
+
+  @override
+  WindowPlaceStatus read(fb.BufferContext bc, int offset) =>
+      WindowPlaceStatus.fromValue(const fb.Uint8Reader().read(bc, offset));
 }
 
 enum WindowEventKind {
@@ -499,8 +585,9 @@ enum KeyboardCommandKind {
   DismissPanel(2),
   PanelMotion(3),
   Replace(4),
-  SelectLayout(5),
-  TypingLayouts(6);
+  NextLayout(5),
+  SelectLayout(6),
+  TypingLayouts(7);
 
   final int value;
   const KeyboardCommandKind(this.value);
@@ -512,8 +599,9 @@ enum KeyboardCommandKind {
       case 2: return KeyboardCommandKind.DismissPanel;
       case 3: return KeyboardCommandKind.PanelMotion;
       case 4: return KeyboardCommandKind.Replace;
-      case 5: return KeyboardCommandKind.SelectLayout;
-      case 6: return KeyboardCommandKind.TypingLayouts;
+      case 5: return KeyboardCommandKind.NextLayout;
+      case 6: return KeyboardCommandKind.SelectLayout;
+      case 7: return KeyboardCommandKind.TypingLayouts;
       default: throw StateError('Invalid value $value for bit flag enum');
     }
   }
@@ -522,7 +610,7 @@ enum KeyboardCommandKind {
       value == null ? null : KeyboardCommandKind.fromValue(value);
 
   static const int minValue = 0;
-  static const int maxValue = 6;
+  static const int maxValue = 7;
   static const fb.Reader<KeyboardCommandKind> reader = _KeyboardCommandKindReader();
 }
 
@@ -1533,6 +1621,86 @@ class WirePointObjectBuilder extends fb.ObjectBuilder {
     return fbBuilder.buffer;
   }
 }
+class WireInsets {
+  WireInsets._(this._bc, this._bcOffset);
+
+  static const fb.Reader<WireInsets> reader = _WireInsetsReader();
+
+  final fb.BufferContext _bc;
+  final int _bcOffset;
+
+  double get left => const fb.Float64Reader().read(_bc, _bcOffset + 0);
+  double get top => const fb.Float64Reader().read(_bc, _bcOffset + 8);
+  double get right => const fb.Float64Reader().read(_bc, _bcOffset + 16);
+  double get bottom => const fb.Float64Reader().read(_bc, _bcOffset + 24);
+
+  @override
+  String toString() {
+    return 'WireInsets{left: ${left}, top: ${top}, right: ${right}, bottom: ${bottom}}';
+  }
+}
+
+class _WireInsetsReader extends fb.StructReader<WireInsets> {
+  const _WireInsetsReader();
+
+  @override
+  int get size => 32;
+
+  @override
+  WireInsets createObject(fb.BufferContext bc, int offset) => 
+    WireInsets._(bc, offset);
+}
+
+class WireInsetsBuilder {
+  WireInsetsBuilder(this.fbBuilder);
+
+  final fb.Builder fbBuilder;
+
+  int finish(double left, double top, double right, double bottom) {
+    fbBuilder.putFloat64(bottom);
+    fbBuilder.putFloat64(right);
+    fbBuilder.putFloat64(top);
+    fbBuilder.putFloat64(left);
+    return fbBuilder.offset;
+  }
+
+}
+
+class WireInsetsObjectBuilder extends fb.ObjectBuilder {
+  final double _left;
+  final double _top;
+  final double _right;
+  final double _bottom;
+
+  WireInsetsObjectBuilder({
+    required double left,
+    required double top,
+    required double right,
+    required double bottom,
+  })
+      : _left = left,
+        _top = top,
+        _right = right,
+        _bottom = bottom;
+
+  /// Finish building, and store into the [fbBuilder].
+  @override
+  int finish(fb.Builder fbBuilder) {
+    fbBuilder.putFloat64(_bottom);
+    fbBuilder.putFloat64(_right);
+    fbBuilder.putFloat64(_top);
+    fbBuilder.putFloat64(_left);
+    return fbBuilder.offset;
+  }
+
+  /// Convenience method to serialize to byte list.
+  @override
+  Uint8List toBytes([String? fileIdentifier]) {
+    final fbBuilder = fb.Builder(deduplicateTables: false);
+    fbBuilder.finish(finish(fbBuilder), fileIdentifier);
+    return fbBuilder.buffer;
+  }
+}
 class WireSize {
   WireSize._(this._bc, this._bcOffset);
 
@@ -2329,17 +2497,18 @@ class Window {
   bool get petDragged => const fb.BoolReader().vTableGet(_bc, _bcOffset, 104, false);
   ClientTexture? get clientTexture => ClientTexture.reader.vTableGetNullable(_bc, _bcOffset, 106);
   bool get keyboardInset => const fb.BoolReader().vTableGet(_bc, _bcOffset, 108, false);
-  int get layoutScreen => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 110, 0);
-  WireRect? get layoutScreenRect => WireRect.reader.vTableGetNullable(_bc, _bcOffset, 112);
-  bool get layoutScreenFloating => const fb.BoolReader().vTableGet(_bc, _bcOffset, 114, false);
-  int get splitViewPartnerId => const fb.Uint64Reader().vTableGet(_bc, _bcOffset, 116, 0);
-  double get splitViewRatio => const fb.Float64Reader().vTableGet(_bc, _bcOffset, 118, 0.0);
-  bool get onPhone => const fb.BoolReader().vTableGet(_bc, _bcOffset, 120, false);
-  List<WireRect>? get translucentRects => const fb.ListReader<WireRect>(WireRect.reader).vTableGetNullable(_bc, _bcOffset, 122);
+  bool get clientTitleBar => const fb.BoolReader().vTableGet(_bc, _bcOffset, 110, false);
+  int get layoutScreen => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 112, 0);
+  WireRect? get layoutScreenRect => WireRect.reader.vTableGetNullable(_bc, _bcOffset, 114);
+  bool get layoutScreenFloating => const fb.BoolReader().vTableGet(_bc, _bcOffset, 116, false);
+  int get splitViewPartnerId => const fb.Uint64Reader().vTableGet(_bc, _bcOffset, 118, 0);
+  double get splitViewRatio => const fb.Float64Reader().vTableGet(_bc, _bcOffset, 120, 0.0);
+  bool get onPhone => const fb.BoolReader().vTableGet(_bc, _bcOffset, 122, false);
+  List<WireRect>? get translucentRects => const fb.ListReader<WireRect>(WireRect.reader).vTableGetNullable(_bc, _bcOffset, 124);
 
   @override
   String toString() {
-    return 'Window{objectId: ${objectId}, objectKind: ${objectKind}, surfaceId: ${surfaceId}, windowId: ${windowId}, textureId: ${textureId}, title: ${title}, appId: ${appId}, width: ${width}, height: ${height}, surfaceX: ${surfaceX}, surfaceY: ${surfaceY}, surfaceWidth: ${surfaceWidth}, surfaceHeight: ${surfaceHeight}, textureSourceX: ${textureSourceX}, textureSourceY: ${textureSourceY}, textureSourceWidth: ${textureSourceWidth}, textureSourceHeight: ${textureSourceHeight}, geometryX: ${geometryX}, geometryY: ${geometryY}, geometryWidth: ${geometryWidth}, geometryHeight: ${geometryHeight}, monitorId: ${monitorId}, transform: ${transform}, scale120: ${scale120}, statusColorArgb: ${statusColorArgb}, hasStatusColor: ${hasStatusColor}, contentX: ${contentX}, contentY: ${contentY}, contentWidth: ${contentWidth}, contentHeight: ${contentHeight}, surfaces: ${surfaces}, pinned: ${pinned}, suppressAnimations: ${suppressAnimations}, serverSideDecorated: ${serverSideDecorated}, opacity: ${opacity}, contentKind: ${contentKind}, opacityClass: ${opacityClass}, workspaceId: ${workspaceId}, minimized: ${minimized}, fullscreen: ${fullscreen}, maximized: ${maximized}, transientParentId: ${transientParentId}, heldByWindowId: ${heldByWindowId}, heldHold: ${heldHold}, heldShare: ${heldShare}, petAnchorX: ${petAnchorX}, petAnchorY: ${petAnchorY}, petBelow: ${petBelow}, pet: ${pet}, petHolds: ${petHolds}, petDragged: ${petDragged}, clientTexture: ${clientTexture}, keyboardInset: ${keyboardInset}, layoutScreen: ${layoutScreen}, layoutScreenRect: ${layoutScreenRect}, layoutScreenFloating: ${layoutScreenFloating}, splitViewPartnerId: ${splitViewPartnerId}, splitViewRatio: ${splitViewRatio}, onPhone: ${onPhone}, translucentRects: ${translucentRects}}';
+    return 'Window{objectId: ${objectId}, objectKind: ${objectKind}, surfaceId: ${surfaceId}, windowId: ${windowId}, textureId: ${textureId}, title: ${title}, appId: ${appId}, width: ${width}, height: ${height}, surfaceX: ${surfaceX}, surfaceY: ${surfaceY}, surfaceWidth: ${surfaceWidth}, surfaceHeight: ${surfaceHeight}, textureSourceX: ${textureSourceX}, textureSourceY: ${textureSourceY}, textureSourceWidth: ${textureSourceWidth}, textureSourceHeight: ${textureSourceHeight}, geometryX: ${geometryX}, geometryY: ${geometryY}, geometryWidth: ${geometryWidth}, geometryHeight: ${geometryHeight}, monitorId: ${monitorId}, transform: ${transform}, scale120: ${scale120}, statusColorArgb: ${statusColorArgb}, hasStatusColor: ${hasStatusColor}, contentX: ${contentX}, contentY: ${contentY}, contentWidth: ${contentWidth}, contentHeight: ${contentHeight}, surfaces: ${surfaces}, pinned: ${pinned}, suppressAnimations: ${suppressAnimations}, serverSideDecorated: ${serverSideDecorated}, opacity: ${opacity}, contentKind: ${contentKind}, opacityClass: ${opacityClass}, workspaceId: ${workspaceId}, minimized: ${minimized}, fullscreen: ${fullscreen}, maximized: ${maximized}, transientParentId: ${transientParentId}, heldByWindowId: ${heldByWindowId}, heldHold: ${heldHold}, heldShare: ${heldShare}, petAnchorX: ${petAnchorX}, petAnchorY: ${petAnchorY}, petBelow: ${petBelow}, pet: ${pet}, petHolds: ${petHolds}, petDragged: ${petDragged}, clientTexture: ${clientTexture}, keyboardInset: ${keyboardInset}, clientTitleBar: ${clientTitleBar}, layoutScreen: ${layoutScreen}, layoutScreenRect: ${layoutScreenRect}, layoutScreenFloating: ${layoutScreenFloating}, splitViewPartnerId: ${splitViewPartnerId}, splitViewRatio: ${splitViewRatio}, onPhone: ${onPhone}, translucentRects: ${translucentRects}}';
   }
 }
 
@@ -2357,7 +2526,7 @@ class WindowBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(60);
+    fbBuilder.startTable(61);
   }
 
   int addObjectId(int? objectId) {
@@ -2572,32 +2741,36 @@ class WindowBuilder {
     fbBuilder.addBool(52, keyboardInset);
     return fbBuilder.offset;
   }
+  int addClientTitleBar(bool? clientTitleBar) {
+    fbBuilder.addBool(53, clientTitleBar);
+    return fbBuilder.offset;
+  }
   int addLayoutScreen(int? layoutScreen) {
-    fbBuilder.addUint32(53, layoutScreen);
+    fbBuilder.addUint32(54, layoutScreen);
     return fbBuilder.offset;
   }
   int addLayoutScreenRect(int offset) {
-    fbBuilder.addStruct(54, offset);
+    fbBuilder.addStruct(55, offset);
     return fbBuilder.offset;
   }
   int addLayoutScreenFloating(bool? layoutScreenFloating) {
-    fbBuilder.addBool(55, layoutScreenFloating);
+    fbBuilder.addBool(56, layoutScreenFloating);
     return fbBuilder.offset;
   }
   int addSplitViewPartnerId(int? splitViewPartnerId) {
-    fbBuilder.addUint64(56, splitViewPartnerId);
+    fbBuilder.addUint64(57, splitViewPartnerId);
     return fbBuilder.offset;
   }
   int addSplitViewRatio(double? splitViewRatio) {
-    fbBuilder.addFloat64(57, splitViewRatio);
+    fbBuilder.addFloat64(58, splitViewRatio);
     return fbBuilder.offset;
   }
   int addOnPhone(bool? onPhone) {
-    fbBuilder.addBool(58, onPhone);
+    fbBuilder.addBool(59, onPhone);
     return fbBuilder.offset;
   }
   int addTranslucentRectsOffset(int? offset) {
-    fbBuilder.addOffset(59, offset);
+    fbBuilder.addOffset(60, offset);
     return fbBuilder.offset;
   }
 
@@ -2660,6 +2833,7 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
   final bool? _petDragged;
   final ClientTextureObjectBuilder? _clientTexture;
   final bool? _keyboardInset;
+  final bool? _clientTitleBar;
   final int? _layoutScreen;
   final WireRectObjectBuilder? _layoutScreenRect;
   final bool? _layoutScreenFloating;
@@ -2722,6 +2896,7 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
     bool? petDragged,
     ClientTextureObjectBuilder? clientTexture,
     bool? keyboardInset,
+    bool? clientTitleBar,
     int? layoutScreen,
     WireRectObjectBuilder? layoutScreenRect,
     bool? layoutScreenFloating,
@@ -2783,6 +2958,7 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
         _petDragged = petDragged,
         _clientTexture = clientTexture,
         _keyboardInset = keyboardInset,
+        _clientTitleBar = clientTitleBar,
         _layoutScreen = layoutScreen,
         _layoutScreenRect = layoutScreenRect,
         _layoutScreenFloating = layoutScreenFloating,
@@ -2803,7 +2979,7 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
     final int? clientTextureOffset = _clientTexture?.getOrCreateOffset(fbBuilder);
     final int? translucentRectsOffset = _translucentRects == null ? null
         : fbBuilder.writeListOfStructs(_translucentRects!);
-    fbBuilder.startTable(60);
+    fbBuilder.startTable(61);
     fbBuilder.addUint64(0, _objectId);
     fbBuilder.addUint8(1, _objectKind?.value);
     fbBuilder.addUint64(2, _surfaceId);
@@ -2857,15 +3033,16 @@ class WindowObjectBuilder extends fb.ObjectBuilder {
     fbBuilder.addBool(50, _petDragged);
     fbBuilder.addOffset(51, clientTextureOffset);
     fbBuilder.addBool(52, _keyboardInset);
-    fbBuilder.addUint32(53, _layoutScreen);
+    fbBuilder.addBool(53, _clientTitleBar);
+    fbBuilder.addUint32(54, _layoutScreen);
     if (_layoutScreenRect != null) {
-      fbBuilder.addStruct(54, _layoutScreenRect!.finish(fbBuilder));
+      fbBuilder.addStruct(55, _layoutScreenRect!.finish(fbBuilder));
     }
-    fbBuilder.addBool(55, _layoutScreenFloating);
-    fbBuilder.addUint64(56, _splitViewPartnerId);
-    fbBuilder.addFloat64(57, _splitViewRatio);
-    fbBuilder.addBool(58, _onPhone);
-    fbBuilder.addOffset(59, translucentRectsOffset);
+    fbBuilder.addBool(56, _layoutScreenFloating);
+    fbBuilder.addUint64(57, _splitViewPartnerId);
+    fbBuilder.addFloat64(58, _splitViewRatio);
+    fbBuilder.addBool(59, _onPhone);
+    fbBuilder.addOffset(60, translucentRectsOffset);
     return fbBuilder.endTable();
   }
 
@@ -3328,14 +3505,18 @@ class WindowRequest {
   double get systemBarThickness => const fb.Float64Reader().vTableGet(_bc, _bcOffset, 24, -1.0);
   double get maximizePadding => const fb.Float64Reader().vTableGet(_bc, _bcOffset, 26, -1.0);
   bool get windowDeltas => const fb.BoolReader().vTableGet(_bc, _bcOffset, 28, false);
-  int get targetWindowId => const fb.Uint64Reader().vTableGet(_bc, _bcOffset, 30, 0);
-  int get screenSide => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 32, 0);
-  bool get before => const fb.BoolReader().vTableGet(_bc, _bcOffset, 34, false);
-  double get splitRatio => const fb.Float64Reader().vTableGet(_bc, _bcOffset, 36, 0.0);
+  WindowPlaceKind get placeKind => WindowPlaceKind.fromValue(const fb.Uint8Reader().vTableGet(_bc, _bcOffset, 30, 0));
+  WireRect? get placeShare => WireRect.reader.vTableGetNullable(_bc, _bcOffset, 32);
+  WireInsets? get frameMargins => WireInsets.reader.vTableGetNullable(_bc, _bcOffset, 34);
+  WireInsets? get maximizedFrameMargins => WireInsets.reader.vTableGetNullable(_bc, _bcOffset, 36);
+  int get targetWindowId => const fb.Uint64Reader().vTableGet(_bc, _bcOffset, 38, 0);
+  int get screenSide => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 40, 0);
+  bool get before => const fb.BoolReader().vTableGet(_bc, _bcOffset, 42, false);
+  double get splitRatio => const fb.Float64Reader().vTableGet(_bc, _bcOffset, 44, 0.0);
 
   @override
   String toString() {
-    return 'WindowRequest{kind: ${kind}, windowId: ${windowId}, geometry: ${geometry}, appId: ${appId}, title: ${title}, systemBarSide: ${systemBarSide}, systemBarMonitorIds: ${systemBarMonitorIds}, flags: ${flags}, monitorId: ${monitorId}, workspaceId: ${workspaceId}, systemBarThickness: ${systemBarThickness}, maximizePadding: ${maximizePadding}, windowDeltas: ${windowDeltas}, targetWindowId: ${targetWindowId}, screenSide: ${screenSide}, before: ${before}, splitRatio: ${splitRatio}}';
+    return 'WindowRequest{kind: ${kind}, windowId: ${windowId}, geometry: ${geometry}, appId: ${appId}, title: ${title}, systemBarSide: ${systemBarSide}, systemBarMonitorIds: ${systemBarMonitorIds}, flags: ${flags}, monitorId: ${monitorId}, workspaceId: ${workspaceId}, systemBarThickness: ${systemBarThickness}, maximizePadding: ${maximizePadding}, windowDeltas: ${windowDeltas}, placeKind: ${placeKind}, placeShare: ${placeShare}, frameMargins: ${frameMargins}, maximizedFrameMargins: ${maximizedFrameMargins}, targetWindowId: ${targetWindowId}, screenSide: ${screenSide}, before: ${before}, splitRatio: ${splitRatio}}';
   }
 }
 
@@ -3353,7 +3534,7 @@ class WindowRequestBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(17);
+    fbBuilder.startTable(21);
   }
 
   int addKind(WindowRequestKind? kind) {
@@ -3408,20 +3589,36 @@ class WindowRequestBuilder {
     fbBuilder.addBool(12, windowDeltas);
     return fbBuilder.offset;
   }
+  int addPlaceKind(WindowPlaceKind? placeKind) {
+    fbBuilder.addUint8(13, placeKind?.value);
+    return fbBuilder.offset;
+  }
+  int addPlaceShare(int offset) {
+    fbBuilder.addStruct(14, offset);
+    return fbBuilder.offset;
+  }
+  int addFrameMargins(int offset) {
+    fbBuilder.addStruct(15, offset);
+    return fbBuilder.offset;
+  }
+  int addMaximizedFrameMargins(int offset) {
+    fbBuilder.addStruct(16, offset);
+    return fbBuilder.offset;
+  }
   int addTargetWindowId(int? targetWindowId) {
-    fbBuilder.addUint64(13, targetWindowId);
+    fbBuilder.addUint64(17, targetWindowId);
     return fbBuilder.offset;
   }
   int addScreenSide(int? screenSide) {
-    fbBuilder.addUint32(14, screenSide);
+    fbBuilder.addUint32(18, screenSide);
     return fbBuilder.offset;
   }
   int addBefore(bool? before) {
-    fbBuilder.addBool(15, before);
+    fbBuilder.addBool(19, before);
     return fbBuilder.offset;
   }
   int addSplitRatio(double? splitRatio) {
-    fbBuilder.addFloat64(16, splitRatio);
+    fbBuilder.addFloat64(20, splitRatio);
     return fbBuilder.offset;
   }
 
@@ -3444,6 +3641,10 @@ class WindowRequestObjectBuilder extends fb.ObjectBuilder {
   final double? _systemBarThickness;
   final double? _maximizePadding;
   final bool? _windowDeltas;
+  final WindowPlaceKind? _placeKind;
+  final WireRectObjectBuilder? _placeShare;
+  final WireInsetsObjectBuilder? _frameMargins;
+  final WireInsetsObjectBuilder? _maximizedFrameMargins;
   final int? _targetWindowId;
   final int? _screenSide;
   final bool? _before;
@@ -3463,6 +3664,10 @@ class WindowRequestObjectBuilder extends fb.ObjectBuilder {
     double? systemBarThickness,
     double? maximizePadding,
     bool? windowDeltas,
+    WindowPlaceKind? placeKind,
+    WireRectObjectBuilder? placeShare,
+    WireInsetsObjectBuilder? frameMargins,
+    WireInsetsObjectBuilder? maximizedFrameMargins,
     int? targetWindowId,
     int? screenSide,
     bool? before,
@@ -3481,6 +3686,10 @@ class WindowRequestObjectBuilder extends fb.ObjectBuilder {
         _systemBarThickness = systemBarThickness,
         _maximizePadding = maximizePadding,
         _windowDeltas = windowDeltas,
+        _placeKind = placeKind,
+        _placeShare = placeShare,
+        _frameMargins = frameMargins,
+        _maximizedFrameMargins = maximizedFrameMargins,
         _targetWindowId = targetWindowId,
         _screenSide = screenSide,
         _before = before,
@@ -3495,7 +3704,7 @@ class WindowRequestObjectBuilder extends fb.ObjectBuilder {
         : fbBuilder.writeString(_title!);
     final int? systemBarMonitorIdsOffset = _systemBarMonitorIds == null ? null
         : fbBuilder.writeListInt64(_systemBarMonitorIds!);
-    fbBuilder.startTable(17);
+    fbBuilder.startTable(21);
     fbBuilder.addUint8(0, _kind?.value);
     fbBuilder.addUint64(1, _windowId);
     if (_geometry != null) {
@@ -3511,10 +3720,20 @@ class WindowRequestObjectBuilder extends fb.ObjectBuilder {
     fbBuilder.addFloat64(10, _systemBarThickness);
     fbBuilder.addFloat64(11, _maximizePadding);
     fbBuilder.addBool(12, _windowDeltas);
-    fbBuilder.addUint64(13, _targetWindowId);
-    fbBuilder.addUint32(14, _screenSide);
-    fbBuilder.addBool(15, _before);
-    fbBuilder.addFloat64(16, _splitRatio);
+    fbBuilder.addUint8(13, _placeKind?.value);
+    if (_placeShare != null) {
+      fbBuilder.addStruct(14, _placeShare!.finish(fbBuilder));
+    }
+    if (_frameMargins != null) {
+      fbBuilder.addStruct(15, _frameMargins!.finish(fbBuilder));
+    }
+    if (_maximizedFrameMargins != null) {
+      fbBuilder.addStruct(16, _maximizedFrameMargins!.finish(fbBuilder));
+    }
+    fbBuilder.addUint64(17, _targetWindowId);
+    fbBuilder.addUint32(18, _screenSide);
+    fbBuilder.addBool(19, _before);
+    fbBuilder.addFloat64(20, _splitRatio);
     return fbBuilder.endTable();
   }
 
@@ -3543,10 +3762,15 @@ class WindowResponse {
   WindowSnapshot? get windows => WindowSnapshot.reader.vTableGetNullable(_bc, _bcOffset, 8);
   DisplayLayout? get displayLayout => DisplayLayout.reader.vTableGetNullable(_bc, _bcOffset, 10);
   String? get error => const fb.StringReader().vTableGetNullable(_bc, _bcOffset, 12);
+  int get windowId => const fb.Uint64Reader().vTableGet(_bc, _bcOffset, 14, 0);
+  WindowPlaceStatus get placeStatus => WindowPlaceStatus.fromValue(const fb.Uint8Reader().vTableGet(_bc, _bcOffset, 16, 0));
+  WireRect? get frame => WireRect.reader.vTableGetNullable(_bc, _bcOffset, 18);
+  WireRect? get geometry => WireRect.reader.vTableGetNullable(_bc, _bcOffset, 20);
+  int get monitorId => const fb.Int64Reader().vTableGet(_bc, _bcOffset, 22, -1);
 
   @override
   String toString() {
-    return 'WindowResponse{kind: ${kind}, success: ${success}, windows: ${windows}, displayLayout: ${displayLayout}, error: ${error}}';
+    return 'WindowResponse{kind: ${kind}, success: ${success}, windows: ${windows}, displayLayout: ${displayLayout}, error: ${error}, windowId: ${windowId}, placeStatus: ${placeStatus}, frame: ${frame}, geometry: ${geometry}, monitorId: ${monitorId}}';
   }
 }
 
@@ -3564,7 +3788,7 @@ class WindowResponseBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(5);
+    fbBuilder.startTable(10);
   }
 
   int addKind(WindowResponseKind? kind) {
@@ -3587,6 +3811,26 @@ class WindowResponseBuilder {
     fbBuilder.addOffset(4, offset);
     return fbBuilder.offset;
   }
+  int addWindowId(int? windowId) {
+    fbBuilder.addUint64(5, windowId);
+    return fbBuilder.offset;
+  }
+  int addPlaceStatus(WindowPlaceStatus? placeStatus) {
+    fbBuilder.addUint8(6, placeStatus?.value);
+    return fbBuilder.offset;
+  }
+  int addFrame(int offset) {
+    fbBuilder.addStruct(7, offset);
+    return fbBuilder.offset;
+  }
+  int addGeometry(int offset) {
+    fbBuilder.addStruct(8, offset);
+    return fbBuilder.offset;
+  }
+  int addMonitorId(int? monitorId) {
+    fbBuilder.addInt64(9, monitorId);
+    return fbBuilder.offset;
+  }
 
   int finish() {
     return fbBuilder.endTable();
@@ -3599,6 +3843,11 @@ class WindowResponseObjectBuilder extends fb.ObjectBuilder {
   final WindowSnapshotObjectBuilder? _windows;
   final DisplayLayoutObjectBuilder? _displayLayout;
   final String? _error;
+  final int? _windowId;
+  final WindowPlaceStatus? _placeStatus;
+  final WireRectObjectBuilder? _frame;
+  final WireRectObjectBuilder? _geometry;
+  final int? _monitorId;
 
   WindowResponseObjectBuilder({
     WindowResponseKind? kind,
@@ -3606,12 +3855,22 @@ class WindowResponseObjectBuilder extends fb.ObjectBuilder {
     WindowSnapshotObjectBuilder? windows,
     DisplayLayoutObjectBuilder? displayLayout,
     String? error,
+    int? windowId,
+    WindowPlaceStatus? placeStatus,
+    WireRectObjectBuilder? frame,
+    WireRectObjectBuilder? geometry,
+    int? monitorId,
   })
       : _kind = kind,
         _success = success,
         _windows = windows,
         _displayLayout = displayLayout,
-        _error = error;
+        _error = error,
+        _windowId = windowId,
+        _placeStatus = placeStatus,
+        _frame = frame,
+        _geometry = geometry,
+        _monitorId = monitorId;
 
   /// Finish building, and store into the [fbBuilder].
   @override
@@ -3620,12 +3879,21 @@ class WindowResponseObjectBuilder extends fb.ObjectBuilder {
     final int? displayLayoutOffset = _displayLayout?.getOrCreateOffset(fbBuilder);
     final int? errorOffset = _error == null ? null
         : fbBuilder.writeString(_error!);
-    fbBuilder.startTable(5);
+    fbBuilder.startTable(10);
     fbBuilder.addUint8(0, _kind?.value);
     fbBuilder.addBool(1, _success);
     fbBuilder.addOffset(2, windowsOffset);
     fbBuilder.addOffset(3, displayLayoutOffset);
     fbBuilder.addOffset(4, errorOffset);
+    fbBuilder.addUint64(5, _windowId);
+    fbBuilder.addUint8(6, _placeStatus?.value);
+    if (_frame != null) {
+      fbBuilder.addStruct(7, _frame!.finish(fbBuilder));
+    }
+    if (_geometry != null) {
+      fbBuilder.addStruct(8, _geometry!.finish(fbBuilder));
+    }
+    fbBuilder.addInt64(9, _monitorId);
     return fbBuilder.endTable();
   }
 
@@ -4182,10 +4450,11 @@ class TextInputState {
   int get contentHint => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 10, 0);
   int get contentPurpose => const fb.Uint32Reader().vTableGet(_bc, _bcOffset, 12, 0);
   int get activationSerial => const fb.Uint64Reader().vTableGet(_bc, _bcOffset, 14, 0);
+  bool get inputMethod => const fb.BoolReader().vTableGet(_bc, _bcOffset, 16, false);
 
   @override
   String toString() {
-    return 'TextInputState{active: ${active}, inputPanelVisible: ${inputPanelVisible}, legacy: ${legacy}, contentHint: ${contentHint}, contentPurpose: ${contentPurpose}, activationSerial: ${activationSerial}}';
+    return 'TextInputState{active: ${active}, inputPanelVisible: ${inputPanelVisible}, legacy: ${legacy}, contentHint: ${contentHint}, contentPurpose: ${contentPurpose}, activationSerial: ${activationSerial}, inputMethod: ${inputMethod}}';
   }
 }
 
@@ -4203,7 +4472,7 @@ class TextInputStateBuilder {
   final fb.Builder fbBuilder;
 
   void begin() {
-    fbBuilder.startTable(6);
+    fbBuilder.startTable(7);
   }
 
   int addActive(bool? active) {
@@ -4230,6 +4499,10 @@ class TextInputStateBuilder {
     fbBuilder.addUint64(5, activationSerial);
     return fbBuilder.offset;
   }
+  int addInputMethod(bool? inputMethod) {
+    fbBuilder.addBool(6, inputMethod);
+    return fbBuilder.offset;
+  }
 
   int finish() {
     return fbBuilder.endTable();
@@ -4243,6 +4516,7 @@ class TextInputStateObjectBuilder extends fb.ObjectBuilder {
   final int? _contentHint;
   final int? _contentPurpose;
   final int? _activationSerial;
+  final bool? _inputMethod;
 
   TextInputStateObjectBuilder({
     bool? active,
@@ -4251,24 +4525,27 @@ class TextInputStateObjectBuilder extends fb.ObjectBuilder {
     int? contentHint,
     int? contentPurpose,
     int? activationSerial,
+    bool? inputMethod,
   })
       : _active = active,
         _inputPanelVisible = inputPanelVisible,
         _legacy = legacy,
         _contentHint = contentHint,
         _contentPurpose = contentPurpose,
-        _activationSerial = activationSerial;
+        _activationSerial = activationSerial,
+        _inputMethod = inputMethod;
 
   /// Finish building, and store into the [fbBuilder].
   @override
   int finish(fb.Builder fbBuilder) {
-    fbBuilder.startTable(6);
+    fbBuilder.startTable(7);
     fbBuilder.addBool(0, _active);
     fbBuilder.addBool(1, _inputPanelVisible);
     fbBuilder.addBool(2, _legacy);
     fbBuilder.addUint32(3, _contentHint);
     fbBuilder.addUint32(4, _contentPurpose);
     fbBuilder.addUint64(5, _activationSerial);
+    fbBuilder.addBool(6, _inputMethod);
     return fbBuilder.endTable();
   }
 

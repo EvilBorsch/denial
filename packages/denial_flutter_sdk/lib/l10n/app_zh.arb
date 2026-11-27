@@ -1071,6 +1071,7 @@
   "timeHoursMinutes": "{hour}:{minute}",
   "valueUnavailable": "--.-",
   "voltageVolts": "{voltage} V",
+  "callVolumeTitle": "通话音量",
   "volumeTitle": "音量",
   "wallpaperAlignBottom": "底部",
   "wallpaperAlignHorizontalCenter": "水平居中",
@@ -1704,5 +1705,8 @@
   "settingsWindowLayoutScreens": "全屏应用",
   "screensOverviewStackCount": "{count, plural, other{{count} 个窗口}}",
   "screensOverviewStackExpand": "分别显示 {app} 的窗口",
-  "screensOverviewNewScreen": "新屏幕"
+  "screensOverviewNewScreen": "新屏幕",
+  "triggerPointsTile": "肩键触点",
+  "triggerPointsHint": "将 L 和 R 拖到每个肩键要点按的位置。长按可清除。",
+  "triggerPointsReset": "全部清除"
 }

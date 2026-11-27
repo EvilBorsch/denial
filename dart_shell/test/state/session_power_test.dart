@@ -226,6 +226,9 @@ class _FakeRuntime implements SessionRuntimeBackend {
     logoutCalls += 1;
     return logoutAccepted;
   }
+
+  @override
+  bool requestRestart() => true;
 }
 
 LogindSnapshot _snapshot({

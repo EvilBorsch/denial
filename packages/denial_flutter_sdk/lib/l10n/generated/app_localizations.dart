@@ -6583,6 +6583,12 @@ abstract class AppLocalizations {
   /// **'{voltage} V'**
   String voltageVolts(String voltage);
 
+  /// Playback volume of a phone call, shown when the volume buttons adjust it.
+  ///
+  /// In en, this message translates to:
+  /// **'In-call volume'**
+  String get callVolumeTitle;
+
   /// English UI text for volumeTitle.
   ///
   /// In en, this message translates to:
@@ -10169,6 +10175,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'New screen'**
   String get screensOverviewNewScreen;
+
+  /// Quick settings tile that places where the phone's shoulder triggers touch in the app in front.
+  ///
+  /// In en, this message translates to:
+  /// **'Trigger points'**
+  String get triggerPointsTile;
+
+  /// Hint at the top of the shoulder trigger editor, shown over the app.
+  ///
+  /// In en, this message translates to:
+  /// **'Drag L and R to where each shoulder trigger should touch. Hold one to clear it.'**
+  String get triggerPointsHint;
+
+  /// Shoulder trigger editor button that removes both touch spots for this app.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear both'**
+  String get triggerPointsReset;
 }
 
 class _AppLocalizationsDelegate

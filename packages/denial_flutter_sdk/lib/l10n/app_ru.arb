@@ -7635,5 +7635,8 @@
   "settingsWindowLayoutScreens": "На весь экран",
   "screensOverviewStackCount": "{count, plural, one{{count} окно} few{{count} окна} many{{count} окон} other{{count} окна}}",
   "screensOverviewStackExpand": "Показать каждое окно: {app}",
-  "screensOverviewNewScreen": "Новый экран"
+  "screensOverviewNewScreen": "Новый экран",
+  "triggerPointsTile": "Точки триггеров",
+  "triggerPointsHint": "Перетащите L и R туда, куда должны нажимать триггеры. Удерживайте, чтобы очистить.",
+  "triggerPointsReset": "Очистить оба"
 }
