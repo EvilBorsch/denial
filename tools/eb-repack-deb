@@ -26,20 +26,20 @@ OUTPUT="${3:?$USAGE}"
 DENIALD="${4:-}"
 SETTINGS="${5:-}"
 PORTAL="${EB_PORTAL:-}"
-ENGINE="${EB_ENGINE:-0.6.8-1}"
+ENGINE="${EB_ENGINE:-0.6.10-1}"
 WORK="${EB_WORK:-$HOME/work-denial-shell}"
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=tools/lib/denial-architecture.sh
 . "$ROOT/tools/lib/denial-architecture.sh"
 
-DEB=denial_0.6.8-1_arm64.deb
-URL="https://github.com/denialwm/denial/releases/download/v0.6.8/$DEB"
-# From the v0.6.8 SHA256SUMS signed by the Denial release key.
-SHA256=60ef61ec0d1e80def0420c0490bf9ff45ab53966317a96120dda8b3e1279d4ae
+DEB=denial_0.6.10-1_arm64.deb
+URL="https://github.com/denialwm/denial/releases/download/v0.6.10/$DEB"
+# From the v0.6.10 SHA256SUMS signed by the Denial release key.
+SHA256=af7a3a094ea6bd396f422899c7d4d0fca83f6012c2e575b827ab6a020da4df73
 MAINTAINER='EvilBorsch <44337169+EvilBorsch@users.noreply.github.com>'
 
 die() { printf 'eb-repack-deb: %s\n' "$*" >&2; exit 1; }
-[[ "$VERSION" == 0.6.8-1+* ]] || die 'VERSION must be 0.6.8-1+SUFFIX, newer than the release'
+[[ "$VERSION" == 0.6.10-1+* ]] || die 'VERSION must be 0.6.10-1+SUFFIX, newer than the release'
 [[ -f "$BUNDLE/lib/libapp.so" && -d "$BUNDLE/data/flutter_assets" ]] \
     || die "not a shell bundle: $BUNDLE"
 if [[ -n "$DENIALD" ]]; then
@@ -168,8 +168,8 @@ for line in lines:
             assert match, 'Depends has no libinput10'
             if match.group(1) is None or newer(libinput, match.group(1)):
                 line = line.replace(match.group(0), 'libinput10 (>= ' + libinput + ')')
-        assert 'denial-flutter-engine (= 0.6.8-1)' in line, 'Depends has no pinned engine'
-        line = line.replace('denial-flutter-engine (= 0.6.8-1)',
+        assert 'denial-flutter-engine (= 0.6.10-1)' in line, 'Depends has no pinned engine'
+        line = line.replace('denial-flutter-engine (= 0.6.10-1)',
                             'denial-flutter-engine (= ' + engine + ')')
         line = line + ', libcap2-bin'
         out.append(line)
@@ -195,22 +195,22 @@ if settings:
     else:
         parts += ' and Settings'
         built = 'the shell'
-    text = ('This build replaces ' + parts + ' of the signed 0.6.8-1 release: '
+    text = ('This build replaces ' + parts + ' of the signed 0.6.10-1 release: '
             + built + ' built from EvilBorsch/denial ' + revision[:12]
             + ', Settings (/usr/lib/denial-apps/settings) from EvilBorsch/denial-apps '
             + settings[:12] + '.')
     out.extend(' ' + line for line in textwrap.wrap(text, 72))
 elif portal:
     out.append(' This build replaces the Flutter shell (libapp.so, flutter_assets),')
-    out.append(' deniald and denial-portal of the signed 0.6.8-1 release, built from')
+    out.append(' deniald and denial-portal of the signed 0.6.10-1 release, built from')
     out.append(' EvilBorsch/denial ' + revision[:12] + '.')
 elif deniald:
     out.append(' This build replaces the Flutter shell (libapp.so, flutter_assets) and')
-    out.append(' deniald of the signed 0.6.8-1 release, built from EvilBorsch/denial')
+    out.append(' deniald of the signed 0.6.10-1 release, built from EvilBorsch/denial')
     out.append(' ' + revision[:12] + '.')
 else:
     out.append(' This build replaces only the Flutter shell (libapp.so, flutter_assets)')
-    out.append(' of the signed 0.6.8-1 release, built from EvilBorsch/denial ' + revision[:12] + '.')
+    out.append(' of the signed 0.6.10-1 release, built from EvilBorsch/denial ' + revision[:12] + '.')
 open(path, 'w').write('\n'.join(out) + '\n')
 PY
 size="$(du -sk --apparent-size --exclude=DEBIAN "$stage/denial" | cut -f1)"

@@ -22,14 +22,14 @@ WORK="${EB_WORK:-$HOME/work-denial-shell}"
 JOBS="${EB_JOBS:-4}"
 OUT="${1:-$WORK/out}"
 
-KIT_VERSION=0.6.8-1
+KIT_VERSION=0.6.10-1
 KIT_DEB="denial-plugin-manager_${KIT_VERSION}_arm64.deb"
-KIT_URL="https://github.com/denialwm/denial/releases/download/v0.6.8/$KIT_DEB"
-# From the v0.6.8 SHA256SUMS, whose signature is the Denial release key
+KIT_URL="https://github.com/denialwm/denial/releases/download/v0.6.10/$KIT_DEB"
+# From the v0.6.10 SHA256SUMS, whose signature is the Denial release key
 # AE4108FA5E91E26BE0EE331E0F5B3AD16E023091.
-KIT_SHA256=b9e58e73131c5bc5e136af36cd0f2ea8c281ef0d19f63be36d2534fd1f2dbc41
+KIT_SHA256=4b58fc9daa69348890025763b60f5937e6e7d429ef39d13bdbf0c91a1a4dc1b1
 KIT_ENGINE=usr/lib/denial/plugin-build-kit/engine/out/denial_linux_arm64_release
-# What the 0.6.8 engine expects of an AOT snapshot (also in the official
+# What the 0.6.10 engine expects of an AOT snapshot (also in the official
 # libapp.so and in libflutter_engine.so).
 SNAPSHOT_HASH=0451907c2eaa8467e848c0067bfe8ed4
 
