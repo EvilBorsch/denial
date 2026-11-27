@@ -169,7 +169,8 @@ const CLIENT_IMPORT_IDLE_SUBMITS: u64 = 64;
 /// Retired Vulkan slice images kept for later versions of the same size,
 /// at most this many bytes: every slice version the engine renders is a
 /// fresh image, and the engine buckets slice sizes, so most reuse one.
-const SLICE_POOL_BYTES: u64 = 96 << 20;
+/// Sized for 3392x2400 panels (~33 MB per full-screen RGBA8 slice).
+const SLICE_POOL_BYTES: u64 = 256 << 20;
 
 /// A pooled slice image unused for this many submissions is destroyed.
 const SLICE_POOL_IDLE_SUBMITS: u64 = 240;
