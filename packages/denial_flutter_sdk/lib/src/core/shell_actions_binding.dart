@@ -31,14 +31,24 @@ class _ShellActionsBindingState extends ConsumerState<ShellActionsBinding> {
   StreamSubscription<({int generation, String id, int? monitorId})>?
   _subscription;
   Map<String, ShellAction> _handlers = const {};
+  List<Map<String, Object>> _lastDescriptors = const [];
   int _generation = 0;
   String? _published;
   static int _nextGeneration = DateTime.now().microsecondsSinceEpoch;
+  static final Map<DenialBridge, List<_ShellActionsBindingState>>
+  _mountedByBridge =
+      Map<DenialBridge, List<_ShellActionsBindingState>>.identity();
+  static final Map<DenialBridge, _ShellActionsBindingState>
+  _activeOwnerByBridge =
+      Map<DenialBridge, _ShellActionsBindingState>.identity();
 
   @override
   void initState() {
     super.initState();
     _bridge = ref.read(denialBridgeProvider);
+    _mountedByBridge
+        .putIfAbsent(_bridge, () => <_ShellActionsBindingState>[])
+        .add(this);
     _subscription = _bridge.pluginActions.listen((event) {
       if (!mounted || event.generation != _generation) return;
       final handler = _handlers[event.id];
@@ -115,17 +125,43 @@ class _ShellActionsBindingState extends ConsumerState<ShellActionsBinding> {
       throw StateError('Plugin action catalog exceeds 128 KiB');
     }
     _handlers = handlers;
-    if (_published == signature) return;
+    _lastDescriptors = descriptors;
+    if (_activeOwnerByBridge[_bridge] == this && _published == signature) {
+      return;
+    }
     _published = signature;
+    _activeOwnerByBridge[_bridge] = this;
     _generation = ++_nextGeneration;
     _bridge.publishPluginActions(_generation, descriptors);
+  }
+
+  void _republishCached() {
+    if (!mounted) return;
+    _activeOwnerByBridge[_bridge] = this;
+    _generation = ++_nextGeneration;
+    _bridge.publishPluginActions(_generation, _lastDescriptors);
   }
 
   @override
   void dispose() {
     unawaited(_subscription?.cancel());
     _handlers = const {};
-    _bridge.publishPluginActions(++_nextGeneration, const []);
+    final list = _mountedByBridge[_bridge];
+    list?.remove(this);
+    if (_activeOwnerByBridge[_bridge] == this) {
+      _activeOwnerByBridge.remove(_bridge);
+      // Во время переключения режимов (mobile <-> desktop) новый биндинг уже
+      // смонтирован до dispose старого: передаём каталог выжившему биндингу
+      // вместо затирания его пустым списком.
+      if (list != null && list.isNotEmpty) {
+        list.last._republishCached();
+      } else {
+        _mountedByBridge.remove(_bridge);
+        _bridge.publishPluginActions(++_nextGeneration, const []);
+      }
+    } else if (list != null && list.isEmpty) {
+      _mountedByBridge.remove(_bridge);
+    }
     super.dispose();
   }
 

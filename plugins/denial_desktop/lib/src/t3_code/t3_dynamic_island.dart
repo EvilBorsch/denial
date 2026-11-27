@@ -73,6 +73,10 @@ class _T3TopBarVoiceButtonState extends ConsumerState<T3TopBarVoiceButton> {
           behavior: HitTestBehavior.opaque,
           onTap: () =>
               unawaited(ref.read(t3CodeControllerProvider.notifier).toggleVoice()),
+          onSecondaryTap: () =>
+              ref.read(t3CodeControllerProvider.notifier).toggleExpanded(),
+          onLongPress: () =>
+              ref.read(t3CodeControllerProvider.notifier).toggleExpanded(),
           child: AnimatedContainer(
             duration: Motion.pill,
             curve: Motion.standard,
@@ -382,41 +386,9 @@ class _T3DynamicIslandPillState extends ConsumerState<T3DynamicIslandPill>
         ],
       );
     } else {
-      // Idle state:
-      // - In tablet status bar: compact Dynamic Island notch with Mic + T3 tap.
-      // - In desktop top bar: subtle T3 threads pill when threads exist.
-      if (!widget.compact && state.threads.isEmpty) {
-        return const SizedBox.shrink();
-      }
-      inner = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _PillMiniAction(
-            icon: Icons.mic_rounded,
-            color: Colors.white.withValues(alpha: 0.9),
-            tooltip: 'Голосовой запрос T3',
-            onTap: () => unawaited(controller.toggleVoice()),
-          ),
-          if (state.threads.isNotEmpty) ...[
-            const SizedBox(width: 6),
-            Icon(
-              Icons.auto_awesome_rounded,
-              size: 13,
-              color: accent.withValues(alpha: 0.9),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              'T3',
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.9),
-                fontSize: widget.compact ? 11 : 12,
-                fontWeight: FontWeight.w600,
-                decoration: TextDecoration.none,
-              ),
-            ),
-          ],
-        ],
-      );
+      // Без активного голосового ввода, выполняющихся тредов и непрочитанных
+      // ответов динамическая капсула полностью скрывается.
+      return const SizedBox.shrink();
     }
 
     return MouseRegion(
@@ -891,16 +863,46 @@ class _IslandHeader extends StatelessWidget {
               onPressed: onStop,
               visualDensity: VisualDensity.compact,
             ),
-          IconButton(
-            icon: const Icon(
-              Icons.open_in_new_rounded,
-              size: 18,
-              color: Color(0xCCFFFFFF),
+          MouseRegion(
+            cursor: ShellMouseCursors.link,
+            child: Semantics(
+              button: true,
+              label: 'Открыть в T3 Code',
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onOpenInT3,
+                child: Container(
+                  height: 30,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0x1EFFFFFF),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0x28FFFFFF)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'T3 Code',
+                        style: TextStyle(
+                          color: Color(0xEEFFFFFF),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      SizedBox(width: 4),
+                      Icon(
+                        Icons.open_in_new_rounded,
+                        size: 14,
+                        color: Color(0xEEFFFFFF),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-            tooltip: 'Открыть в T3 Code',
-            onPressed: onOpenInT3,
-            visualDensity: VisualDensity.compact,
           ),
+          const SizedBox(width: 4),
           IconButton(
             icon: const Icon(
               Icons.close_rounded,

@@ -1,9 +1,15 @@
 import 'dart:async';
 
+import 'package:denial_flutter_sdk/applications.dart';
+import 'package:denial_flutter_sdk/models.dart' show DenialWindow;
 import 'package:denial_flutter_sdk/settings.dart';
+import 'package:denial_flutter_sdk/state.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../desktop/desktop_workspace.dart';
+import '../state/desktop_visibility.dart';
+import '../state/reference_shell_controller.dart';
 import 't3_code_client.dart';
 import 't3_code_models.dart';
 
@@ -476,6 +482,13 @@ class T3CodeController extends Notifier<T3IslandState> {
   }
 
   void collapse() {
+    final selected = state.selectedThreadId;
+    if (selected != null && state.unreadCompletedThreadIds.contains(selected)) {
+      final unread = Set<String>.of(state.unreadCompletedThreadIds)
+        ..remove(selected);
+      state = state.copyWith(expanded: false, unreadCompletedThreadIds: unread);
+      return;
+    }
     state = state.copyWith(expanded: false);
   }
 
@@ -490,15 +503,92 @@ class T3CodeController extends Notifier<T3IslandState> {
     }
   }
 
+  /// Распознаёт открытое окно T3 Code по `appId` или заголовку.
+  @visibleForTesting
+  static bool isT3CodeWindow(DenialWindow window) {
+    if (!window.isUserApp) return false;
+    final appId = window.appId.trim().toLowerCase();
+    final title = window.title.trim().toLowerCase();
+    return appId == 'com.t3tools.t3code' ||
+        appId.contains('t3code') ||
+        appId.contains('t3-code') ||
+        appId.contains('t3_code') ||
+        title == 't3 code' ||
+        title.contains('t3 code');
+  }
+
   Future<void> openInT3Code({String? threadId}) async {
-    final paths = _paths ?? T3CodeClient.discoverInstall(_settings);
-    if (paths == null) return;
-    final thread = threadId != null ? _threadById[threadId] : null;
-    await _client.openDesktopApp(
-      paths,
-      workspaceRoot: thread?.workspaceRoot,
-    );
+    // Сначала сворачиваем оверлей, чтобы ShellInputRegion не перехватывал фокус.
     collapse();
+    final shellState = ref.read(referenceShellProvider);
+    final shellNotifier = ref.read(referenceShellProvider.notifier);
+
+    DenialWindow? existing;
+    for (final window in shellState.allOpenAppWindows) {
+      if (isT3CodeWindow(window)) {
+        existing = window;
+        break;
+      }
+    }
+
+    if (existing != null) {
+      final target = existing;
+      final isDeskWindow = shellState.desk.openAppWindowsByObjectId.containsKey(
+        target.objectId,
+      );
+      if (isDeskWindow) {
+        final workspace = ref.read(desktopWorkspaceProvider);
+        final workspaceNotifier = ref.read(desktopWorkspaceProvider.notifier);
+        if (workspace.overviewActive) {
+          workspaceNotifier.closeOverview();
+        }
+        workspaceNotifier.closePanels();
+        ref.read(desktopVisibleProvider.notifier).restore();
+
+        final placement = workspace.placements[target.objectId];
+        if (placement != null &&
+            !placement.minimized &&
+            placement.monitorId >= 0 &&
+            !workspace.isPlacementOnActiveWorkspace(placement)) {
+          // В раскладке «На весь экран» каждое окно живёт на своём рабочем столе:
+          // сначала переключаем рабочий стол, затем фокусируем окно.
+          ref
+              .read(denialBridgeProvider)
+              .switchWorkspace(
+                monitorId: placement.monitorId,
+                workspaceId: placement.workspaceId,
+              );
+          unawaited(
+            Future<void>.delayed(const Duration(milliseconds: 90), () {
+              if (!ref.mounted) return;
+              ref.read(desktopWorkspaceProvider.notifier).activate(
+                target.objectId,
+              );
+              ref.read(referenceShellProvider.notifier).focusWindow(target);
+            }),
+          );
+          return;
+        }
+        workspaceNotifier.activate(target.objectId);
+      }
+      shellNotifier.focusWindow(target);
+      return;
+    }
+
+    final paths = _paths ?? T3CodeClient.discoverInstall(_settings);
+    if (paths != null) {
+      await _client.openDesktopApp(paths);
+      return;
+    }
+    try {
+      final repo = ref.read(desktopAppsRepositoryProvider);
+      final app = await repo.loadApplication('com.t3tools.T3Code');
+      if (app != null && ref.mounted) {
+        await ref.read(appLauncherProvider).launch(app);
+      }
+    } catch (error) {
+      debugPrint('T3CodeController openInT3Code fallback launch failed: $error');
+    }
   }
 
   void _ensureThreadDetail(String threadId) {
