@@ -12,7 +12,14 @@ import 'dart:ui' show ImageFilter, TileMode;
 import 'package:flutter/material.dart' show Icons;
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/gestures.dart'
-    show GestureDisposition, PointerEvent, PointerUpEvent, TapGestureRecognizer;
+    show
+        DoubleTapGestureRecognizer,
+        Drag,
+        GestureDisposition,
+        PointerEvent,
+        PointerUpEvent,
+        TapGestureRecognizer,
+        VerticalMultiDragGestureRecognizer;
 import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';

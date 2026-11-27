@@ -647,6 +647,11 @@ pub(super) fn apply_output_power_requests(
                     .frontend_mut()
                     .output_power_applied(output, false, announce);
             }
+            // Active touch contacts cannot deliver TouchUp once screen_off_touch
+            // suppresses the powered-off panel. Cancel them before blanking so
+            // neither Flutter nor Wayland clients retain an orphan pointer across
+            // sleep/wake cycles.
+            wayland_frontend::reset_touch_input_devices(events);
         }
     }
 
