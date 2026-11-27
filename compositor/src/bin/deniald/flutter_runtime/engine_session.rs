@@ -395,6 +395,13 @@ impl FlutterRuntime {
                     if let Some(sampled_at) = sampled_at {
                         self.touch_timing
                             .record(event.device, event.phase, sampled_at, engine_now);
+                    } else if matches!(
+                        event.phase,
+                        sys::FlutterPointerPhase_kUp
+                            | sys::FlutterPointerPhase_kCancel
+                            | sys::FlutterPointerPhase_kRemove
+                    ) {
+                        self.touch_timing.cancel_device(event.device, engine_now);
                     }
                     pointer_events.push(sys::FlutterPointerEvent {
                         struct_size: mem::size_of::<sys::FlutterPointerEvent>(),

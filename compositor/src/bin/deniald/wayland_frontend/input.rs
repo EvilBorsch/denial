@@ -3039,6 +3039,18 @@ pub(in super::super) fn reset_all_input_devices(state: &mut RuntimeState) {
 }
 
 #[cfg(feature = "flutter")]
+pub(in super::super) fn reset_touch_input_devices(state: &mut RuntimeState) {
+    reset_input_devices(
+        state,
+        InputDeviceReset {
+            keyboard: false,
+            pointer: false,
+            touch: true,
+        },
+    );
+}
+
+#[cfg(feature = "flutter")]
 pub(in super::super) fn install_keyboard_settings(
     state: &mut RuntimeState,
     settings: &KeyboardSettings,

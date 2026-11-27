@@ -77,8 +77,8 @@ class _LockScreenPane extends ConsumerStatefulWidget {
 
 class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
     with TickerProviderStateMixin {
-  static const double _unlockThreshold = 0.46;
-  static const double _flingVelocity = 700.0;
+  static const double _unlockThreshold = 0.36;
+  static const double _flingVelocity = 550.0;
   static const Duration _snapDuration = Duration(milliseconds: 210);
   static const Duration _revealDuration = Duration(milliseconds: 340);
 
@@ -93,6 +93,7 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
   Curve _motionCurve = Curves.linear;
   double _height = 0.0;
   bool _dragging = false;
+  _LockSwipeDrag? _activeDrag;
   final TextEditingController _responseController = TextEditingController();
   final FocusNode _responseFocus = FocusNode(
     debugLabel: 'lock-authentication-response',
@@ -525,44 +526,62 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
           padReserved: padReserved,
         );
         if (credentialShown) _revealedDock = docked ? face.pad : null;
-        // Mobile opens only by swiping up; a stray touch leaves the clock,
-        // and a double tap turns the screen off, as on home.
-        // The face can be caught again while it is still sliding home.
+        // Mobile opens by swiping up; a stray touch leaves the clock, and a
+        // double tap turns the screen off, as on home. VerticalMultiDrag tracks
+        // each pointer independently so a thumb/palm resting on the tablet
+        // bezel cannot block another finger from swiping up to unlock.
         final allowsSwipe =
             widget.authenticationEnabled && !widget.desktop && !credentialShown;
+        if (!allowsSwipe && _activeDrag != null) {
+          _activeDrag = null;
+          _dragging = false;
+        }
         final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
         final revealed = credentialShown || _credentialReveal.value > 0.0
             ? _revealed
             : null;
 
-        final content = GestureDetector(
+        final gestures = <Type, GestureRecognizerFactory>{
+          if (widget.authenticationEnabled && widget.desktop)
+            TapGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<TapGestureRecognizer>(
+                  TapGestureRecognizer.new,
+                  (recognizer) => recognizer..onTap = _showAuthentication,
+                ),
+          if (allowsSwipe || docked)
+            DoubleTapGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                  DoubleTapGestureRecognizer
+                >(
+                  DoubleTapGestureRecognizer.new,
+                  (recognizer) => recognizer
+                    // Beside a docked pad only the face's background blanks:
+                    // two quick digits are not a double tap.
+                    ..onDoubleTapDown = docked
+                        ? (details) => _doubleTapAt = details.localPosition
+                        : null
+                    ..onDoubleTap = allowsSwipe
+                        ? _blankDisplays
+                        : () {
+                            if (!face.pad!.contains(_doubleTapAt)) {
+                              _blankDisplays();
+                            }
+                          },
+                ),
+          if (allowsSwipe)
+            VerticalMultiDragGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<
+                  VerticalMultiDragGestureRecognizer
+                >(
+                  VerticalMultiDragGestureRecognizer.new,
+                  (recognizer) => recognizer
+                    ..onStart = (_) => _startSwipeDrag(size.height),
+                ),
+        };
+
+        final content = RawGestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: widget.authenticationEnabled && widget.desktop
-              ? _showAuthentication
-              : null,
-          // Beside a docked pad only the face's background blanks: two
-          // quick digits are not a double tap.
-          onDoubleTapDown: docked
-              ? (details) => _doubleTapAt = details.localPosition
-              : null,
-          onDoubleTap: allowsSwipe
-              ? _blankDisplays
-              : docked
-              ? () {
-                  if (!face.pad!.contains(_doubleTapAt)) _blankDisplays();
-                }
-              : null,
-          onPanStart: allowsSwipe ? (_) => _beginGesture() : null,
-          onPanUpdate: allowsSwipe
-              ? (details) => _updateGesture(details.delta, size.height)
-              : null,
-          onPanCancel: allowsSwipe ? _cancelGesture : null,
-          onPanEnd: allowsSwipe
-              ? (details) => _finishGesture(
-                  size.height,
-                  details.velocity.pixelsPerSecond.dy,
-                )
-              : null,
+          gestures: gestures,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -769,6 +788,32 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
 
   void _blankDisplays() => ref.read(denialBridgeProvider).requestDpmsOff();
 
+  Drag? _startSwipeDrag(double height) {
+    if (_activeDrag != null || widget.unlockProgress.value > 0.0) {
+      return null;
+    }
+    _beginGesture();
+    late final _LockSwipeDrag drag;
+    drag = _LockSwipeDrag(
+      onUpdate: (details) {
+        if (_activeDrag != drag) return;
+        _updateGesture(details.delta, height);
+      },
+      onEnd: (details) {
+        if (_activeDrag != drag) return;
+        _activeDrag = null;
+        _finishGesture(height, details.velocity.pixelsPerSecond.dy);
+      },
+      onCancel: () {
+        if (_activeDrag != drag) return;
+        _activeDrag = null;
+        _cancelGesture();
+      },
+    );
+    _activeDrag = drag;
+    return drag;
+  }
+
   void _beginGesture() {
     if (widget.unlockProgress.value > 0.0) {
       return;
@@ -923,6 +968,27 @@ class _LockScreenPaneState extends ConsumerState<_LockScreenPane>
       _motion.stop();
     }
   }
+}
+
+class _LockSwipeDrag implements Drag {
+  _LockSwipeDrag({
+    required this.onUpdate,
+    required this.onEnd,
+    required this.onCancel,
+  });
+
+  final ValueChanged<DragUpdateDetails> onUpdate;
+  final ValueChanged<DragEndDetails> onEnd;
+  final VoidCallback onCancel;
+
+  @override
+  void update(DragUpdateDetails details) => onUpdate(details);
+
+  @override
+  void end(DragEndDetails details) => onEnd(details);
+
+  @override
+  void cancel() => onCancel();
 }
 
 class _DesktopUnlockPrompt extends StatelessWidget {

@@ -793,6 +793,24 @@ impl TouchTimingAudit {
         }
     }
 
+    /// Clears a device retired by a synthesized cancel/remove (which carries no
+    /// hardware sample timestamp) so `last_samples` never stays permanently
+    /// non-empty after a touch reset or compositor gesture capture.
+    pub(super) fn cancel_device(&mut self, device: i32, delivered_at: usize) {
+        if let Some(index) = self
+            .last_samples
+            .iter()
+            .position(|(sample_device, _)| *sample_device == device)
+        {
+            self.last_samples.swap_remove(index);
+            if self.last_samples.is_empty()
+                && let Some(window_start) = self.window_start.take()
+            {
+                self.report(delivered_at.saturating_sub(window_start));
+            }
+        }
+    }
+
     fn report(&mut self, elapsed_micros: usize) {
         if self.delivery_us.is_empty() {
             self.intervals_us.clear();
@@ -935,4 +953,23 @@ fn touch_device(slot: smithay::backend::input::TouchSlot) -> i32 {
 
 fn touch_device_from_slot(slot: i32) -> i32 {
     slot.saturating_add(1).max(1)
+}
+
+#[cfg(test)]
+mod touch_timing_tests {
+    use super::*;
+
+    #[test]
+    fn synthetic_cancel_clears_last_samples_and_window() {
+        let mut audit = TouchTimingAudit::default();
+        audit.record(1, sys::FlutterPointerPhase_kDown, 1_000, 1_050);
+        audit.record(2, sys::FlutterPointerPhase_kDown, 1_100, 1_150);
+        audit.record(1, sys::FlutterPointerPhase_kUp, 2_000, 2_050);
+        assert_eq!(audit.last_samples.len(), 1);
+        assert!(audit.window_start.is_some());
+
+        audit.cancel_device(2, 3_000);
+        assert!(audit.last_samples.is_empty());
+        assert!(audit.window_start.is_none());
+    }
 }

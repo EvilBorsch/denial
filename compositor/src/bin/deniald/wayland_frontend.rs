@@ -299,6 +299,8 @@ pub(super) use input::{
 };
 pub(super) use input::{init_libinput, reset_all_input_devices};
 #[cfg(feature = "flutter")]
+pub(super) use input::reset_touch_input_devices;
+#[cfg(feature = "flutter")]
 use input_method::EditorEndpoint;
 use input_method::InputMethodManager;
 use managed_window::toplevel_has_state;
